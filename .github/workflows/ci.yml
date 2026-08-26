@@ -32,7 +32,7 @@ jobs:
           -Fu$base/units/i386-win32/rtl/objpas
           -Fu$base/units/i386-win32/rtl-console
           "@
-          Set-Content -Path (Join-Path $base 'fpc.cfg') -Value $cfg -Encoding Ascii
+          Set-Content -Path (Join-Path $bin 'fpc.cfg') -Value $cfg -Encoding Ascii
           Add-Content $env:GITHUB_PATH $bin
           Write-Output "FPC pret : $bin (fpc.cfg regenere)"
       - name: Lancer la suite de tests
