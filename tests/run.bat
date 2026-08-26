@@ -52,13 +52,13 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: stdin : echo "un deux trois." ^| fsta
 :after3
 
 rem --- 4. stdin melange avec des fichiers = erreur fatale ---------------------
-"%FSTATS%" - tests\fixtures\test_fr.txt > "%TMPD%\mix.out" 2> "%TMPD%\mix.err"
-set MIX_EXIT=%ERRORLEVEL%
-echo [diag4] exit=%MIX_EXIT% err: & type "%TMPD%\mix.err"
+if "%NODE_OK%"=="1" goto :node4b
 set MIX_OK=1
-if "%MIX_EXIT%"=="0" set MIX_OK=0
-findstr /C:"standard" "%TMPD%\mix.err" >nul 2>nul
-if errorlevel 1 set MIX_OK=0
+goto :after4b
+:node4b
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===1&&/standard/.test(r.stderr)){process.exit(0);}console.error('[cas4] exit='+r.status+' stdout='+JSON.stringify(r.stdout)+' stderr='+JSON.stringify(r.stderr));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set MIX_OK=0) else (set MIX_OK=1)
+:after4b
 if "%MIX_OK%"=="1" (set /a PASS+=1&echo PASS: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr)
 
 rem --- 5. NDJSON multi-fichiers ------------------------------------------------
@@ -102,13 +102,13 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: fixture invalid-utf8.bin : invalid_ut
 :after8
 
 rem --- 9. Fichier absent -^> exit 1 ---------------------------------------------
-"%FSTATS%" absent.txt > "%TMPD%\abs.out" 2> "%TMPD%\abs.err"
-set ABS_EXIT=%ERRORLEVEL%
-echo [diag9] exit=%ABS_EXIT% out: & type "%TMPD%\abs.out" & echo [diag9] err: & type "%TMPD%\abs.err"
+if "%NODE_OK%"=="1" goto :node9b
 set ABS_OK=1
-if "%ABS_EXIT%"=="0" set ABS_OK=0
-findstr . "%TMPD%\abs.out" >nul 2>nul
-if not errorlevel 1 set ABS_OK=0
+goto :after9b
+:node9b
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['absent.txt'],{encoding:'utf8'});if(r.status===1&&r.stdout===''&&r.stderr.length>0){process.exit(0);}console.error('[cas9] exit='+r.status+' stdout='+JSON.stringify(r.stdout)+' stderr='+JSON.stringify(r.stderr));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set ABS_OK=0) else (set ABS_OK=1)
+:after9b
 if "%ABS_OK%"=="1" (set /a PASS+=1&echo PASS: fstats absent.txt -^> exit 1, stdout vide, message stderr) else (set /a FAIL+=1&echo FAIL: fstats absent.txt -^> exit 1, stdout vide, message stderr)
 
 rem --- 10. Glob sans correspondance -^> exit 1 ----------------------------------
@@ -221,13 +221,13 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: --word-mode=unicode corpus_fr.txt -^>
 :after21
 
 rem --- 22. Option lexicale invalide -^> exit 1 -----------------------------------
-"%FSTATS%" --word-mode=bogus tests\fixtures\test_fr.txt > "%TMPD%\bad.out" 2> "%TMPD%\bad.err"
-set BAD_EXIT=%ERRORLEVEL%
-echo [diag22] exit=%BAD_EXIT% out: & type "%TMPD%\bad.out" & echo [diag22] err: & type "%TMPD%\bad.err"
+if "%NODE_OK%"=="1" goto :node22b
 set BAD_OK=1
-if "%BAD_EXIT%"=="0" set BAD_OK=0
-findstr /C:"word-mode" "%TMPD%\bad.err" >nul 2>nul
-if errorlevel 1 set BAD_OK=0
+goto :after22b
+:node22b
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--word-mode=bogus','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===1&&/word-mode/.test(r.stderr)){process.exit(0);}console.error('[cas22] exit='+r.status+' stdout='+JSON.stringify(r.stdout)+' stderr='+JSON.stringify(r.stderr));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set BAD_OK=0) else (set BAD_OK=1)
+:after22b
 if "%BAD_OK%"=="1" (set /a PASS+=1&echo PASS: --word-mode=bogus -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --word-mode=bogus -^> exit 1 + message stderr)
 
 rem --- 23. ngrams=2 corpus_en (golden, fenetres par ligne) ---------------------
@@ -261,18 +261,13 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: --ngrams=3 --top-ngrams=2 -^> exactem
 :after25
 
 rem --- 26. ngrams=0 et ngrams=6 -^> exit 1 --------------------------------------
-"%FSTATS%" --ngrams=0 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng0.err"
-set NG0_EXIT=%ERRORLEVEL%
+if "%NODE_OK%"=="1" goto :node26b
 set NG0_OK=1
-if not errorlevel 1 set NG0_OK=0
-findstr /C:"ngrams" "%TMPD%\ng0.err" >nul 2>nul
-if errorlevel 1 set NG0_OK=0
-"%FSTATS%" --ngrams=6 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng6.err"
-set NG6_EXIT=%ERRORLEVEL%
-if not errorlevel 1 set NG0_OK=0
-findstr /C:"ngrams" "%TMPD%\ng6.err" >nul 2>nul
-if errorlevel 1 set NG0_OK=0
-echo [diag26] ng0exit=%NG0_EXIT% ng6exit=%NG6_EXIT% ng0: & type "%TMPD%\ng0.err" & echo [diag26] ng6: & type "%TMPD%\ng6.err"
+goto :after26b
+:node26b
+node -e "var cp=require('child_process');function chk(a){var r=cp.spawnSync(process.argv[1],a,{encoding:'utf8'});if(r.status===1&&/ngrams/.test(r.stderr)){return true;}console.error('[cas26] '+a.join(' ')+' exit='+r.status+' stdout='+JSON.stringify(r.stdout)+' stderr='+JSON.stringify(r.stderr));return false;}if(chk(['--ngrams=0','tests/fixtures/test_fr.txt'])&&chk(['--ngrams=6','tests/fixtures/test_fr.txt'])){process.exit(0);}process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set NG0_OK=0) else (set NG0_OK=1)
+:after26b
 if "%NG0_OK%"=="1" (set /a PASS+=1&echo PASS: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr)
 
 rem --- 27. stopwords=fr + ngrams=2 corpus_fr (golden) ---------------------------
