@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
 # tests/run.sh — Journal de validation reproductible de fstats
-# (incréments A + C2-A "Lexique" + C2-B "Structure", v2.4.0)
+# (incréments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilité",
+# v2.5.0)
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -130,8 +131,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.4.0"
-report "--version affiche 2.4.0" $?
+"$FSTATS" --version | grep -q "2.5.0"
+report "--version affiche 2.5.0" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -348,6 +349,53 @@ report "aggregate --char-classes --histogram -> totaux sommés classe par classe
 "$FSTATS" --ngrams=2 --histogram=line_length --char-classes tests/fixtures/test_fr.txt > "$TMPDIR/console2.txt" 2>/dev/null
 if grep -q $'\x1b' "$TMPDIR/console2.txt"; then OK=1; else OK=0; fi
 report "sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI" $OK
+
+# --- 34. --readability --summary-json (valeurs golden sur test_fr.txt) ---------
+"$FSTATS" --readability --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/rd.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var ap = function (a, b) { return Math.abs(a - b) < 0.001; };
+var ok = ap(o.avg_sentence_words, 4.333333) && ap(o.avg_word_chars, 4.615385) &&
+  ap(o.pct_long_words, 23.076923) && ap(o.readability_score, 76.62395);
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/rd.json"
+report "--readability --summary-json test_fr.txt -> 4.333333/4.615385/23.076923/76.62395 (epsilon 0.001)" $?
+
+# --- 35. --readability --json : bloc readability avec les 4 clés ---------------
+"$FSTATS" --readability --json tests/fixtures/test_fr.txt > "$TMPDIR/rdj.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var r = o.readability;
+process.exit((r && "avg_sentence_words" in r && "avg_word_chars" in r &&
+  "pct_long_words" in r && "score" in r) ? 0 : 1);' "$TMPDIR/rdj.json"
+report "--readability --json -> bloc readability avec les 4 clés" $?
+
+# --- 36. --readability --lexical-stats --summary-json : clés lexicales ET lisibilité
+"$FSTATS" --readability --lexical-stats --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/rdlx.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var lex = ("unique_words" in o) && ("entropy_bits_per_word" in o);
+var rd = ("avg_sentence_words" in o) && ("readability_score" in o);
+process.exit((lex && rd) ? 0 : 1);' "$TMPDIR/rdlx.json"
+report "--readability --lexical-stats --summary-json -> clés lexicales ET lisibilité présentes" $?
+
+# --- 37. --readability --csv : 4 lignes summary lisibilité ---------------------
+"$FSTATS" --readability --csv tests/fixtures/test_fr.txt > "$TMPDIR/rdc.csv" 2>/dev/null
+if grep -q ",summary,,avg_sentence_words,," "$TMPDIR/rdc.csv" &&
+   grep -q ",summary,,avg_word_chars,," "$TMPDIR/rdc.csv" &&
+   grep -q ",summary,,pct_long_words,," "$TMPDIR/rdc.csv" &&
+   grep -q ",summary,,readability_score,," "$TMPDIR/rdc.csv"; then OK=0; else OK=1; fi
+report "--readability --csv -> 4 lignes summary lisibilité" $OK
+
+# --- 38. Fichier vide : valeurs 0, score 0 (pas de division par zéro) ----------
+"$FSTATS" --readability --summary-json tests/fixtures/empty.txt > "$TMPDIR/rdempty.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.avg_sentence_words === 0 && o.avg_word_chars === 0 &&
+  o.pct_long_words === 0 && o.readability_score === 0) ? 0 : 1);' "$TMPDIR/rdempty.json"
+report "fichier vide --readability --summary-json -> valeurs 0, score 0" $?
+
+# --- 39. Sortie pipee --readability : aucune sequence ANSI ----------------------
+"$FSTATS" --readability tests/fixtures/test_fr.txt > "$TMPDIR/rdconsole.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/rdconsole.txt"; then OK=1; else OK=0; fi
+report "sortie pipee --readability : aucune sequence ANSI" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

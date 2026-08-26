@@ -2,7 +2,8 @@
 setlocal EnableExtensions
 rem ============================================================================
 rem tests\run.bat - Journal de validation reproductible de fstats
-rem (increments A + C2-A "Lexique" + C2-B "Structure", v2.4.0)
+rem (increments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilite",
+rem v2.5.0)
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
@@ -126,8 +127,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.4.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.4.0) else (set /a PASS+=1&echo PASS: --version affiche 2.4.0)
+"%FSTATS%" --version | findstr /C:"2.5.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.5.0) else (set /a PASS+=1&echo PASS: --version affiche 2.5.0)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -340,6 +341,61 @@ goto :after33
 node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\console2.txt"
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI [ESC])
 :after33
+
+rem --- 34. --readability --summary-json (valeurs golden sur test_fr.txt) --------
+"%FSTATS%" --readability --summary-json tests\fixtures\test_fr.txt > "%TMPD%\rd.json" 2>nul
+if "%NODE_OK%"=="1" goto :node34
+echo SKIP: rd.json (node indisponible)
+goto :after34
+:node34
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var ap=function(a,b){return Math.abs(a-b)<0.001;};process.exit((ap(o.avg_sentence_words,4.333333)&&ap(o.avg_word_chars,4.615385)&&ap(o.pct_long_words,23.076923)&&ap(o.readability_score,76.62395))?0:1);" < "%TMPD%\rd.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --readability --summary-json test_fr.txt -^> 4.333333/4.615385/23.076923/76.62395) else (set /a PASS+=1&echo PASS: --readability --summary-json test_fr.txt -^> 4.333333/4.615385/23.076923/76.62395)
+:after34
+
+rem --- 35. --readability --json : bloc readability avec les 4 cles --------------
+"%FSTATS%" --readability --json tests\fixtures\test_fr.txt > "%TMPD%\rdj.json" 2>nul
+if "%NODE_OK%"=="1" goto :node35
+echo SKIP: rdj.json (node indisponible)
+goto :after35
+:node35
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var r=o.readability;process.exit((r&&('avg_sentence_words' in r)&&('avg_word_chars' in r)&&('pct_long_words' in r)&&('score' in r))?0:1);" < "%TMPD%\rdj.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --readability --json -^> bloc readability avec les 4 cles) else (set /a PASS+=1&echo PASS: --readability --json -^> bloc readability avec les 4 cles)
+:after35
+
+rem --- 36. --readability --lexical-stats --summary-json : cles lexicales ET lisibilite
+"%FSTATS%" --readability --lexical-stats --summary-json tests\fixtures\test_fr.txt > "%TMPD%\rdlx.json" 2>nul
+if "%NODE_OK%"=="1" goto :node36
+echo SKIP: rdlx.json (node indisponible)
+goto :after36
+:node36
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((('unique_words' in o)&&('entropy_bits_per_word' in o)&&('avg_sentence_words' in o)&&('readability_score' in o))?0:1);" < "%TMPD%\rdlx.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --readability --lexical-stats --summary-json -^> cles lexicales ET lisibilite presentes) else (set /a PASS+=1&echo PASS: --readability --lexical-stats --summary-json -^> cles lexicales ET lisibilite presentes)
+:after36
+
+rem --- 37. --readability --csv : 4 lignes summary lisibilite --------------------
+"%FSTATS%" --readability --csv tests\fixtures\test_fr.txt > "%TMPD%\rdc.csv" 2>nul
+findstr /C:",summary,,avg_sentence_words,," "%TMPD%\rdc.csv" >nul && findstr /C:",summary,,avg_word_chars,," "%TMPD%\rdc.csv" >nul && findstr /C:",summary,,pct_long_words,," "%TMPD%\rdc.csv" >nul && findstr /C:",summary,,readability_score,," "%TMPD%\rdc.csv" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --readability --csv -^> 4 lignes summary lisibilite) else (set /a PASS+=1&echo PASS: --readability --csv -^> 4 lignes summary lisibilite)
+
+rem --- 38. Fichier vide : valeurs 0, score 0 (pas de division par zero) ---------
+"%FSTATS%" --readability --summary-json tests\fixtures\empty.txt > "%TMPD%\rdempty.json" 2>nul
+if "%NODE_OK%"=="1" goto :node38
+echo SKIP: rdempty.json (node indisponible)
+goto :after38
+:node38
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.avg_sentence_words===0&&o.avg_word_chars===0&&o.pct_long_words===0&&o.readability_score===0)?0:1);" < "%TMPD%\rdempty.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: fichier vide --readability --summary-json -^> valeurs 0, score 0) else (set /a PASS+=1&echo PASS: fichier vide --readability --summary-json -^> valeurs 0, score 0)
+:after38
+
+rem --- 39. Sortie pipee --readability : aucune sequence ANSI --------------------
+"%FSTATS%" --readability tests\fixtures\test_fr.txt > "%TMPD%\rdconsole.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node39
+echo SKIP: controle ANSI C2-C (node indisponible)
+goto :after39
+:node39
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\rdconsole.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --readability : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --readability : aucune sequence ANSI [ESC])
+:after39
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)

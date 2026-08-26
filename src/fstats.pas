@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.4.0 (Sécurisée)
+  Version    : 2.5.0 (Sécurisée)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -18,6 +18,8 @@
   - Structure (C2-B) : n-grams sur les mots du mode courant (--ngrams,
     --top-ngrams, --stopwords), histogrammes ASCII (--histogram), classes de
     caractères (--char-classes)
+  - Lisibilité (C2-C) : --readability, 4 métriques + score 0-100 sans
+    syllabes (inspiré de Flesch, documenté)
   
   OPTIONS LIGNE DE COMMANDE :
   --char          : Afficher uniquement les stats de caractères
@@ -98,10 +100,14 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.4.0';
+  FSTATS_VERSION = '2.5.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
+
+  // Seuil de « mot long » (--readability, C2-C) : longueur en code points à
+  // partir de laquelle un token compte dans pct_long_words (>= 7).
+  LONG_WORD_MIN_LEN = 7;
 
   // Classes de caractères (--char-classes, C2-B) : l'ordre définit l'ordre
   // d'affichage/export (lettres, chiffres, blancs, ponctuation, contrôles, autres).
@@ -231,6 +237,7 @@ type
     Words: TWordFreqArray;           // Tableau des fréquences de mots
     UniqueWords: Int64;              // Types de mots stockés (plafonné --max-unique)
     WordCharsTotal: Int64;           // Somme des longueurs (code points) de tous les tokens
+    LongWordCount: Int64;            // Tokens de >= 7 code points (--readability, C2-C)
     TopLines: TLineArray;            // Top N des lignes les plus longues
     // Structure (incrément C2-B) — sections ajoutées quand activées
     NGrams: TNGramFreqArray;         // Top-K n-grams (rempli si NGramSize > 0)
@@ -262,6 +269,18 @@ type
     TypeTokenRatio: Double;      // UniqueWords / WordCount (TTR)
     AverageWordLength: Double;   // Somme longueurs des tokens / WordCount
     EntropyBitsPerWord: Double;  // -Σ p_i log2 p_i sur les types du mode courant
+  end;
+
+  // Statistiques de lisibilité calculées à la volée (--readability, C2-C).
+  // Inspirées de Flesch mais SANS syllabes (aucune détection de syllabes en
+  // français) : moyenne de mots par phrase, longueur moyenne des mots, part
+  // de mots longs (>= LONG_WORD_MIN_LEN) et score 0-100 (formule exacte
+  // documentée dans ComputeReadability).
+  TReadabilityStats = record
+    AvgSentenceWords: Double;    // WordCount / SentenceCount (0 si aucune phrase)
+    AvgWordChars: Double;        // WordCharsTotal / WordCount (0 si aucun mot)
+    PctLongWords: Double;        // 100 * LongWordCount / WordCount (0 si aucun mot)
+    Score: Double;               // Score 0-100 (formule documentée, 0 si aucun mot)
   end;
 
   // Dictionnaires hashés pour une insertion/recherche en O(1) - PERFORMANCE CRITIQUE
@@ -1531,6 +1550,10 @@ var
     Inc(Stats.WordCount);
     WL := UTF8Length(CurrentWord);
     Inc(Stats.WordCharsTotal, WL);
+    // C2-C : comptage des mots longs (>= LONG_WORD_MIN_LEN code points) pour
+    // pct_long_words. Accumulé sans condition (comme WordCharsTotal) : le
+    // coût est une comparaison par token, et la longueur WL est déjà connue.
+    if WL >= LONG_WORD_MIN_LEN then Inc(Stats.LongWordCount);
     // C2-B : histogramme word_length (longueur en code points, cohérent avec
     // average_word_length), mot de la phrase courante (words_per_sentence) et,
     // sauf s'il s'agit d'un mot vide (--stopwords), flux n-gram de la ligne.
@@ -1577,6 +1600,7 @@ begin
   Stats.NonPrintable := 0;
   Stats.UniqueWords := 0;      // Types de mots stockés (rempli en fin d'analyse)
   Stats.WordCharsTotal := 0;   // Somme des longueurs de tous les tokens
+  Stats.LongWordCount := 0;    // Tokens de >= 7 code points (--readability, C2-C)
   // Structure (incrément C2-B) : état des sections optionnelles
   Stats.NGramSize := SOpts.NGramSize;
   Stats.CharClassesEnabled := SOpts.CharClasses;
@@ -1967,6 +1991,60 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
+  ComputeReadability : Calcule les statistiques de lisibilité depuis TStats.
+  Métriques (mode courant = --word-mode + --casefold, comme --lexical-stats) :
+    avg_sentence_words = WordCount / SentenceCount (0 si aucune phrase)
+    avg_word_chars     = WordCharsTotal / WordCount (0 si aucun mot)
+    pct_long_words     = 100 * LongWordCount / WordCount (0 si aucun mot)
+    score              = 100 * (1 - (0.5 * min(ASL/30, 1)
+                             + 0.5 * min(max(ALW-3, 0)/5, 1)))
+  où ASL = avg_sentence_words et ALW = avg_word_chars. Formule EXACTE,
+  inspirée de Flesch mais SANS syllabes (aucune détection de syllabes en
+  français). Ancrages : une phrase de 30+ mots en moyenne (ASL >= 30) ou des
+  mots de 8+ caractères en moyenne (ALW >= 8) annulent chacun la MOITIÉ du
+  score (terme borné à 1). Score plafonné à [0, 100] ; un texte sans aucun
+  mot (fichier vide) a un score de 0 (pas de matière à évaluer).
+  -----------------------------------------------------------------------------}
+function ComputeReadability(const Stats: TStats): TReadabilityStats;
+var
+  Asl, Alw: Double;
+begin
+  if Stats.SentenceCount > 0 then
+    Result.AvgSentenceWords := Stats.WordCount / Stats.SentenceCount
+  else
+    Result.AvgSentenceWords := 0;
+  if Stats.WordCount > 0 then
+  begin
+    Result.AvgWordChars := Stats.WordCharsTotal / Stats.WordCount;
+    Result.PctLongWords := 100 * Stats.LongWordCount / Stats.WordCount;
+  end
+  else
+  begin
+    Result.AvgWordChars := 0;
+    Result.PctLongWords := 0;
+  end;
+  // Score : 0 si aucun mot (sinon la formule ci-dessus donnerait 100 pour un
+  // fichier vide — sémantique documentée : pas de score sans texte).
+  if Stats.WordCount = 0 then
+    Result.Score := 0
+  else
+  begin
+    Asl := Result.AvgSentenceWords;
+    Alw := Result.AvgWordChars;
+    // min(ASL/30, 1) : ASL plafonné à 30.
+    if Asl > 30 then Asl := 30;
+    // max(ALW-3, 0) : borne inférieure à 0, puis min(..., 1) : (ALW-3)/5
+    // plafonné à 1 (ALW plafonné à 8).
+    if Alw < 3 then Alw := 3;
+    if Alw > 8 then Alw := 8;
+    Result.Score := 100 * (1 - (0.5 * (Asl / 30) + 0.5 * ((Alw - 3) / 5)));
+    // Clamp de sécurité dans [0, 100] (la formule est bornée par construction).
+    if Result.Score < 0 then Result.Score := 0;
+    if Result.Score > 100 then Result.Score := 100;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
   Affichage console — style CLI épuré (ASCII pur, sans bordures Unicode)
   -----------------------------------------------------------------------------
   Règles :
@@ -2022,11 +2100,13 @@ begin
 end;
 
 procedure PrintStats(const Stats: TStats; ShowChars, ShowWords, ShowLines, ShowAll: Boolean;
-                     LexicalStats: Boolean; TopWordsLimit, TopCharsLimit: Integer);
+                     LexicalStats: Boolean; Readability: Boolean;
+                     TopWordsLimit, TopCharsLimit: Integer);
 var
   i, Limit, Total, RankW: Integer;
   Title, Preview: string;
   Lx: TLexicalStats;
+  Rd: TReadabilityStats;
 begin
   { En-tête : chemin du fichier et horodatage de génération (traçabilité) }
   WriteLn('File: ', Stats.Path);
@@ -2059,6 +2139,22 @@ begin
     WriteLn(SummaryLineText('Type-token ratio:', FormatFloatTrim(Lx.TypeTokenRatio, 4)));
     WriteLn(SummaryLineText('Avg word length:', FormatFloatTrim(Lx.AverageWordLength, 4)));
     WriteLn(SummaryLineText('Entropy:', FormatFloatTrim(Lx.EntropyBitsPerWord, 4)));
+    WriteLn;
+  end;
+
+  { Section Readability — affichée uniquement avec --readability (C2-C).
+    Style et alignement identiques à la section Lexical ; valeurs formatées
+    avec FormatFloatTrim(v, 4) comme les métriques lexicales console. }
+  if Readability then
+  begin
+    Rd := ComputeReadability(Stats);
+    Title := 'Readability';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn(SummaryLineText('Avg sentence words:', FormatFloatTrim(Rd.AvgSentenceWords, 4)));
+    WriteLn(SummaryLineText('Avg word chars:', FormatFloatTrim(Rd.AvgWordChars, 4)));
+    WriteLn(SummaryLineText('Pct long words:', FormatFloatTrim(Rd.PctLongWords, 4) + '%'));
+    WriteLn(SummaryLineText('Score (0-100):', FormatFloatTrim(Rd.Score, 4)));
     WriteLn;
   end;
 
@@ -2273,10 +2369,12 @@ begin
   end;
 end;
 
-procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean);
+procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
+                    Readability: Boolean);
 var
   i, j, Limit: Integer;
   Lx: TLexicalStats;
+  Rd: TReadabilityStats;
 begin
   WriteLn('{');
   WriteLn('  "file": "', JsonEscape(Stats.Path), '",');
@@ -2369,6 +2467,20 @@ begin
     WriteLn('    "type_token_ratio": ', FormatFloatTrim(Lx.TypeTokenRatio, 6), ',');
     WriteLn('    "average_word_length": ', FormatFloatTrim(Lx.AverageWordLength, 6), ',');
     WriteLn('    "entropy_bits_per_word": ', FormatFloatTrim(Lx.EntropyBitsPerWord, 6));
+    WriteLn('  },');
+  end;
+
+  // Lisibilité (--readability, C2-C) : bloc additif, inséré après le bloc
+  // lexical (ou après "quality" si --lexical-stats est absent). FormatFloatTrim
+  // à 6 décimales comme le bloc lexical.
+  if Readability then
+  begin
+    Rd := ComputeReadability(Stats);
+    WriteLn('  "readability": {');
+    WriteLn('    "avg_sentence_words": ', FormatFloatTrim(Rd.AvgSentenceWords, 6), ',');
+    WriteLn('    "avg_word_chars": ', FormatFloatTrim(Rd.AvgWordChars, 6), ',');
+    WriteLn('    "pct_long_words": ', FormatFloatTrim(Rd.PctLongWords, 6), ',');
+    WriteLn('    "score": ', FormatFloatTrim(Rd.Score, 6));
     WriteLn('  },');
   end;
 
@@ -2530,10 +2642,12 @@ end;
   BuildJSONCompact : Objet JSON complet sur UNE ligne (NDJSON, éléments des
   modes array/aggregate). Structure identique à ExportJSON (pretty).
   -----------------------------------------------------------------------------}
-function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean): string;
+function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
+                          Readability: Boolean): string;
 var
   S: string;
   Lx: TLexicalStats;
+  Rd: TReadabilityStats;
 begin
   S := '{"file": "' + JsonEscape(Stats.Path) + '"';
   S := S + ', "generated": "' + JsonEscape(CurrentStamp) + '"';
@@ -2565,6 +2679,16 @@ begin
     S := S + ', "average_word_length": ' + FormatFloatTrim(Lx.AverageWordLength, 6);
     S := S + ', "entropy_bits_per_word": ' + FormatFloatTrim(Lx.EntropyBitsPerWord, 6) + '}';
   end;
+  // Lisibilité (--readability, C2-C) : bloc additif, même position relative
+  // que dans ExportJSON (pretty) — après le bloc lexical.
+  if Readability then
+  begin
+    Rd := ComputeReadability(Stats);
+    S := S + ', "readability": {"avg_sentence_words": ' + FormatFloatTrim(Rd.AvgSentenceWords, 6);
+    S := S + ', "avg_word_chars": ' + FormatFloatTrim(Rd.AvgWordChars, 6);
+    S := S + ', "pct_long_words": ' + FormatFloatTrim(Rd.PctLongWords, 6);
+    S := S + ', "score": ' + FormatFloatTrim(Rd.Score, 6) + '}';
+  end;
   // Structure (C2-B) : sections additionnelles quand activées
   if Stats.CharClassesEnabled then
     S := S + ', "char_classes": {"letters": ' + IntToStr(Stats.CharClasses[CC_LETTERS]) +
@@ -2588,10 +2712,12 @@ end;
   BuildSummaryJSON : Objet JSON PLAT par fichier (--summary-json), conçu
   pour les scripts/jq : compteurs et métriques en champs de premier niveau.
   -----------------------------------------------------------------------------}
-function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean): string;
+function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean;
+                          Readability: Boolean): string;
 var
   S: string;
   Lx: TLexicalStats;
+  Rd: TReadabilityStats;
 begin
   S := '{"file": "' + JsonEscape(Stats.Path) + '"';
   S := S + ', "tool": "fstats"';
@@ -2633,6 +2759,16 @@ begin
     S := S + ', "histogram": ' + BuildHistogramJSON(Stats);
   if Stats.NGramSize > 0 then
     S := S + ', "ngrams": ' + BuildNGramsJSON(Stats, True, TopNgramsLimit);
+  // Lisibilité (--readability, C2-C) : clés plates en fin d'objet (6 décimales,
+  // comme les autres métriques du summary plat).
+  if Readability then
+  begin
+    Rd := ComputeReadability(Stats);
+    S := S + ', "avg_sentence_words": ' + FormatFloatTrim(Rd.AvgSentenceWords, 6);
+    S := S + ', "avg_word_chars": ' + FormatFloatTrim(Rd.AvgWordChars, 6);
+    S := S + ', "pct_long_words": ' + FormatFloatTrim(Rd.PctLongWords, 6);
+    S := S + ', "readability_score": ' + FormatFloatTrim(Rd.Score, 6);
+  end;
   S := S + '}';
   Result := S;
 end;
@@ -2688,10 +2824,11 @@ begin
 end;
 
 procedure ExportCSV(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
-                    CsvKind: TCsvKind);
+                    Readability: Boolean; CsvKind: TCsvKind);
 var
   i, Limit: Integer;
   Lx: TLexicalStats;
+  Rd: TReadabilityStats;
 begin
   // CSV v2 (C2-A) : en-tête fixe file,type,rank,value,code_point,count,length.
   // Rupture assumée et documentée (README) par rapport au format v1 :
@@ -2728,6 +2865,16 @@ begin
           WriteLn(CsvEscape(Stats.Path), ',summary,,type_token_ratio,,', FormatFloatTrim(Lx.TypeTokenRatio, 6), ',');
           WriteLn(CsvEscape(Stats.Path), ',summary,,average_word_length,,', FormatFloatTrim(Lx.AverageWordLength, 6), ',');
           WriteLn(CsvEscape(Stats.Path), ',summary,,entropy_bits_per_word,,', FormatFloatTrim(Lx.EntropyBitsPerWord, 6), ',');
+        end;
+        // Lisibilité (--readability, C2-C) : 4 lignes summary additionnelles
+        // (6 décimales, comme les métriques lexicales).
+        if Readability then
+        begin
+          Rd := ComputeReadability(Stats);
+          WriteLn(CsvEscape(Stats.Path), ',summary,,avg_sentence_words,,', FormatFloatTrim(Rd.AvgSentenceWords, 6), ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,avg_word_chars,,', FormatFloatTrim(Rd.AvgWordChars, 6), ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,pct_long_words,,', FormatFloatTrim(Rd.PctLongWords, 6), ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,readability_score,,', FormatFloatTrim(Rd.Score, 6), ',');
         end;
       end;
     ckChars:
@@ -2797,6 +2944,10 @@ begin
   WriteLn(Out, '  --char-classes    Classes de caracteres (6 classes, somme =');
   WriteLn(Out, '                    characters)');
   WriteLn(Out);
+  WriteLn(Out, 'Lisibilite (v2.5.0) :');
+  WriteLn(Out, '  --readability     Metriques de lisibilite + score 0-100');
+  WriteLn(Out, '                    (sans syllabes, inspire de Flesch)');
+  WriteLn(Out);
   WriteLn(Out, 'Formats d''export :');
   WriteLn(Out, '  --json            Export JSON : 1 fichier = objet unique,');
   WriteLn(Out, '                    plusieurs = NDJSON (1 objet par ligne)');
@@ -2847,6 +2998,7 @@ var
   CaseFoldMode: TCaseFold;     // --casefold (ascii par défaut)
   CsvKind: TCsvKind;           // --csv=summary|words|chars
   OptLexicalStats: Boolean;    // --lexical-stats
+  OptReadability: Boolean;     // --readability (C2-C)
   MaxUnique: Int64;            // --max-unique=N (borne mémoire des types)
   // Options structure (incrément C2-B)
   NGramSize: Integer;          // --ngrams=N (1..5, 0 = désactivé)
@@ -2911,6 +3063,7 @@ begin
   CaseFoldMode := cfAscii;
   CsvKind := ckSummary;
   OptLexicalStats := False;
+  OptReadability := False;     // --readability (C2-C) : désactivé par défaut
   TopWordsLimit := DEFAULT_TOP_LIMIT;
   TopCharsLimit := DEFAULT_TOP_LIMIT;
   MaxUnique := DEFAULT_MAX_UNIQUE;
@@ -3123,6 +3276,8 @@ begin
       end
       else if Param = '--lexical-stats' then
         OptLexicalStats := True
+      else if Param = '--readability' then
+        OptReadability := True
       else if (Copy(Param, 1, 12) = '--top-words=') or (Copy(Param, 1, 12) = '--top-words:') then
       begin
         V := Copy(ParamOrig, 13, Length(ParamOrig));
@@ -3415,16 +3570,16 @@ begin
 
         // Export selon le format demandé
         if OptSummaryJSON then
-          WriteLn(BuildSummaryJSON(Stats, OptLexicalStats))
+          WriteLn(BuildSummaryJSON(Stats, OptLexicalStats, OptReadability))
         else if OptJSON then
         begin
           case JsonMode of
-            jmAuto:      ExportJSON(Stats, OptAll, OptLexicalStats);
-            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
-            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
+            jmAuto:      ExportJSON(Stats, OptAll, OptLexicalStats, OptReadability);
+            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
+            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
             jmAggregate:
               begin
-                JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
+                JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
                 // Totaux cumulés pour l'objet aggregate
                 Inc(TotalFiles);
                 Inc(TotalLines, Stats.LineCount);
@@ -3432,7 +3587,10 @@ begin
                 Inc(TotalChars, Stats.CharCount);
                 Inc(TotalSentences, Stats.SentenceCount);
                 // C2-B : char_classes et histogramme sommés classe par classe.
-                // Les n-grams ne sont PAS agrégés (limitation documentée).
+                // Les n-grams ne sont PAS agrégés (limitation documentée) ;
+                // la lisibilité (C2-C, --readability) ne l'est pas non plus :
+                // ses métriques sont des ratios par fichier, présentes par
+                // fichier uniquement (pas de clés dans "totals").
                 if Stats.CharClassesEnabled then
                   for k := 0 to CC_CLASS_COUNT - 1 do
                     Inc(TotalCharClasses[k], Stats.CharClasses[k]);
@@ -3443,10 +3601,10 @@ begin
           end;
         end
         else if OptCSV then
-          ExportCSV(Stats, OptAll, OptLexicalStats, CsvKind)
+          ExportCSV(Stats, OptAll, OptLexicalStats, OptReadability, CsvKind)
         else
           PrintStats(Stats, OptChar, OptWord, OptLine, OptAll,
-                     OptLexicalStats, TopWordsLimit, TopCharsLimit);
+                     OptLexicalStats, OptReadability, TopWordsLimit, TopCharsLimit);
 
         // Confirmation console de l'écriture, uniquement avec --out et sans
         // --quiet. Écrite sur ErrOutput pour ne jamais polluer le fichier de
