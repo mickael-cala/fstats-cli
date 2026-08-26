@@ -4,3 +4,6 @@ tests/fixtures/* binary
 
 # Script de test bash : toujours en LF
 tests/run.sh text eol=lf
+
+# Script de test cmd : toujours en CRLF (cmd + batch = CRLF, independant de la config git du runner)
+tests/run.bat text eol=crlf
