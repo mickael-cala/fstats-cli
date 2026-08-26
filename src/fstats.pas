@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.6.0 (Sécurisée)
+  Version    : 2.6.1 (Sécurisée)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -20,6 +20,9 @@
     caractères (--char-classes)
   - Lisibilité (C2-C) : --readability, 4 métriques + score 0-100 sans
     syllabes (inspiré de Flesch, documenté)
+  - Checks (Cible 1 B+C) : --check/--fail-if/--warn-if, --compare/
+    --fail-on-delta, exit codes 0/1/2/3
+  - v2.6.1 : un point entre deux chiffres (3.14) ne clôture plus une phrase
   - Checks / gate CI (Cible 1, B) : --check, --fail-if/--warn-if (10 métriques),
     exit codes 0/2/3/1 en mode check, section Checks console + JSON
   - Comparaison baseline (Cible 1, C) : --compare (NDJSON --summary-json) et
@@ -110,7 +113,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.6.0';
+  FSTATS_VERSION = '2.6.1';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
@@ -1577,6 +1580,8 @@ var
   LastCPWasCR: Boolean;
   PendingSentence: Boolean;  // Contenu non-blanc depuis le dernier terminateur de phrase
   FirstChar: Boolean;        // Vrai tant que le premier caractère du flux n'est pas consommé (BOM)
+  LastCP: UInt32;            // Dernier code point traité (v2.6.1 : détection des décimales 3.14)
+  DotPending: Boolean;       // Point précédé d'un chiffre en attente de décision (v2.6.1)
   
   // Dictionnaires hashés pour accumulation O(1) - CLÉ DE PERFORMANCE
   CharDict: TCharDict;
@@ -1623,6 +1628,19 @@ var
     end;
     CurrentWord := '';
     InWord := False;
+  end;
+
+  // Clôture une phrase : compteur + histogramme words_per_sentence (C2-B) +
+  // reset du compteur de mots et de l'état PendingSentence. Utilisée par la
+  // clôture immédiate (! ? …) et par la clôture différée d'un point
+  // (décimales, v2.6.1).
+  procedure CloseSentence;
+  begin
+    Inc(Stats.SentenceCount);
+    if SOpts.HistogramKind = hkWordsPerSentence then
+      Inc(Stats.HistCounts[HistogramIndex(hkWordsPerSentence, SentenceWords)]);
+    SentenceWords := 0;
+    PendingSentence := False;
   end;
 begin
   // Initialisation de la structure de sortie
@@ -1673,6 +1691,8 @@ begin
   CurrentWord := '';
   LastCPWasCR := False;
   PendingSentence := False;
+  LastCP := 0;
+  DotPending := False;
   CurrentLine := '';
   Stats.MinLen := High(Int64);  // Pour trouver le minimum
   Stats.MaxLen := 0;            // Pour trouver le maximum
@@ -1730,22 +1750,35 @@ begin
         else
           CharDict.Add(CP, 1);
 
+        // v2.6.1 : résolution d'un point en attente (précédé d'un chiffre).
+        // Si le caractère suivant est un chiffre, c'est une décimale (3.14) :
+        // pas de clôture. Sinon, la phrase se clôture ici (ex. « Version 3. »).
+        if DotPending then
+        begin
+          DotPending := False;
+          if (CP < $30) or (CP > $39) then
+            CloseSentence;
+        end;
+
         // Comptage des phrases : un terminateur est '.' (U+002E), '!'
         // (U+0021), '?' (U+003F) ou '…' (U+2026). Chaque terminateur rencontré
         // clôt une phrase (le compteur s'incrémente ici). PendingSentence
         // mémorise les caractères non-blancs situés après le dernier
         // terminateur, pour compter l'éventuelle phrase finale en fin de fichier.
+        // v2.6.1 : un point précédé d'un chiffre est mis en attente — s'il est
+        // suivi d'un chiffre (3.14), il ne clôture PAS la phrase (décimale).
         // C2-B : l'histogramme words_per_sentence reçoit le nombre de mots de
         // la phrase qui se clôt (0 pour une phrase vide, ex. terminuteurs
         // consécutifs : la somme des classes reste égale à sentences).
-        if (CP = $2E) or (CP = $21) or (CP = $3F) or (CP = $2026) then
+        if CP = $2E then
         begin
-          Inc(Stats.SentenceCount);
-          if SOpts.HistogramKind = hkWordsPerSentence then
-            Inc(Stats.HistCounts[HistogramIndex(hkWordsPerSentence, SentenceWords)]);
-          SentenceWords := 0;
-          PendingSentence := False;
+          if (LastCP >= $30) and (LastCP <= $39) then
+            DotPending := True
+          else
+            CloseSentence;
         end
+        else if (CP = $21) or (CP = $3F) or (CP = $2026) then
+          CloseSentence
         else if (CP > $20) and (CP <> $FFFD) then
           PendingSentence := True;
 
@@ -1822,6 +1855,10 @@ begin
             CurrentWord := CurrentWord + VisualChar(FoldChar(CP, CaseFoldMode));
           end;
         end;
+
+        // Mémorise le caractère précédent (v2.6.1 : décision décimale au point
+        // suivant). Le LF ignoré d'un CRLF (Continue ci-dessus) ne l'écrase pas.
+        LastCP := CP;
       end;
     until ReadBytes = 0;  // Fin du fichier
 
@@ -1846,6 +1883,15 @@ begin
     begin
       AddNGramWindows(NGramDict, LineTokens, SOpts.NGramSize, SOpts.TopNgramsLimit);
       SetLength(LineTokens, 0);
+    end;
+
+    // v2.6.1 : un point en attente en fin de fichier (ex. « 3.14 » en fin de
+    // flux sans caractère suivant) clôt la phrase — même règle que la clôture
+    // différée (le point final « 3. » reste une vraie fin de phrase).
+    if DotPending then
+    begin
+      DotPending := False;
+      CloseSentence;
     end;
 
     // Phrase finale : si le fichier se termine avec du contenu non-blanc

@@ -2,7 +2,8 @@
 # ============================================================================
 # tests/run.sh — Journal de validation reproductible de fstats
 # (incréments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilité"
-# + Cible 1 B "Checks" + Cible 1 C "Baseline", v2.6.0)
+# + Cible 1 B "Checks" + Cible 1 C "Baseline"
+# + v2.6.1 (3.14 ne cloture pas une phrase))
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -131,8 +132,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.6.0"
-report "--version affiche 2.6.0" $?
+"$FSTATS" --version | grep -q "2.6.1"
+report "--version affiche 2.6.1" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -567,6 +568,46 @@ OK56=$?
 if [ $ST_A -eq 2 ] && [ $ST_B -eq 2 ] && [ $ST_C -eq 2 ] && [ $OK56 -eq 0 ]; then OK=0; else OK=1; fi
 report "ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals" $OK
 
+
+# --- 57. v2.6.1 : 3.14 ne cloture pas une phrase --------------------------------
+"$FSTATS" --summary-json tests/fixtures/decimal.txt > "$TMPDIR/dec57.json" 2>/dev/null
+node -e '
+var cp = require("child_process");
+var fs = require("fs");
+var o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+var e = cp.spawnSync(process.argv[2], ["-", "--summary-json"], { input: "Le prix est 3.14", encoding: "utf8" });
+var oe = JSON.parse(e.stdout);
+process.exit((o.sentences === 2 && o.words === 7 && oe.sentences === 1) ? 0 : 1);
+' "$TMPDIR/dec57.json" "$FSTATS"
+OK57=$?
+if [ $OK57 -eq 0 ]; then OK=0; else OK=1; fi
+report "3.14 ne cloture pas (decimal.txt 2 phrases ; 3.14 en fin de flux 1 phrase)" $OK
+
+# --- 58. v2.6.1 : point final apres chiffre ; point entoure d'espaces -----------
+"$FSTATS" --summary-json tests/fixtures/decimal_end.txt > "$TMPDIR/dec58.json" 2>/dev/null
+node -e '
+var cp = require("child_process");
+var fs = require("fs");
+var oa = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+var b = cp.spawnSync(process.argv[2], ["-", "--summary-json"], { input: "3 . 14. Fin.\n", encoding: "utf8" });
+var ob = JSON.parse(b.stdout);
+process.exit((oa.sentences === 2 && ob.sentences === 3) ? 0 : 1);
+' "$TMPDIR/dec58.json" "$FSTATS"
+OK58=$?
+if [ $OK58 -eq 0 ]; then OK=0; else OK=1; fi
+report "'Version 3.' cloture (2 phrases) ; '3 . 14.' espace cloture (3 phrases)" $OK
+
+# --- 59. v2.6.1 : histogramme words_per_sentence coherent (somme = phrases) -----
+"$FSTATS" --histogram=words_per_sentence --summary-json tests/fixtures/decimal.txt > "$TMPDIR/dec59.json" 2>/dev/null
+node -e '
+var fs = require("fs");
+var o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+var sum = o.histogram.classes.reduce(function (a, c) { return a + c.count; }, 0);
+process.exit((sum === o.sentences && sum === 2) ? 0 : 1);
+' "$TMPDIR/dec59.json"
+OK59=$?
+if [ $OK59 -eq 0 ]; then OK=0; else OK=1; fi
+report "histogramme words_per_sentence sur decimal.txt : somme=2=sentences" $OK
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

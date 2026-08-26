@@ -3,7 +3,8 @@ setlocal EnableExtensions
 rem ============================================================================
 rem tests\run.bat - Journal de validation reproductible de fstats
 rem (increments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilite"
-rem + Cible 1 B "Checks" + Cible 1 C "Baseline", v2.6.0)
+rem + Cible 1 B "Checks" + Cible 1 C "Baseline"
+rem + v2.6.1 (3.14 ne cloture pas une phrase))
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
@@ -127,8 +128,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.6.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.6.0) else (set /a PASS+=1&echo PASS: --version affiche 2.6.0)
+"%FSTATS%" --version | findstr /C:"2.6.1" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.6.1) else (set /a PASS+=1&echo PASS: --version affiche 2.6.1)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -577,6 +578,36 @@ if errorlevel 1 (set C56_OK=0) else (set C56_OK=1)
 :after56
 if "%C56_OK%"=="1" (set /a PASS+=1&echo PASS: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals) else (set /a FAIL+=1&echo FAIL: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals)
 
+
+rem --- 57. v2.6.1 : 3.14 ne cloture pas une phrase ------------------------------
+if "%NODE_OK%"=="1" goto :node57
+set C57_OK=1
+goto :after57
+:node57
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--summary-json','tests/fixtures/decimal.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);var e=cp.spawnSync(process.argv[1],['-','--summary-json'],{input:'Le prix est 3.14',encoding:'utf8'});var oe=JSON.parse(e.stdout);if(o.sentences===2&&o.words===7&&oe.sentences===1){process.exit(0);}console.error('[cas57] dec='+o.sentences+'/'+o.words+' eof='+oe.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C57_OK=0) else (set C57_OK=1)
+:after57
+if "%C57_OK%"=="1" (set /a PASS+=1&echo PASS: 3.14 ne cloture pas - decimal.txt 2 phrases, 3.14 en fin de flux 1 phrase) else (set /a FAIL+=1&echo FAIL: 3.14 ne cloture pas - decimal.txt 2 phrases, 3.14 en fin de flux 1 phrase)
+
+rem --- 58. v2.6.1 : point final apres chiffre ; point entoure d'espaces --------
+if "%NODE_OK%"=="1" goto :node58
+set C58_OK=1
+goto :after58
+:node58
+node -e "var cp=require('child_process');var a=cp.spawnSync(process.argv[1],['--summary-json','tests/fixtures/decimal_end.txt'],{encoding:'utf8'});var oa=JSON.parse(a.stdout);var b=cp.spawnSync(process.argv[1],['-','--summary-json'],{input:'3 . 14. Fin.\n',encoding:'utf8'});var ob=JSON.parse(b.stdout);if(oa.sentences===2&&ob.sentences===3){process.exit(0);}console.error('[cas58] fin='+oa.sentences+' espace='+ob.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C58_OK=0) else (set C58_OK=1)
+:after58
+if "%C58_OK%"=="1" (set /a PASS+=1&echo PASS: Version 3. cloture apres chiffre - 2 phrases, 3 . 14. point espace - 3 phrases) else (set /a FAIL+=1&echo FAIL: Version 3. cloture apres chiffre - 2 phrases, 3 . 14. point espace - 3 phrases)
+
+rem --- 59. v2.6.1 : histogramme words_per_sentence coherent (somme = phrases) --
+if "%NODE_OK%"=="1" goto :node59
+set C59_OK=1
+goto :after59
+:node59
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--histogram=words_per_sentence','--summary-json','tests/fixtures/decimal.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);var sum=o.histogram.classes.reduce(function(a,c){return a+c.count;},0);if(sum===o.sentences&&sum===2){process.exit(0);}console.error('[cas59] sum='+sum+' sentences='+o.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C59_OK=0) else (set C59_OK=1)
+:after59
+if "%C59_OK%"=="1" (set /a PASS+=1&echo PASS: histogramme words_per_sentence sur decimal.txt : somme=2=sentences) else (set /a FAIL+=1&echo FAIL: histogramme words_per_sentence sur decimal.txt : somme=2=sentences)
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)
 rd /s /q "%TMPD%" >nul 2>nul
