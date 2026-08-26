@@ -9,6 +9,11 @@
 # bilan. Exit 0 si tout passe, 1 sinon.
 # ============================================================================
 set -u
+# GitHub Actions lance les etapes bash avec `-e -o pipefail`, ce qui tuerait
+# ce script au premier cas dont l'exit code non nul est VOULU (fichier absent,
+# glob vide, stdin+ficher, option invalide). La gestion d'erreur est interne :
+# compteur FAIL + exit 0/1 en fin de script. On desactive donc -e.
+set +e
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
