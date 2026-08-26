@@ -30,4 +30,4 @@ jobs:
       - name: Installer Free Pascal
         run: sudo apt-get update && sudo apt-get install -y fp-compiler
       - name: Lancer la suite de tests
-        run: tests/run.sh
+        run: bash tests/run.sh
