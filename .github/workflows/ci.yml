@@ -14,11 +14,14 @@ jobs:
       - name: Installer Free Pascal
         shell: pwsh
         run: |
-          choco install -y freepascal --no-progress
-          $fpc = Get-ChildItem 'C:\tools\freepascal', 'C:\ProgramData\chocolatey\lib\freepascal' -Recurse -Filter 'fpc.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $fpc) { throw "fpc.exe introuvable apres l'installation" }
-          Write-Output "fpc.exe -> $($fpc.FullName)"
-          Add-Content $env:GITHUB_PATH (Split-Path -Parent $fpc.FullName)
+          # Installateur officiel unique (composants par defaut, dont les unites RTL).
+          # choco 'freepascal' lance DEUX installateurs dans le meme repertoire,
+          # ce qui ecrase fpc.cfg -> 'Can't find unit Generics.Collections'.
+          $url = 'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.exe/download'
+          $installer = Join-Path $env:TEMP 'fpc-3.2.2.i386-win32.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\FPC\3.2.2' -Wait
+          Add-Content $env:GITHUB_PATH 'C:\FPC\3.2.2\bin\i386-win32'
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
