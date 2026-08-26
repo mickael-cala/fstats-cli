@@ -17,11 +17,39 @@ jobs:
           # Installateur officiel unique (composants par defaut, dont les unites RTL).
           # choco 'freepascal' lance DEUX installateurs dans le meme repertoire,
           # ce qui ecrase fpc.cfg -> 'Can't find unit Generics.Collections'.
-          $url = 'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.exe/download'
+          $ErrorActionPreference = 'Stop'
+          $bin = 'C:\FPC\3.2.2\bin\i386-win32'
+          if (Test-Path "$bin\fpc.exe") {
+            Add-Content $env:GITHUB_PATH $bin
+            Write-Output "FPC deja installe : $bin"
+            exit 0
+          }
           $installer = Join-Path $env:TEMP 'fpc-3.2.2.i386-win32.exe'
-          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-          Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\FPC\3.2.2' -Wait
-          Add-Content $env:GITHUB_PATH 'C:\FPC\3.2.2\bin\i386-win32'
+          $urls = @(
+            'https://downloads.sourceforge.net/project/freepascal/Win32/3.2.2/fpc-3.2.2.i386-win32.exe',
+            'https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.i386-win32.exe/download',
+            'ftp://ftp.freepascal.org/pub/fpc/dist/3.2.2/i386-win32/fpc-3.2.2.i386-win32.exe'
+          )
+          $downloaded = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Output "Telechargement : $u"
+              Invoke-WebRequest -Uri $u -OutFile $installer -UseBasicParsing -MaximumRedirection 10
+              $bytes = [System.IO.File]::ReadAllBytes($installer)
+              $mz = ($bytes.Length -ge 2 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)
+              $size = (Get-Item $installer).Length
+              Write-Output "  -> $size octets, signature MZ: $mz"
+              if ($mz -and $size -gt 40MB) { $downloaded = $true; break }
+            } catch {
+              Write-Output "  -> echec : $($_.Exception.Message)"
+            }
+          }
+          if (-not $downloaded) { throw 'Aucune source n a fourni un installateur FPC valide (MZ + taille)' }
+          $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\FPC\3.2.2' -Wait -PassThru
+          Write-Output "installateur : exit code $($p.ExitCode)"
+          if (-not (Test-Path "$bin\fpc.exe")) { throw "fpc.exe absent apres installation : $bin" }
+          Add-Content $env:GITHUB_PATH $bin
+          Write-Output "FPC pret : $bin"
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
