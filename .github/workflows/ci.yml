@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Installer Free Pascal
-        run: choco install -y fpc
+        run: choco install -y freepascal
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
