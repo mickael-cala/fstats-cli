@@ -1,14 +1,15 @@
 @echo off
 setlocal EnableExtensions
 rem ============================================================================
-rem tests\run.bat - Journal de validation reproductible de fstats (increment A)
+rem tests\run.bat - Journal de validation reproductible de fstats
+rem (increments A + C2-A "Lexique", v2.3.0)
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
 rem valide le JSON avec node (si disponible). Sortie : une ligne PASS/FAIL par
 rem cas, puis un bilan. Exit 0 si tout passe, 1 sinon. Pas de Pause : CI friendly.
 rem Note : les globs sont resolus en interne par fstats (CMD n'expand pas les
-rem motifs), les filtres node sont sans metacharacteres cmd.
+rem motifs), les filtres node sont sans metacaracteres cmd.
 rem ============================================================================
 
 cd /d "%~dp0.."
@@ -120,8 +121,107 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.2.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.2.0) else (set /a PASS+=1&echo PASS: --version affiche 2.2.0)
+"%FSTATS%" --version | findstr /C:"2.3.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.3.0) else (set /a PASS+=1&echo PASS: --version affiche 2.3.0)
+
+rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
+"%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
+if "%NODE_OK%"=="1" goto :node13
+echo SKIP: ascii.json (node indisponible)
+goto :after13
+:node13
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit(o.words===11?0:1);" < "%TMPD%\ascii.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --word-mode=ascii corpus_en.txt -^> words=11 [golden]) else (set /a PASS+=1&echo PASS: --word-mode=ascii corpus_en.txt -^> words=11 [golden])
+:after13
+
+rem --- 14. casefold=unicode (corpus FR accentue) ---------------------------------
+"%FSTATS%" --summary-json --lexical-stats --casefold=unicode tests\fixtures\corpus_fr.txt > "%TMPD%\cfuni.json" 2>nul
+if "%NODE_OK%"=="1" goto :node14
+echo SKIP: cfuni.json (node indisponible)
+goto :after14
+:node14
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.unique_words===16?0:1)+(o.words===20?0:1));" < "%TMPD%\cfuni.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --casefold=unicode corpus_fr.txt -^> unique_words=16, words=20) else (set /a PASS+=1&echo PASS: --casefold=unicode corpus_fr.txt -^> unique_words=16, words=20)
+:after14
+
+rem --- 15. casefold=none (casse conservee) ---------------------------------------
+"%FSTATS%" --summary-json --lexical-stats --casefold=none tests\fixtures\corpus_fr.txt > "%TMPD%\cfnone.json" 2>nul
+if "%NODE_OK%"=="1" goto :node15
+echo SKIP: cfnone.json (node indisponible)
+goto :after15
+:node15
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.unique_words===17?0:1)+(o.words===20?0:1));" < "%TMPD%\cfnone.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --casefold=none corpus_fr.txt -^> unique_words=17, casse conservee) else (set /a PASS+=1&echo PASS: --casefold=none corpus_fr.txt -^> unique_words=17, casse conservee)
+:after15
+
+rem --- 16. --lexical-stats (JSON) ------------------------------------------------
+"%FSTATS%" --json --lexical-stats tests\fixtures\test_fr.txt > "%TMPD%\lex.json" 2>nul
+if "%NODE_OK%"=="1" goto :node16
+echo SKIP: lex.json (node indisponible)
+goto :after16
+:node16
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var l=o.lexical;process.exit((l.unique_words===12?0:1)+(l.hapax===11?0:1)+(l.average_word_length>0?0:1)+(Math.abs(l.type_token_ratio-l.unique_words/o.statistics.words)<1e-4?0:1)+((l.entropy_bits_per_word>=0)*(l.entropy_bits_per_word<=Math.log2(l.unique_words)+1e-9)?0:1));" < "%TMPD%\lex.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --lexical-stats : champs presents, TTR=types/tokens, entropie bornee) else (set /a PASS+=1&echo PASS: --lexical-stats : champs presents, TTR=types/tokens, entropie bornee)
+:after16
+
+rem --- 17. --top-words=5 / --top-chars=3 -----------------------------------------
+"%FSTATS%" --json --top-words=5 --top-chars=3 tests\fixtures\test_fr.txt > "%TMPD%\top.json" 2>nul
+if "%NODE_OK%"=="1" goto :node17
+echo SKIP: top.json (node indisponible)
+goto :after17
+:node17
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.top_words.length===5?0:1)+(o.top_characters.length===3?0:1));" < "%TMPD%\top.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --top-words=5 --top-chars=3 -^> exactement 5 et 3 entrees) else (set /a PASS+=1&echo PASS: --top-words=5 --top-chars=3 -^> exactement 5 et 3 entrees)
+:after17
+
+rem --- 18. --top-words=0 = --all (section mots) ----------------------------------
+"%FSTATS%" --json --top-words=0 tests\fixtures\test_fr.txt > "%TMPD%\top0.json" 2>nul
+if "%NODE_OK%"=="1" goto :node18
+echo SKIP: top0.json (node indisponible)
+goto :after18
+:node18
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit(o.top_words.length===12?0:1);" < "%TMPD%\top0.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --top-words=0 -^> tous les mots, 12 pour test_fr.txt) else (set /a PASS+=1&echo PASS: --top-words=0 -^> tous les mots, 12 pour test_fr.txt)
+:after18
+
+rem --- 19. --max-unique (borne memoire) ------------------------------------------
+"%FSTATS%" --summary-json --lexical-stats --max-unique=5 tests\fixtures\test_fr.txt > "%TMPD%\mu.json" 2>nul
+if "%NODE_OK%"=="1" goto :node19
+echo SKIP: mu.json (node indisponible)
+goto :after19
+:node19
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.unique_words===5?0:1)+(o.words===13?0:1));" < "%TMPD%\mu.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --max-unique=5 -^> unique_words plafonne a 5, words=13 inchange) else (set /a PASS+=1&echo PASS: --max-unique=5 -^> unique_words plafonne a 5, words=13 inchange)
+:after19
+
+rem --- 20. CSV v2 (en-tete + ligne summary + csv=words) --------------------------
+"%FSTATS%" --csv tests\fixtures\test_fr.txt > "%TMPD%\csv2.csv" 2>nul
+"%FSTATS%" --csv=words tests\fixtures\test_fr.txt > "%TMPD%\csv2w.csv" 2>nul
+if "%NODE_OK%"=="1" goto :node20
+echo SKIP: CSV v2 (node indisponible)
+goto :after20
+:node20
+node -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8');var w=fs.readFileSync(process.argv[2],'utf8');var L=s.trim().split(/\r?\n/);var H='file,type,rank,value,code_point,count,length';var okS=L.slice(1).some(function(r){var c=r.split(',');return c[1]==='summary'&&c[3]==='lines'&&c[5]==='3'&&c[0].indexOf('test_fr.txt')>=0;});var W=w.trim().split(/\r?\n/);process.exit((L[0]===H&&okS&&W[0]===H&&W.length===11)?0:1);" "%TMPD%\csv2.csv" "%TMPD%\csv2w.csv"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: CSV v2 : en-tete exact, ligne summary avec colonne file, csv=words 10 lignes) else (set /a PASS+=1&echo PASS: CSV v2 : en-tete exact, ligne summary avec colonne file, csv=words 10 lignes)
+:after20
+
+rem --- 21. word-mode=unicode (corpus FR) -----------------------------------------
+"%FSTATS%" --summary-json --word-mode=unicode tests\fixtures\corpus_fr.txt > "%TMPD%\uni.json" 2>nul
+if "%NODE_OK%"=="1" goto :node21
+echo SKIP: uni.json (node indisponible)
+goto :after21
+:node21
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit(o.words===19?0:1);" < "%TMPD%\uni.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --word-mode=unicode corpus_fr.txt -^> words=19 [golden]) else (set /a PASS+=1&echo PASS: --word-mode=unicode corpus_fr.txt -^> words=19 [golden])
+:after21
+
+rem --- 22. Option lexicale invalide -^> exit 1 -----------------------------------
+"%FSTATS%" --word-mode=bogus tests\fixtures\test_fr.txt > "%TMPD%\bad.out" 2> "%TMPD%\bad.err"
+set BAD_OK=1
+if not errorlevel 1 set BAD_OK=0
+findstr /C:"word-mode" "%TMPD%\bad.err" >nul 2>nul
+if errorlevel 1 set BAD_OK=0
+if "%BAD_OK%"=="1" (set /a PASS+=1&echo PASS: --word-mode=bogus -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --word-mode=bogus -^> exit 1 + message stderr)
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
-# tests/run.sh — Journal de validation reproductible de fstats (incrément A)
+# tests/run.sh — Journal de validation reproductible de fstats
+# (incréments A + C2-A "Lexique", v2.3.0)
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -117,8 +118,87 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.2.0"
-report "--version affiche 2.2.0" $?
+"$FSTATS" --version | grep -q "2.3.0"
+report "--version affiche 2.3.0" $?
+
+# --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
+"$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit(o.words === 11 ? 0 : 1);' "$TMPDIR/ascii.json"
+report "--word-mode=ascii corpus_en.txt -> words=11 [golden]" $?
+
+# --- 14. casefold=unicode (corpus FR accentué) -------------------------------
+"$FSTATS" --summary-json --lexical-stats --casefold=unicode tests/fixtures/corpus_fr.txt > "$TMPDIR/cfuni.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.unique_words === 16 && o.words === 20) ? 0 : 1);' "$TMPDIR/cfuni.json"
+report "--casefold=unicode corpus_fr.txt -> unique_words=16, words=20" $?
+
+# --- 15. casefold=none (casse conservée) -------------------------------------
+"$FSTATS" --summary-json --lexical-stats --casefold=none tests/fixtures/corpus_fr.txt > "$TMPDIR/cfnone.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.unique_words === 17 && o.words === 20) ? 0 : 1);' "$TMPDIR/cfnone.json"
+report "--casefold=none corpus_fr.txt -> unique_words=17 (casse conservée)" $?
+
+# --- 16. --lexical-stats (JSON) ----------------------------------------------
+"$FSTATS" --json --lexical-stats tests/fixtures/test_fr.txt > "$TMPDIR/lex.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var l = o.lexical;
+var ok = l.unique_words === 12 && l.hapax === 11 && l.average_word_length > 0 &&
+  Math.abs(l.type_token_ratio - l.unique_words / o.statistics.words) < 1e-4 &&
+  l.entropy_bits_per_word >= 0 &&
+  l.entropy_bits_per_word <= Math.log2(l.unique_words) + 1e-9;
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/lex.json"
+report "--lexical-stats : champs présents, TTR=types/tokens, entropie bornée" $?
+
+# --- 17. --top-words=5 / --top-chars=3 ---------------------------------------
+"$FSTATS" --json --top-words=5 --top-chars=3 tests/fixtures/test_fr.txt > "$TMPDIR/top.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.top_words.length === 5 && o.top_characters.length === 3) ? 0 : 1);' "$TMPDIR/top.json"
+report "--top-words=5 --top-chars=3 -> exactement 5 et 3 entrées" $?
+
+# --- 18. --top-words=0 = --all (section mots) ---------------------------------
+"$FSTATS" --json --top-words=0 tests/fixtures/test_fr.txt > "$TMPDIR/top0.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit(o.top_words.length === 12 ? 0 : 1);' "$TMPDIR/top0.json"
+report "--top-words=0 -> tous les mots (12 pour test_fr.txt)" $?
+
+# --- 19. --max-unique (borne mémoire) ----------------------------------------
+"$FSTATS" --summary-json --lexical-stats --max-unique=5 tests/fixtures/test_fr.txt > "$TMPDIR/mu.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.unique_words === 5 && o.words === 13) ? 0 : 1);' "$TMPDIR/mu.json"
+report "--max-unique=5 -> unique_words plafonné à 5, words=13 inchangé" $?
+
+# --- 20. CSV v2 (en-tête + ligne summary + csv=words) -------------------------
+"$FSTATS" --csv tests/fixtures/test_fr.txt > "$TMPDIR/csv2.csv" 2>/dev/null
+"$FSTATS" --csv=words tests/fixtures/test_fr.txt > "$TMPDIR/csv2w.csv" 2>/dev/null
+node -e '
+var fs = require("fs");
+var s = fs.readFileSync(process.argv[1], "utf8");
+var w = fs.readFileSync(process.argv[2], "utf8");
+var L = s.trim().split(/\r?\n/);
+var H = "file,type,rank,value,code_point,count,length";
+var okS = L.slice(1).some(function (r) {
+  var c = r.split(",");
+  return c[1] === "summary" && c[3] === "lines" && c[5] === "3" &&
+    c[0].indexOf("test_fr.txt") >= 0;
+});
+var W = w.trim().split(/\r?\n/);
+process.exit((L[0] === H && okS && W[0] === H && W.length === 11) ? 0 : 1);
+' "$TMPDIR/csv2.csv" "$TMPDIR/csv2w.csv"
+report "CSV v2 : en-tête exact, ligne summary avec colonne file, csv=words 10 lignes" $?
+
+# --- 21. word-mode=unicode (corpus FR) ---------------------------------------
+"$FSTATS" --summary-json --word-mode=unicode tests/fixtures/corpus_fr.txt > "$TMPDIR/uni.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit(o.words === 19 ? 0 : 1);' "$TMPDIR/uni.json"
+report "--word-mode=unicode corpus_fr.txt -> words=19 [golden]" $?
+
+# --- 22. Option lexicale invalide -> exit 1 -----------------------------------
+"$FSTATS" --word-mode=bogus tests/fixtures/test_fr.txt > "$TMPDIR/bad.out" 2> "$TMPDIR/bad.err"
+if [ $? -eq 1 ] && grep -q "word-mode" "$TMPDIR/bad.err"; then OK=0; else OK=1; fi
+report "--word-mode=bogus -> exit 1 + message stderr" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

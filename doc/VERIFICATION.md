@@ -124,3 +124,140 @@ ROADMAP-CIBLE1.md : compilation propre, compteurs historiques inchanges,
 stdin, glob/recursivite internes, JSON multi-fichiers valide (NDJSON par defaut,
 array/aggregate), --summary-json, compteurs qualite, codes de retour 0/1
 conserves en mode analyse, sortie ASCII pure en pipe.
+---
+
+## Increment C2-A « Lexique » (v2.3.0) — 2026-08-26
+
+Validation de l'implementation de `doc/ROADMAP-CIBLE2.md` (C2-A : --word-mode,
+--casefold, --lexical-stats, --top-words/--top-chars, --max-unique, CSV v2).
+Binaire compile depuis `src/fstats.pas` (mono-fichier, RTL FPC standard).
+
+### 1. Compilation
+
+`fpc -O2 -Mobjfpc src/fstats.pas` : exit=0
+
+```
+2795 lines compiled, 1.2 sec, 326416 bytes code, 19492 bytes data
+```
+
+### 2. Regression par defaut (test_fr.txt, inchange)
+
+`fstats --summary-json tests/fixtures/test_fr.txt` : 3/13/72/3, moy 4,
+min/max/moy 16/30/23, memes champs (pas de cle lexicale sans --lexical-stats) :
+
+```
+{"file": "tests\/fixtures\/test_fr.txt", "tool": "fstats", "version": "2.3.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+```
+
+### 3. --word-mode=ascii (corpus_en.txt, golden)
+
+`fstats --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt` :
+`"words": 11` (ponctuation retiree : "Hello," -> "Hello", "test." -> "test").
+
+### 4. --word-mode=unicode (corpus_fr.txt, golden)
+
+`fstats --summary-json --word-mode=unicode tests/fixtures/corpus_fr.txt` :
+`"words": 19` (la ponctuation et les apostrophes separent ; les accents
+restent dans les mots).
+
+### 5. --casefold (corpus_fr.txt)
+
+`fstats --summary-json --lexical-stats --casefold=unicode tests/fixtures/corpus_fr.txt` :
+`words=20, unique_words=16` — "Été" et "été" fusionnent (table basique).
+
+`--casefold=none` : `unique_words=17` (casse conservee, "Été" != "été").
+
+### 6. --lexical-stats (JSON)
+
+`fstats --json --lexical-stats tests/fixtures/test_fr.txt` (exit=0, JSON parse
+node) : bloc additif `"lexical"` apres `quality`, cles existantes inchangees,
+`schema_version` reste "1.0" :
+
+```
+"lexical": { "unique_words": 12, "hapax": 11, "type_token_ratio": 0.923077,
+             "average_word_length": 4.615385, "entropy_bits_per_word": 3.546594 }
+```
+
+Controles node : TTR = types/tokens (12/13), entropie dans [0, log2(12)].
+Console (section dediee, ASCII pur) :
+
+```
+Lexical
+-------
+  Unique words:       17
+  Hapax:              14
+  Type-token ratio: 0.85
+  Avg word length:  3.75
+  Entropy:        4.0219
+```
+
+### 7. --top-words / --top-chars
+
+`fstats --json --top-words=5 --top-chars=3 tests/fixtures/test_fr.txt` :
+exactement 5 entrees `top_words` et 3 entrees `top_characters`.
+`--top-words=0` : les 12 mots de test_fr.txt (0 = --all pour la section).
+
+### 8. --max-unique (borne memoire)
+
+`fstats --summary-json --lexical-stats --max-unique=5 tests/fixtures/test_fr.txt` :
+`unique_words=5` (plafonne), `words=13` inchange, `average_word_length`
+exact (accumule en streaming).
+
+### 9. CSV v2 (rupture documentee)
+
+En-tete exact et ligne summary avec colonne `file` :
+
+```
+file,type,rank,value,code_point,count,length
+tests/fixtures/test_fr.txt,summary,,lines,,3,
+tests/fixtures/test_fr.txt,summary,,words,,13,
+tests/fixtures/test_fr.txt,summary,,characters,,72,
+tests/fixtures/test_fr.txt,summary,,sentences,,3,
+tests/fixtures/test_fr.txt,summary,,avg_words_per_sentence,,4,
+tests/fixtures/test_fr.txt,summary,,line_min,,16,
+tests/fixtures/test_fr.txt,summary,,line_max,,30,
+tests/fixtures/test_fr.txt,summary,,line_avg,,23,
+tests/fixtures/test_fr.txt,summary,,invalid_utf8,,0,
+tests/fixtures/test_fr.txt,summary,,bom,,0,
+tests/fixtures/test_fr.txt,summary,,crlf,,0,
+tests/fixtures/test_fr.txt,summary,,tabs,,0,
+tests/fixtures/test_fr.txt,summary,,nonprintable,,0,
+```
+
+`--csv=words` : meme en-tete, 10 lignes `word` (Top 10 par defaut) avec la
+colonne `length` (code points). `--csv=chars` : colonne `code_point` remplie,
+`length` = 1.
+
+### 10. Options invalides et --version
+
+`--word-mode=bogus` / `--max-unique=0` / `--csv=foo` : exit=1 + message
+stderr francais. `fstats --version` : `fstats 2.3.0`.
+
+### 11. Suites automatisees
+
+`tests\run.bat` (CMD) : exit=0, 22/22 PASS. `tests/run.sh` (Git Bash) :
+exit=0, 22/22 PASS — extraits :
+
+```
+PASS: --version affiche 2.3.0
+PASS: --word-mode=ascii corpus_en.txt -> words=11 [golden]
+PASS: --casefold=unicode corpus_fr.txt -> unique_words=16, words=20
+PASS: --casefold=none corpus_fr.txt -> unique_words=17, casse conservee
+PASS: --lexical-stats : champs presents, TTR=types/tokens, entropie bornee
+PASS: --top-words=5 --top-chars=3 -> exactement 5 et 3 entrees
+PASS: --top-words=0 -> tous les mots, 12 pour test_fr.txt
+PASS: --max-unique=5 -> unique_words plafonne a 5, words=13 inchange
+PASS: CSV v2 : en-tete exact, ligne summary avec colonne file, csv=words 10 lignes
+PASS: --word-mode=unicode corpus_fr.txt -> words=19 [golden]
+PASS: --word-mode=bogus -> exit 1 + message stderr
+
+RESULTAT : 22 reussi, 0 echec(s)
+```
+
+### Bilan
+
+C2-A satisfait les criteres de ROADMAP-CIBLE2.md : aucune regression en mode
+par defaut (test_fr.txt 3/13/72/3, compteurs qualite, NDJSON/array/aggregate,
+--summary-json, stdin, globs, exit codes 0/1, ASCII pur en pipe), nouvelles
+options fonctionnelles et golden-teste, CSV v2 (rupture documentee) en place,
+version 2.3.0. B et C (n-grams, histogrammes, lisibilite) restent a venir.

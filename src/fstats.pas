@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.2.0 (Sécurisée)
+  Version    : 2.3.0 (Sécurisée)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -95,7 +95,10 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.2.0';
+  FSTATS_VERSION = '2.3.0';
+
+  // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
+  DEFAULT_MAX_UNIQUE = 100000;
 
 {=============================================================================
   VARIABLES GLOBALES DE CONTRÔLE D'AFFICHAGE
@@ -108,6 +111,12 @@ var
 
   // Mémoire de l'état de la sortie standard au démarrage (console vs pipe/fichier)
   StdOutIsConsole: Boolean = False;
+
+  // Limites Top par section (--top-words=N / --top-chars=N, C2-A). Déclarées
+  // ici (avant les fonctions d'export) car utilisées par ExportCSV,
+  // ExportJSON et BuildJSONCompact ; 0 = tous (équivalent à --all).
+  TopWordsLimit: Integer = DEFAULT_TOP_LIMIT;
+  TopCharsLimit: Integer = DEFAULT_TOP_LIMIT;
 
 {=============================================================================
   PROCÉDURE DE CONFIGURATION CONSOLE WINDOWS
@@ -178,12 +187,32 @@ type
     NonPrintable: Int64;             // Contrôles (U+0000..U+001F, U+007F) hors LF/CR/TAB
     Freq: TCharFreqArray;            // Tableau des fréquences de caractères
     Words: TWordFreqArray;           // Tableau des fréquences de mots
+    UniqueWords: Int64;              // Types de mots stockés (plafonné --max-unique)
+    WordCharsTotal: Int64;           // Somme des longueurs (code points) de tous les tokens
     TopLines: TLineArray;            // Top N des lignes les plus longues
   end;
 
   // Mode d'export JSON multi-fichiers (--json-mode)
   // jmAuto : 1 fichier = objet unique (rétrocompatible), plusieurs = NDJSON
   TJsonMode = (jmAuto, jmNDJSON, jmArray, jmAggregate);
+
+  // Mode de tokenisation des mots (--word-mode, incrément C2-A)
+  TWordMode = (wmRaw, wmAscii, wmUnicode);
+
+  // Normalisation de casse des mots (--casefold, incrément C2-A)
+  TCaseFold = (cfAscii, cfUnicode, cfNone);
+
+  // Sous-format d'export CSV v2 (--csv=summary|words|chars, C2-A)
+  TCsvKind = (ckSummary, ckWords, ckChars);
+
+  // Statistiques lexicales calculées à la volée (--lexical-stats, C2-A)
+  TLexicalStats = record
+    UniqueWords: Int64;          // Types de mots stockés (plafonné --max-unique)
+    Hapax: Int64;                // Types à fréquence exactement 1
+    TypeTokenRatio: Double;      // UniqueWords / WordCount (TTR)
+    AverageWordLength: Double;   // Somme longueurs des tokens / WordCount
+    EntropyBitsPerWord: Double;  // -Σ p_i log2 p_i sur les types du mode courant
+  end;
 
   // Dictionnaires hashés pour une insertion/recherche en O(1) - PERFORMANCE CRITIQUE
   // Sans cela, l'analyse de gros fichiers serait exponentiellement lente
@@ -997,18 +1026,106 @@ begin
 end;
 
 {=============================================================================
+  TOKENISATION LEXICALE (incrément C2-A) — modes de mots et repli de casse
+  =============================================================================
+  --word-mode=raw    : comportement historique (mot = code point > 0x20,
+                       ponctuation incluse, espaces/contrôles = séparateurs)
+  --word-mode=ascii  : mot = suite de [A-Za-z0-9_], tout le reste sépare
+  --word-mode=unicode: mot = suite de lettres/chiffres Unicode (périmètre
+                       ci-dessous), ponctuation sépare
+  --casefold=ascii   : minuscules ASCII (comportement historique)
+  --casefold=unicode : minuscules ASCII + table basique d'accents
+                       (français/allemand : Latin-1 accentués, Œ→œ, Ÿ→ÿ, ẞ→ß)
+  --casefold=none    : casse conservée
+  Le périmètre exact est documenté dans le README (« Sémantique lexicale »).
+  =============================================================================}
+
+{-----------------------------------------------------------------------------
+  IsAsciiWordChar : Vrai si CP est un caractère de mot du mode ascii.
+  Définition figée : [A-Za-z0-9_].
+  -----------------------------------------------------------------------------}
+function IsAsciiWordChar(CP: UInt32): Boolean;
+begin
+  Result := ((CP >= $30) and (CP <= $39)) or   // 0-9
+            ((CP >= $41) and (CP <= $5A)) or   // A-Z
+            ((CP >= $61) and (CP <= $7A)) or   // a-z
+            (CP = $5F);                        // _
+end;
+
+{-----------------------------------------------------------------------------
+  IsUnicodeWordChar : Vrai si CP est une lettre ou un chiffre Unicode du
+  périmètre documenté : chiffres ASCII, lettres ASCII, Latin-1 (hors × ÷),
+  Latin étendu A/B, API (alphabet phonétique), marques combinantes (restent
+  attachées à la lettre), grec (hors point-virgule grec), cyrillique, latin
+  étendu additionnel, chiffres arabo-indiens/étendus. Tout le reste
+  (ponctuation, symboles, blancs) sépare les mots.
+  -----------------------------------------------------------------------------}
+function IsUnicodeWordChar(CP: UInt32): Boolean;
+begin
+  Result := False;
+  if (CP >= $30) and (CP <= $39) then Exit(True);     // 0-9
+  if (CP >= $41) and (CP <= $5A) then Exit(True);     // A-Z
+  if (CP >= $61) and (CP <= $7A) then Exit(True);     // a-z
+  if (CP >= $C0) and (CP <= $D6) then Exit(True);     // Latin-1 (hors ×)
+  if (CP >= $D8) and (CP <= $F6) then Exit(True);     // Latin-1 (hors ÷)
+  if (CP >= $F8) and (CP <= $24F) then Exit(True);    // Latin étendu A/B
+  if (CP >= $250) and (CP <= $2AF) then Exit(True);   // API
+  if (CP >= $300) and (CP <= $36F) then Exit(True);   // Marques combinantes
+  if (CP >= $370) and (CP <= $3FF) and (CP <> $37E) then Exit(True); // Grec
+  if (CP >= $400) and (CP <= $4FF) then Exit(True);   // Cyrillique
+  if (CP >= $1E00) and (CP <= $1EFF) then Exit(True); // Latin étendu additionnel
+  if (CP >= $660) and (CP <= $669) then Exit(True);   // Chiffres arabo-indiens
+  if (CP >= $6F0) and (CP <= $6F9) then Exit(True);   // Chiffres arabes étendus
+end;
+
+{-----------------------------------------------------------------------------
+  FoldChar : Repli de casse d'un code point selon --casefold.
+  cfAscii   : A-Z -> a-z uniquement (comportement historique).
+  cfUnicode : cfAscii + Latin-1 accentués (À..Þ -> à..þ, +$20), Œ->œ, Ÿ->ÿ,
+              ẞ->ß. Table limitée : pas de folding Unicode complet (RTL FPC).
+  cfNone    : identité (casse conservée).
+  -----------------------------------------------------------------------------}
+function FoldChar(CP: UInt32; CaseFold: TCaseFold): UInt32;
+begin
+  Result := CP;
+  case CaseFold of
+    cfNone: ;
+    cfAscii:
+      if (CP >= $41) and (CP <= $5A) then Result := CP + $20;
+    cfUnicode:
+      begin
+        if (CP >= $41) and (CP <= $5A) then
+          Result := CP + $20
+        else if (CP >= $C0) and (CP <= $D6) then
+          Result := CP + $20
+        else if (CP >= $D8) and (CP <= $DE) then
+          Result := CP + $20
+        else if CP = $152 then
+          Result := $153         // Œ -> œ
+        else if CP = $178 then
+          Result := $FF          // Ÿ -> ÿ
+        else if CP = $1E9E then
+          Result := $DF;         // ẞ -> ß
+      end;
+  end;
+end;
+
+{=============================================================================
   ANALYSE PRINCIPALE - CŒUR DU PROGRAMME
   =============================================================================
   Objectif : Analyser un fichier et remplir la structure TStats
   Performance : Utilisation de dictionnaires hashés pour O(1) par opération
   Sécurité : Gestion robuste des erreurs de lecture, validation UTF-8 stricte
   =============================================================================}
-procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats; OptAll: Boolean);
+procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats;
+                      OptAll: Boolean; WordMode: TWordMode; CaseFoldMode: TCaseFold;
+                      MaxUnique: Int64);
 var
   Buffer: array[0..BUF_SIZE - 1] of Byte;
   ReadBytes, Pos, Used, i: Integer;
   CP: UInt32;
   InWord: Boolean;
+  IsWordChar: Boolean;
   CurrentWord, CurrentLine: string;
   LineLen, TotalLen, NonEmpty: Int64;
   LastCPWasCR: Boolean;
@@ -1022,6 +1139,24 @@ var
   PairW: TWordPair;
   Count: Int64;
   MaxLines: Integer;  // 0 = mode --all, sinon limite Top N
+
+  // Clôture le token courant : mise à jour des fréquences (sous la borne
+  // --max-unique) et des compteurs. Un token jamais stocké compte quand même
+  // dans WordCount et WordCharsTotal (sémantique documentée : unique_words
+  // plafonné, non exhaustif).
+  procedure FlushWord;
+  var
+    C: Int64;
+  begin
+    if WordDict.TryGetValue(CurrentWord, C) then
+      WordDict[CurrentWord] := C + 1
+    else if WordDict.Count < MaxUnique then
+      WordDict.Add(CurrentWord, 1);
+    Inc(Stats.WordCount);
+    Inc(Stats.WordCharsTotal, UTF8Length(CurrentWord));
+    CurrentWord := '';
+    InWord := False;
+  end;
 begin
   // Initialisation de la structure de sortie
   Stats.Path := Path;
@@ -1047,6 +1182,8 @@ begin
   Stats.CRLF := 0;
   Stats.Tabs := 0;
   Stats.NonPrintable := 0;
+  Stats.UniqueWords := 0;      // Types de mots stockés (rempli en fin d'analyse)
+  Stats.WordCharsTotal := 0;   // Somme des longueurs de tous les tokens
   FirstChar := True;
   InWord := False;
   CurrentWord := '';
@@ -1146,16 +1283,7 @@ begin
           LastCPWasCR := (CP = 13);
 
           // Fin de mot si on était dans un mot
-          if InWord then
-          begin
-            if WordDict.TryGetValue(CurrentWord, Count) then
-              WordDict[CurrentWord] := Count + 1
-            else
-              WordDict.Add(CurrentWord, 1);
-            Inc(Stats.WordCount);
-            CurrentWord := '';
-            InWord := False;
-          end;
+          if InWord then FlushWord;
         end
         else
         begin
@@ -1164,30 +1292,26 @@ begin
           CurrentLine := CurrentLine + VisualChar(CP);  // Ajouter à la ligne courante
           Inc(LineLen);
 
-          // Détection des séparateurs de mots (caractères de contrôle ou espace)
-          if (CP <= $20) or (CP = $FFFD) then
+          // Détection des caractères de mot selon --word-mode ; tout le reste
+          // (blancs, contrôles, ponctuation selon le mode) sépare les mots.
+          IsWordChar := False;
+          case WordMode of
+            wmRaw:     IsWordChar := (CP > $20) and (CP <> $FFFD);
+            wmAscii:   IsWordChar := IsAsciiWordChar(CP);
+            wmUnicode: IsWordChar := IsUnicodeWordChar(CP);
+          end;
+
+          if not IsWordChar then
           begin
-            if InWord then
-            begin
-              // Fin de mot : l'ajouter au dictionnaire
-              if WordDict.TryGetValue(CurrentWord, Count) then
-                WordDict[CurrentWord] := Count + 1
-              else
-                WordDict.Add(CurrentWord, 1);
-              Inc(Stats.WordCount);
-              CurrentWord := '';
-              InWord := False;
-            end;
+            // Séparateur : clôt le mot courant s'il y en a un
+            if InWord then FlushWord;
           end
           else
           begin
-            // Caractère faisant partie d'un mot
+            // Caractère faisant partie d'un mot : repli de casse appliqué
+            // AVANT l'encodage UTF-8 (--casefold)
             InWord := True;
-            // Normalisation : minuscules pour ASCII < 128 (case-insensitive)
-            if CP < 128 then
-              CurrentWord := CurrentWord + LowerCase(VisualChar(CP))
-            else
-              CurrentWord := CurrentWord + VisualChar(CP);
+            CurrentWord := CurrentWord + VisualChar(FoldChar(CP, CaseFoldMode));
           end;
         end;
       end;
@@ -1205,14 +1329,7 @@ begin
     end;
 
     // Traitement du dernier mot si le fichier ne termine pas par un séparateur
-    if InWord and (CurrentWord <> '') then
-    begin
-      if WordDict.TryGetValue(CurrentWord, Count) then
-        WordDict[CurrentWord] := Count + 1
-      else
-        WordDict.Add(CurrentWord, 1);
-      Inc(Stats.WordCount);
-    end;
+    if InWord then FlushWord;
 
     // Phrase finale : si le fichier se termine avec du contenu non-blanc
     // après le dernier terminateur, on compte une phrase supplémentaire.
@@ -1237,6 +1354,9 @@ begin
       Stats.Words[i].Count := PairW.Value;
       Inc(i);
     end;
+
+    // Nombre de types de mots stockés (plafonné par --max-unique le cas échéant)
+    Stats.UniqueWords := WordDict.Count;
 
   finally
     // Nettoyage obligatoire des ressources (mémoire ; le flux d'entrée est
@@ -1276,13 +1396,14 @@ end;
   Erreurs  : lève EFOpenError/EInOutError si le fichier est inaccessible
              (interceptées par l'appelant pour un message clair).
   -----------------------------------------------------------------------------}
-procedure AnalyzeFile(const Path: string; out Stats: TStats; OptAll: Boolean);
+procedure AnalyzeFile(const Path: string; out Stats: TStats; OptAll: Boolean;
+                      WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64);
 var
   FS: TFileStream;
 begin
   FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
   try
-    AnalyzeData(Path, FS, Stats, OptAll);
+    AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
   finally
     FS.Free;
   end;
@@ -1293,15 +1414,104 @@ end;
   Path affiché : 'stdin'. THandleStream ne possède pas le handle : il n'est
   donc pas fermé ici.
   -----------------------------------------------------------------------------}
-procedure AnalyzeStdin(out Stats: TStats; OptAll: Boolean);
+procedure AnalyzeStdin(out Stats: TStats; OptAll: Boolean;
+                       WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64);
 var
   HS: THandleStream;
 begin
   HS := THandleStream.Create(StdInputHandle);
   try
-    AnalyzeData('stdin', HS, Stats, OptAll);
+    AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
   finally
     HS.Free;
+  end;
+end;
+
+{=============================================================================
+  STATISTIQUES LEXICALES (incrément C2-A) — calcul et formatage
+  =============================================================================
+  --lexical-stats ajoute : unique_words, hapax, type_token_ratio,
+  average_word_length, entropy_bits_per_word. Formules figées dans le README
+  (« Sémantique lexicale »).
+  =============================================================================}
+
+{-----------------------------------------------------------------------------
+  FormatFloatTrim : Formate un Double avec au plus Decimals décimales, en
+  tronquant les zéros de fin, avec '.' comme séparateur décimal — indépendant
+  de la locale (JSON valide, console ASCII). Ex. : 0.9230769 -> "0.923077".
+  -----------------------------------------------------------------------------}
+function FormatFloatTrim(V: Double; Decimals: Integer): string;
+var
+  Scale, IVal, IntP, FracP: Int64;
+  FracS: string;
+  k: Integer;
+begin
+  if V = 0 then Exit('0');
+  if V < 0 then V := -V;   // Les métriques lexicales sont non négatives
+  Scale := 1;
+  for k := 1 to Decimals do Scale := Scale * 10;
+  IVal := Round(V * Scale);
+  IntP := IVal div Scale;
+  FracP := IVal mod Scale;
+  FracS := IntToStr(FracP);
+  while Length(FracS) < Decimals do FracS := '0' + FracS;
+  while (Length(FracS) > 0) and (FracS[Length(FracS)] = '0') do
+    Delete(FracS, Length(FracS), 1);
+  Result := IntToStr(IntP);
+  if FracS <> '' then Result := Result + '.' + FracS;
+end;
+
+{-----------------------------------------------------------------------------
+  EffectiveLimit : Nombre d'éléments d'une section à afficher/exporter.
+  ShowAll (--all) ou TopLimit <= 0 (--top-words=0 / --top-chars=0) : tout ;
+  sinon min(TopLimit, Total). Les valeurs calculées restent identiques.
+  -----------------------------------------------------------------------------}
+function EffectiveLimit(Total: Integer; ShowAll: Boolean; TopLimit: Integer): Integer;
+begin
+  if ShowAll or (TopLimit <= 0) then
+    Result := Total
+  else if TopLimit < Total then
+    Result := TopLimit
+  else
+    Result := Total;
+end;
+
+{-----------------------------------------------------------------------------
+  ComputeLexical : Calcule les statistiques lexicales depuis TStats.
+  Formules (README) : TTR = types/tokens ; hapax = types à fréquence 1 ;
+  longueur moyenne = code points par token ; entropie = -Σ p_i log2 p_i sur
+  les types du mode courant. Sous --max-unique, les valeurs portent sur le
+  jeu de types STOCKÉS (unique_words plafonné, non exhaustif — documenté).
+  -----------------------------------------------------------------------------}
+function ComputeLexical(const Stats: TStats): TLexicalStats;
+var
+  i: Integer;
+  P: Double;
+  Log2: Double;
+begin
+  Result.UniqueWords := Stats.UniqueWords;
+  Result.Hapax := 0;
+  for i := 0 to High(Stats.Words) do
+    if Stats.Words[i].Count = 1 then Inc(Result.Hapax);
+  if Stats.WordCount > 0 then
+  begin
+    Result.TypeTokenRatio := Stats.UniqueWords / Stats.WordCount;
+    Result.AverageWordLength := Stats.WordCharsTotal / Stats.WordCount;
+  end
+  else
+  begin
+    Result.TypeTokenRatio := 0;
+    Result.AverageWordLength := 0;
+  end;
+  Result.EntropyBitsPerWord := 0;
+  if (Stats.WordCount > 0) and (Length(Stats.Words) > 0) then
+  begin
+    Log2 := Ln(2);
+    for i := 0 to High(Stats.Words) do
+    begin
+      P := Stats.Words[i].Count / Stats.WordCount;
+      Result.EntropyBitsPerWord := Result.EntropyBitsPerWord - P * (Ln(P) / Log2);
+    end;
   end;
 end;
 
@@ -1360,10 +1570,12 @@ begin
     Result := Name + ' (' + IntToStr(Limit) + ' of ' + IntToStr(Total) + ')';
 end;
 
-procedure PrintStats(const Stats: TStats; ShowChars, ShowWords, ShowLines, ShowAll: Boolean);
+procedure PrintStats(const Stats: TStats; ShowChars, ShowWords, ShowLines, ShowAll: Boolean;
+                     LexicalStats: Boolean; TopWordsLimit, TopCharsLimit: Integer);
 var
   i, Limit, Total, RankW: Integer;
   Title, Preview: string;
+  Lx: TLexicalStats;
 begin
   { En-tête : chemin du fichier et horodatage de génération (traçabilité) }
   WriteLn('File: ', Stats.Path);
@@ -1382,6 +1594,22 @@ begin
   WriteLn(Format('  Line length:  min %d, max %d, avg %d',
         [Stats.MinLen, Stats.MaxLen, Stats.AvgLen]));
   WriteLn;
+
+  { Section Lexical — affichée uniquement avec --lexical-stats (C2-A).
+    Métriques calculées à la volée depuis les fréquences du mode courant. }
+  if LexicalStats then
+  begin
+    Lx := ComputeLexical(Stats);
+    Title := 'Lexical';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn(SummaryLine('Unique words:', Lx.UniqueWords));
+    WriteLn(SummaryLine('Hapax:', Lx.Hapax));
+    WriteLn(SummaryLineText('Type-token ratio:', FormatFloatTrim(Lx.TypeTokenRatio, 4)));
+    WriteLn(SummaryLineText('Avg word length:', FormatFloatTrim(Lx.AverageWordLength, 4)));
+    WriteLn(SummaryLineText('Entropy:', FormatFloatTrim(Lx.EntropyBitsPerWord, 4)));
+    WriteLn;
+  end;
 
   { Section Quality — affichée uniquement si au moins un compteur qualité est
     non nul (ou BOM présent) : la sortie reste identique pour les fichiers
@@ -1407,9 +1635,7 @@ begin
   if ShowChars and (Length(Stats.Freq) > 0) then
   begin
     Total := Length(Stats.Freq);
-    Limit := Total;
-    if (not ShowAll) and (Limit > DEFAULT_TOP_LIMIT) then
-      Limit := DEFAULT_TOP_LIMIT;
+    Limit := EffectiveLimit(Total, ShowAll, TopCharsLimit);
     RankW := Length(IntToStr(Limit));
     if RankW < 2 then RankW := 2;
 
@@ -1433,9 +1659,7 @@ begin
   if ShowWords and (Length(Stats.Words) > 0) then
   begin
     Total := Length(Stats.Words);
-    Limit := Total;
-    if (not ShowAll) and (Limit > DEFAULT_TOP_LIMIT) then
-      Limit := DEFAULT_TOP_LIMIT;
+    Limit := EffectiveLimit(Total, ShowAll, TopWordsLimit);
     RankW := Length(IntToStr(Limit));
     if RankW < 2 then RankW := 2;
 
@@ -1537,9 +1761,10 @@ begin
   end;
 end;
 
-procedure ExportJSON(const Stats: TStats; ShowAll: Boolean);
+procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean);
 var
   i, Limit: Integer;
+  Lx: TLexicalStats;
 begin
   WriteLn('{');
   WriteLn('  "file": "', JsonEscape(Stats.Path), '",');
@@ -1570,10 +1795,23 @@ begin
   WriteLn('    "nonprintable": ', Stats.NonPrintable);
   WriteLn('  },');
 
+  // Statistiques lexicales (--lexical-stats) : clés additionnelles — ajout
+  // additif, les clés existantes sont inchangées
+  if LexicalStats then
+  begin
+    Lx := ComputeLexical(Stats);
+    WriteLn('  "lexical": {');
+    WriteLn('    "unique_words": ', Lx.UniqueWords, ',');
+    WriteLn('    "hapax": ', Lx.Hapax, ',');
+    WriteLn('    "type_token_ratio": ', FormatFloatTrim(Lx.TypeTokenRatio, 6), ',');
+    WriteLn('    "average_word_length": ', FormatFloatTrim(Lx.AverageWordLength, 6), ',');
+    WriteLn('    "entropy_bits_per_word": ', FormatFloatTrim(Lx.EntropyBitsPerWord, 6));
+    WriteLn('  },');
+  end;
+
   // Top Characters
   Write('  "top_characters": [');
-  Limit := High(Stats.Freq); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.Freq), ShowAll, TopCharsLimit) - 1;
   for i := 0 to Limit do
   begin
     if i > 0 then Write(',');
@@ -1588,8 +1826,7 @@ begin
 
   // Top Words
   Write('  "top_words": [');
-  Limit := High(Stats.Words); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.Words), ShowAll, TopWordsLimit) - 1;
   for i := 0 to Limit do
   begin
     if i > 0 then Write(',');
@@ -1603,8 +1840,7 @@ begin
 
   // Longest Lines
   Write('  "longest_lines": [');
-  Limit := High(Stats.TopLines); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.TopLines), ShowAll, DEFAULT_TOP_LIMIT) - 1;
   for i := 0 to Limit do
   begin
     if i > 0 then Write(',');
@@ -1630,12 +1866,11 @@ end;
   BuildTopCharsJSON : Tableau JSON compact des caractères les plus fréquents
   (une seule ligne, pour NDJSON / array / aggregate).
   -----------------------------------------------------------------------------}
-function BuildTopCharsJSON(const Stats: TStats; ShowAll: Boolean): string;
+function BuildTopCharsJSON(const Stats: TStats; ShowAll: Boolean; TopLimit: Integer): string;
 var
   i, Limit: Integer;
 begin
-  Limit := High(Stats.Freq);
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.Freq), ShowAll, TopLimit) - 1;
   Result := '[';
   for i := 0 to Limit do
   begin
@@ -1651,12 +1886,11 @@ end;
 {-----------------------------------------------------------------------------
   BuildTopWordsJSON : Tableau JSON compact des mots les plus fréquents.
   -----------------------------------------------------------------------------}
-function BuildTopWordsJSON(const Stats: TStats; ShowAll: Boolean): string;
+function BuildTopWordsJSON(const Stats: TStats; ShowAll: Boolean; TopLimit: Integer): string;
 var
   i, Limit: Integer;
 begin
-  Limit := High(Stats.Words);
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.Words), ShowAll, TopLimit) - 1;
   Result := '[';
   for i := 0 to Limit do
   begin
@@ -1675,8 +1909,7 @@ function BuildTopLinesJSON(const Stats: TStats; ShowAll: Boolean): string;
 var
   i, Limit: Integer;
 begin
-  Limit := High(Stats.TopLines);
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
+  Limit := EffectiveLimit(Length(Stats.TopLines), ShowAll, DEFAULT_TOP_LIMIT) - 1;
   Result := '[';
   for i := 0 to Limit do
   begin
@@ -1692,9 +1925,10 @@ end;
   BuildJSONCompact : Objet JSON complet sur UNE ligne (NDJSON, éléments des
   modes array/aggregate). Structure identique à ExportJSON (pretty).
   -----------------------------------------------------------------------------}
-function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean): string;
+function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean): string;
 var
   S: string;
+  Lx: TLexicalStats;
 begin
   S := '{"file": "' + JsonEscape(Stats.Path) + '"';
   S := S + ', "generated": "' + JsonEscape(CurrentStamp) + '"';
@@ -1717,8 +1951,17 @@ begin
   S := S + ', "crlf": ' + IntToStr(Stats.CRLF);
   S := S + ', "tabs": ' + IntToStr(Stats.Tabs);
   S := S + ', "nonprintable": ' + IntToStr(Stats.NonPrintable) + '}';
-  S := S + ', "top_characters": ' + BuildTopCharsJSON(Stats, ShowAll);
-  S := S + ', "top_words": ' + BuildTopWordsJSON(Stats, ShowAll);
+  if LexicalStats then
+  begin
+    Lx := ComputeLexical(Stats);
+    S := S + ', "lexical": {"unique_words": ' + IntToStr(Lx.UniqueWords);
+    S := S + ', "hapax": ' + IntToStr(Lx.Hapax);
+    S := S + ', "type_token_ratio": ' + FormatFloatTrim(Lx.TypeTokenRatio, 6);
+    S := S + ', "average_word_length": ' + FormatFloatTrim(Lx.AverageWordLength, 6);
+    S := S + ', "entropy_bits_per_word": ' + FormatFloatTrim(Lx.EntropyBitsPerWord, 6) + '}';
+  end;
+  S := S + ', "top_characters": ' + BuildTopCharsJSON(Stats, ShowAll, TopCharsLimit);
+  S := S + ', "top_words": ' + BuildTopWordsJSON(Stats, ShowAll, TopWordsLimit);
   S := S + ', "longest_lines": ' + BuildTopLinesJSON(Stats, ShowAll);
   S := S + '}';
   Result := S;
@@ -1728,9 +1971,10 @@ end;
   BuildSummaryJSON : Objet JSON PLAT par fichier (--summary-json), conçu
   pour les scripts/jq : compteurs et métriques en champs de premier niveau.
   -----------------------------------------------------------------------------}
-function BuildSummaryJSON(const Stats: TStats): string;
+function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean): string;
 var
   S: string;
+  Lx: TLexicalStats;
 begin
   S := '{"file": "' + JsonEscape(Stats.Path) + '"';
   S := S + ', "tool": "fstats"';
@@ -1749,6 +1993,15 @@ begin
   S := S + ', "crlf": ' + IntToStr(Stats.CRLF);
   S := S + ', "tabs": ' + IntToStr(Stats.Tabs);
   S := S + ', "nonprintable": ' + IntToStr(Stats.NonPrintable);
+  if LexicalStats then
+  begin
+    Lx := ComputeLexical(Stats);
+    S := S + ', "unique_words": ' + IntToStr(Lx.UniqueWords);
+    S := S + ', "hapax": ' + IntToStr(Lx.Hapax);
+    S := S + ', "type_token_ratio": ' + FormatFloatTrim(Lx.TypeTokenRatio, 6);
+    S := S + ', "average_word_length": ' + FormatFloatTrim(Lx.AverageWordLength, 6);
+    S := S + ', "entropy_bits_per_word": ' + FormatFloatTrim(Lx.EntropyBitsPerWord, 6);
+  end;
   S := S + '}';
   Result := S;
 end;
@@ -1803,44 +2056,67 @@ begin
     Result := CleanS;
 end;
 
-procedure ExportCSV(const Stats: TStats; ShowAll: Boolean);
+procedure ExportCSV(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
+                    CsvKind: TCsvKind);
 var
   i, Limit: Integer;
+  Lx: TLexicalStats;
 begin
-  // En-tête CSV avec noms de colonnes explicites
-  WriteLn('metric,rank,value,code_point,count');
-  
-  // Characters
-  Limit := High(Stats.Freq); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
-  for i := 0 to Limit do
-    WriteLn('character,', i+1, ',',
-            CsvEscape(VisualChar(Stats.Freq[i].CodePoint)), ',',
-            UnicodeCode(Stats.Freq[i].CodePoint), ',',
-            Stats.Freq[i].Count);
-            
-  // Words
-  Limit := High(Stats.Words); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
-  for i := 0 to Limit do
-    WriteLn('word,', i+1, ',',
-            CsvEscape(Stats.Words[i].Word), ',,',
-            Stats.Words[i].Count);
-    
-  // Lines
-  Limit := High(Stats.TopLines); 
-  if (not ShowAll) and (Limit > 9) then Limit := 9;
-  for i := 0 to Limit do
-    WriteLn('line,', i+1, ',',
-            CsvEscape(Stats.TopLines[i].Text), ',,',
-            Stats.TopLines[i].Len);
+  // CSV v2 (C2-A) : en-tête fixe file,type,rank,value,code_point,count,length.
+  // Rupture assumée et documentée (README) par rapport au format v1 :
+  //  - --csv=summary : une ligne par métrique (value = nom, count = valeur)
+  //  - --csv=words   : une ligne par mot du top (length = code points)
+  //  - --csv=chars   : une ligne par caractère du top (length = 1)
+  // Les valeurs calculées restent strictement identiques au mode console/JSON.
+  WriteLn('file,type,rank,value,code_point,count,length');
 
-  // Phrases : résumé ajouté en fin de fichier (l'en-tête CSV est inchangé)
-  WriteLn('sentence_count,,', Stats.SentenceCount, ',,');
-  WriteLn('avg_words_per_sentence,,', Stats.AvgWordsPerSentence, ',,');
-  // Traçabilité : fichier source et horodatage de génération
-  WriteLn('source_file,,', CsvEscape(Stats.Path), ',,');
-  WriteLn('generated,,', CsvEscape(CurrentStamp), ',,');
+  case CsvKind of
+    ckSummary:
+      begin
+        WriteLn(CsvEscape(Stats.Path), ',summary,,lines,,', Stats.LineCount, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,words,,', Stats.WordCount, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,characters,,', Stats.CharCount, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,sentences,,', Stats.SentenceCount, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,avg_words_per_sentence,,', Stats.AvgWordsPerSentence, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,line_min,,', Stats.MinLen, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,line_max,,', Stats.MaxLen, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,line_avg,,', Stats.AvgLen, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,invalid_utf8,,', Stats.InvalidUTF8, ',');
+        if Stats.BOM then
+          WriteLn(CsvEscape(Stats.Path), ',summary,,bom,,1,')
+        else
+          WriteLn(CsvEscape(Stats.Path), ',summary,,bom,,0,');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,crlf,,', Stats.CRLF, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,tabs,,', Stats.Tabs, ',');
+        WriteLn(CsvEscape(Stats.Path), ',summary,,nonprintable,,', Stats.NonPrintable, ',');
+        if LexicalStats then
+        begin
+          Lx := ComputeLexical(Stats);
+          WriteLn(CsvEscape(Stats.Path), ',summary,,unique_words,,', Lx.UniqueWords, ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,hapax,,', Lx.Hapax, ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,type_token_ratio,,', FormatFloatTrim(Lx.TypeTokenRatio, 6), ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,average_word_length,,', FormatFloatTrim(Lx.AverageWordLength, 6), ',');
+          WriteLn(CsvEscape(Stats.Path), ',summary,,entropy_bits_per_word,,', FormatFloatTrim(Lx.EntropyBitsPerWord, 6), ',');
+        end;
+      end;
+    ckChars:
+      begin
+        Limit := EffectiveLimit(Length(Stats.Freq), ShowAll, TopCharsLimit);
+        for i := 0 to Limit - 1 do
+          WriteLn(CsvEscape(Stats.Path), ',character,', i + 1, ',',
+                  CsvEscape(VisualChar(Stats.Freq[i].CodePoint)), ',',
+                  UnicodeCode(Stats.Freq[i].CodePoint), ',',
+                  Stats.Freq[i].Count, ',1');
+      end;
+    ckWords:
+      begin
+        Limit := EffectiveLimit(Length(Stats.Words), ShowAll, TopWordsLimit);
+        for i := 0 to Limit - 1 do
+          WriteLn(CsvEscape(Stats.Path), ',word,', i + 1, ',',
+                  CsvEscape(Stats.Words[i].Word), ',,',
+                  Stats.Words[i].Count, ',', UTF8Length(Stats.Words[i].Word));
+      end;
+  end;
 end;
 
 {-----------------------------------------------------------------------------
@@ -1872,12 +2148,20 @@ begin
   WriteLn(Out, '  --line            Stats de lignes uniquement');
   WriteLn(Out, '  --all             Toutes les donnees (pas de limite Top 10)');
   WriteLn(Out);
+  WriteLn(Out, 'Analyse lexicale (v2.3.0) :');
+  WriteLn(Out, '  --word-mode=MODE  raw | ascii | unicode (tokenisation des mots)');
+  WriteLn(Out, '  --casefold=MODE   ascii | unicode | none (repli de casse)');
+  WriteLn(Out, '  --lexical-stats   Unique, hapax, TTR, longueur moy., entropie');
+  WriteLn(Out, '  --top-words=N     Limite de la section mots (0 = tous)');
+  WriteLn(Out, '  --top-chars=N     Limite de la section caracteres (0 = tous)');
+  WriteLn(Out, '  --max-unique=N    Borne memoire des types de mots (def. 100000)');
+  WriteLn(Out);
   WriteLn(Out, 'Formats d''export :');
   WriteLn(Out, '  --json            Export JSON : 1 fichier = objet unique,');
   WriteLn(Out, '                    plusieurs = NDJSON (1 objet par ligne)');
   WriteLn(Out, '  --json-mode=MODE  ndjson | array | aggregate (avec --json)');
   WriteLn(Out, '  --summary-json    Objet JSON plat par fichier (scripts/jq)');
-  WriteLn(Out, '  --csv             Export CSV (stdout ou --out=FICHIER)');
+  WriteLn(Out, '  --csv[=MODE]      Export CSV v2 : summary (defaut) | words | chars');
   WriteLn(Out, '  --out=FICHIER     Rediriger la sortie vers un fichier');
   WriteLn(Out, '  --quiet           Pas de confirmation console avec --out');
   WriteLn(Out);
@@ -1917,6 +2201,12 @@ var
   V: string;
   Code: Integer;
   TotalFiles, TotalLines, TotalWords, TotalChars, TotalSentences: Int64;
+  // Options d'analyse lexicale (incrément C2-A)
+  WordMode: TWordMode;         // --word-mode (raw par défaut)
+  CaseFoldMode: TCaseFold;     // --casefold (ascii par défaut)
+  CsvKind: TCsvKind;           // --csv=summary|words|chars
+  OptLexicalStats: Boolean;    // --lexical-stats
+  MaxUnique: Int64;            // --max-unique=N (borne mémoire des types)
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -1962,6 +2252,14 @@ begin
   JsonModeExplicit := False;
   MaxDepth := -1;
   HadError := False;
+  // Analyse lexicale (C2-A) : défauts = comportement historique strict
+  WordMode := wmRaw;
+  CaseFoldMode := cfAscii;
+  CsvKind := ckSummary;
+  OptLexicalStats := False;
+  TopWordsLimit := DEFAULT_TOP_LIMIT;
+  TopCharsLimit := DEFAULT_TOP_LIMIT;
+  MaxUnique := DEFAULT_MAX_UNIQUE;
 
   OutFileName := '';  // Pas de redirection de sortie par défaut
 
@@ -1994,7 +2292,23 @@ begin
       else if Param = '--json' then
         OptJSON := True
       else if Param = '--csv' then
-        OptCSV := True
+      begin
+        OptCSV := True;
+        CsvKind := ckSummary;  // --csv seul = summary (rétro-compat du drapeau)
+      end
+      else if (Copy(Param, 1, 6) = '--csv=') or (Copy(Param, 1, 6) = '--csv:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 7, Length(ParamOrig)));
+        if V = 'summary' then CsvKind := ckSummary
+        else if V = 'words' then CsvKind := ckWords
+        else if V = 'chars' then CsvKind := ckChars
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --csv attend "summary", "words" ou "chars" (reçu "', V, '")');
+          Halt(1);
+        end;
+        OptCSV := True;
+      end
       else if Param = '--summary-json' then
         OptSummaryJSON := True
 
@@ -2109,6 +2423,89 @@ begin
       else if Param = '--json-mode' then
       begin
         WriteLn(ErrOutput, 'Erreur: utilisez --json-mode=ndjson|array|aggregate');
+        Halt(1);
+      end
+
+      // Analyse lexicale (incrément C2-A)
+      else if (Copy(Param, 1, 12) = '--word-mode=') or (Copy(Param, 1, 12) = '--word-mode:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 13, Length(ParamOrig)));
+        if V = 'raw' then WordMode := wmRaw
+        else if V = 'ascii' then WordMode := wmAscii
+        else if V = 'unicode' then WordMode := wmUnicode
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --word-mode attend "raw", "ascii" ou "unicode" (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--word-mode' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --word-mode=raw|ascii|unicode');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 11) = '--casefold=') or (Copy(Param, 1, 11) = '--casefold:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 12, Length(ParamOrig)));
+        if V = 'ascii' then CaseFoldMode := cfAscii
+        else if V = 'unicode' then CaseFoldMode := cfUnicode
+        else if V = 'none' then CaseFoldMode := cfNone
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --casefold attend "ascii", "unicode" ou "none" (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--casefold' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --casefold=ascii|unicode|none');
+        Halt(1);
+      end
+      else if Param = '--lexical-stats' then
+        OptLexicalStats := True
+      else if (Copy(Param, 1, 12) = '--top-words=') or (Copy(Param, 1, 12) = '--top-words:') then
+      begin
+        V := Copy(ParamOrig, 13, Length(ParamOrig));
+        Val(V, TopWordsLimit, Code);
+        if (Code <> 0) or (TopWordsLimit < 0) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --top-words attend un entier >= 0 (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--top-words' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --top-words=N (0 = tous)');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 12) = '--top-chars=') or (Copy(Param, 1, 12) = '--top-chars:') then
+      begin
+        V := Copy(ParamOrig, 13, Length(ParamOrig));
+        Val(V, TopCharsLimit, Code);
+        if (Code <> 0) or (TopCharsLimit < 0) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --top-chars attend un entier >= 0 (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--top-chars' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --top-chars=N (0 = tous)');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 13) = '--max-unique=') or (Copy(Param, 1, 13) = '--max-unique:') then
+      begin
+        V := Copy(ParamOrig, 14, Length(ParamOrig));
+        Val(V, MaxUnique, Code);
+        if (Code <> 0) or (MaxUnique < 1) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --max-unique attend un entier >= 1 (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--max-unique' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --max-unique=N (entier >= 1)');
         Halt(1);
       end
 
@@ -2269,22 +2666,22 @@ begin
       try
         // Analyse du fichier courant (ou de l'entrée standard)
         if Files[i] = 'stdin' then
-          AnalyzeStdin(Stats, OptAll)
+          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, MaxUnique)
         else
-          AnalyzeFile(Files[i], Stats, OptAll);
+          AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
 
         // Export selon le format demandé
         if OptSummaryJSON then
-          WriteLn(BuildSummaryJSON(Stats))
+          WriteLn(BuildSummaryJSON(Stats, OptLexicalStats))
         else if OptJSON then
         begin
           case JsonMode of
-            jmAuto:      ExportJSON(Stats, OptAll);
-            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll));
-            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll));
+            jmAuto:      ExportJSON(Stats, OptAll, OptLexicalStats);
+            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
+            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
             jmAggregate:
               begin
-                JsonParts.Add(BuildJSONCompact(Stats, OptAll));
+                JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats));
                 // Totaux cumulés pour l'objet aggregate
                 Inc(TotalFiles);
                 Inc(TotalLines, Stats.LineCount);
@@ -2295,9 +2692,10 @@ begin
           end;
         end
         else if OptCSV then
-          ExportCSV(Stats, OptAll)
+          ExportCSV(Stats, OptAll, OptLexicalStats, CsvKind)
         else
-          PrintStats(Stats, OptChar, OptWord, OptLine, OptAll);
+          PrintStats(Stats, OptChar, OptWord, OptLine, OptAll,
+                     OptLexicalStats, TopWordsLimit, TopCharsLimit);
 
         // Confirmation console de l'écriture, uniquement avec --out et sans
         // --quiet. Écrite sur ErrOutput pour ne jamais polluer le fichier de
