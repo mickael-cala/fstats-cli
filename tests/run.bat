@@ -65,7 +65,7 @@ if "%NODE_OK%"=="1" goto :node5
 echo SKIP: nd.json (node indisponible)
 goto :after5
 :node5
-node -e "var s=require('fs').readFileSync(0,'utf8');var L=s.trim().split(/\r?\n/);if(L.length===2){var a=JSON.parse(L[0]);var b=JSON.parse(L[1]);process.exit((a.quality.bom===true?0:1)+(b.quality.crlf===2?0:1));}else process.exit(1);" < "%TMPD%\nd.json"
+node -e "var s=require('fs').readFileSync(0,'utf8');var L=s.trim().split(/\r?\n/);if(L.length!==2){console.error('nd.json: '+L.length+' ligne(s), attendu 2');process.exit(1);}var a=JSON.parse(L[0]);var b=JSON.parse(L[1]);console.error('nd.json: bom='+a.quality.bom+' crlf='+b.quality.crlf+' (attendu true/2)');process.exit((a.quality.bom===true?0:1)+(b.quality.crlf===2?0:1));" < "%TMPD%\nd.json"
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: NDJSON : 2 fichiers -^> 2 lignes parseables [bom=true, crlf=2]) else (set /a PASS+=1&echo PASS: NDJSON : 2 fichiers -^> 2 lignes parseables [bom=true, crlf=2])
 :after5
 

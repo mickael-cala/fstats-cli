@@ -82,8 +82,9 @@ report "stdin + fichier : fstats - tests/fixtures/test_fr.txt -> exit 1 + messag
 node -e '
 var fs = require("fs");
 var lines = fs.readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/);
-if (lines.length !== 2) process.exit(1);
+if (lines.length !== 2) { console.error("nd.json: " + lines.length + " ligne(s), attendu 2"); process.exit(1); }
 var a = JSON.parse(lines[0]), b = JSON.parse(lines[1]);
+console.error("nd.json: bom=" + a.quality.bom + " crlf=" + b.quality.crlf + " (attendu true/2)");
 process.exit((a.quality.bom === true && b.quality.crlf === 2) ? 0 : 1);
 ' "$TMPDIR/nd.json"
 report "NDJSON : 2 fichiers -> 2 lignes, chacune parseable (bom=true, crlf=2)" $?
