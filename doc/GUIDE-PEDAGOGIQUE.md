@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.4.0`.
+Doit afficher quelque chose comme `fstats 2.5.0`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -181,6 +181,27 @@ C'est tout : **une commande, et tu sais l'essentiel d'un texte.**
 > `fstats --help` liste toutes les options, et le
 > [README](../README.md) donne la référence complète.
 
+### Évaluer la lisibilité d'un texte
+
+```
+fstats --readability test.txt
+```
+
+```
+Readability
+-----------
+  Avg sentence words:4.3333
+  Avg word chars: 4.6154
+  Pct long words:23.0769%
+  Score (0-100): 76.6239
+```
+
+Quatre indicateurs, sans rien installer : combien de mots par phrase en
+moyenne, combien de caractères par mot, la part de mots longs (7 caractères
+ou plus), et un score de 0 à 100 (plus c'est haut, plus c'est facile à lire).
+C'est une approximation **sans syllabes** — pas un Flesch-Kincaid exact — mais
+suffisante pour comparer deux versions d'un texte entre elles.
+
 ---
 
 ## 5. Comment fstats compte les choses
@@ -251,7 +272,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -264,7 +285,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -329,6 +350,45 @@ test.txt,summary,,characters,,72,
 ```
 
 Un fichier par ligne, ouvrable dans n'importe quel tableur.
+
+### f) La lisibilité d'un texte
+
+```
+fstats --readability test.txt
+```
+
+```
+Readability
+-----------
+  Avg sentence words:4.3333
+  Avg word chars: 4.6154
+  Pct long words:23.0769%
+  Score (0-100): 76.6239
+```
+
+- **Avg sentence words** : en moyenne, 4,3 mots par phrase — des phrases
+  courtes, faciles à suivre.
+- **Avg word chars** : 4,6 caractères par mot en moyenne (ponctuation
+  comprise, mode par défaut).
+- **Pct long words** : 23 % des mots font 7 caractères ou plus
+  (`exemple`, `simple.`, `Deuxième`).
+- **Score (0-100)** : 76,6 sur 100 — un texte plutôt facile à lire.
+
+Le score est calculé sans syllabes (formule documentée dans la
+[spécification technique](SEMANTIQUE.md)) : ce n'est pas un Flesch-Kincaid
+exact, mais il permet de comparer deux versions d'un texte :
+
+```
+fstats --readability --summary-json test.txt
+```
+
+```
+{"file": "test.txt", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+```
+
+> Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient
+> `deuxi` + `me` (le `è` n'est pas ASCII), donc `Avg word chars` et
+> `Pct long words` changent aussi (4.3077 et 7.6923% sur ce fichier).
 
 ---
 

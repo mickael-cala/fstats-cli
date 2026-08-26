@@ -390,4 +390,62 @@ par defaut (les 22 cas v2.3.0 passent inchanges, version 2.4.0), n-grams
 (goldens, non-traversee des lignes, top-K borne, stopwords fr/en), histogrammes
 (classes roadmap §6.6 + classes stables documentees, somme = ligne/mots/phrases),
 char-classes (conservation = characters, golden), agregation classe par classe,
-exit codes 0/1, ASCII pur en pipe. C2-C (lisibilite, optionnel) reste a venir.
+exit codes 0/1, ASCII pur en pipe. C2-C (lisibilité, optionnel) livré en
+v2.5.0 — voir section 10 ci-dessous.
+
+---
+
+## 10. Increment C2-C — lisibilite (v2.5.0)
+
+Date : 2026-08-26. Ajout de `--readability` (4 metriques + score 0-100 sans
+syllabes, formule figee dans SEMANTIQUE.md), bump `FSTATS_VERSION` 2.4.0 →
+2.5.0, nouvelle fixture `tests/fixtures/empty.txt` (0 octet).
+
+### 10.1 Compilation
+
+`fpc -O2 -Mobjfpc -FE. src\fstats.pas` : exit=0 (`3736 lines compiled`).
+
+### 10.2 Valeurs de reference (test_fr.txt, mode raw par defaut)
+
+Attendu (recalcul independant node) : ASL = 13/3 = 4.333333 ;
+ALW = 60/13 = 4.615385 ; longs = 3 tokens >= 7 (`exemple`, `simple.`,
+`Deuxieme`) = 23.076923% ; score =
+100*(1-(0.5*min(4.333333/30,1)+0.5*min((4.615385-3)/5,1))) = 76.623932.
+
+`fstats --readability --summary-json tests\fixtures\test_fr.txt` : exit=0,
+`avg_sentence_words: 4.333333`, `avg_word_chars: 4.615385`,
+`pct_long_words: 23.076923`, `readability_score: 76.623932` — verifie par
+node (epsilon 0.001) sur les 4 valeurs.
+
+Console : `Avg sentence words:4.3333 / Avg word chars: 4.6154 /
+Pct long words:23.0769% / Score (0-100): 76.6239`.
+
+`--word-mode=ascii` : `Avg word chars: 4.3077`, `Pct long words: 7.6923%`,
+score 79.7009 (`Deuxieme` → `deuxi` + `me`).
+
+### 10.3 Cas limites et combinaisons
+
+- Fichier vide (`empty.txt`) : toutes les metriques a 0, score 0, aucun NaN
+  (division par zero protegee).
+- `--readability --json` : bloc `readability` avec les 4 cles.
+- `--readability --lexical-stats` : blocs `lexical` ET `readability`
+  presentes (clés plates en summary-json).
+- `--readability --csv` : 4 lignes `summary,,avg_sentence_words/avg_word_chars/
+  pct_long_words/readability_score,,<v>,`.
+- `--json-mode=aggregate` : readability par fichier, PAS dans `totals`
+  (comme les n-grams).
+- Sortie pipee `--readability` : aucune sequence ANSI.
+
+### 10.4 Suites automatisees
+
+`tests\run.bat` : exit=0, **39/39 PASS**. `tests/run.sh` : exit=0, **39/39
+PASS**. Les 33 cas precedents passent inchanges (aucune regression du mode
+par defaut : test_fr.txt 3/13/72/3, moy 4, min/max/moy 16/30/23).
+
+### Bilan
+
+C2-C satisfait les criteres de ROADMAP-CIBLE2.md : metriques sur le mode
+courant, formule exacte documentee et fgee, pas de Flesch-Kincaid exact
+(mentionne au README), score borne [0,100], aucun NaN sur fichier vide,
+additif en JSON/CSV, ASCII pur, 39/39 sur les deux suites. Cible 2
+**complete**.

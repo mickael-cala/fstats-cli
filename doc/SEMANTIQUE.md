@@ -442,6 +442,52 @@ structures que par fichier). Les **n-grams ne sont pas agrégés** (limitation
 documentée) : `totals` ne contient pas de clé `ngrams` ; les n-grams restent
 présents dans chaque objet de `files`.
 
+## Sémantique de la lisibilité (v2.5.0)
+
+`--readability` ajoute 4 métriques calculées sur **le mode courant** (mêmes
+tokens que `--word-mode` + repli `--casefold`, cohérent avec `--lexical-stats`).
+Inspiré de Flesch mais **sans syllabes** (aucune détection de syllabes en
+français/anglais) : ce n'est pas un Flesch-Kincaid exact — mention explicite
+au README.
+
+### Métriques (formules exactes)
+
+- `avg_sentence_words` = `WordCount / SentenceCount` (flottant ; 0 si aucune
+  phrase). Ne pas confondre avec `avg_words_per_sentence` du Summary, qui est
+  la division **entière** (`div`).
+- `avg_word_chars` = `WordCharsTotal / WordCount` (0 si aucun mot) — même
+  valeur que `average_word_length` de `--lexical-stats`.
+- `pct_long_words` = `100 * LongWordCount / WordCount` (0 si aucun mot), où
+  `LongWordCount` = tokens de longueur **>= 7 code points** (constante
+  `LONG_WORD_MIN_LEN = 7`).
+- `score` (0-100, borné) :
+
+  ```
+  score = 100 * (1 - (0.5 * min(ASL/30, 1) + 0.5 * min(max(ALW-3, 0)/5, 1)))
+  ```
+
+  avec `ASL = avg_sentence_words` et `ALW = avg_word_chars`. Ancrages : une
+  phrase de 30+ mots en moyenne ou des mots de 8+ caractères en moyenne
+  annulent chacun la **moitié** du score. Un texte sans aucun mot (fichier
+  vide) a un score de 0 (rien à évaluer).
+
+### Clés de sortie
+
+- JSON pretty / NDJSON : bloc additif `readability` avec les 4 clés
+  (`avg_sentence_words`, `avg_word_chars`, `pct_long_words`, `score`),
+  6 décimales via `FormatFloatTrim`.
+- `--summary-json` : clés plates `avg_sentence_words`, `avg_word_chars`,
+  `pct_long_words`, `readability_score` en fin d'objet (6 décimales).
+- CSV `--csv=summary` : lignes `summary,,avg_sentence_words,,<v>,`,
+  `summary,,avg_word_chars,,<v>,`, `summary,,pct_long_words,,<v>,`,
+  `summary,,readability_score,,<v>,` (6 décimales).
+- Console : section `Readability` (4 lignes, 4 décimales, `%` sur
+  `Pct long words`).
+
+Comme les n-grams, la lisibilité **n'est pas agrégée** dans
+`--json-mode=aggregate` (présente par fichier uniquement — limitation
+assumée et documentée dans le code).
+
 ## Validation (texte de référence)
 
 `tests/fixtures/test_fr.txt` (3 lignes) : « Voici un exemple simple. / Deuxième

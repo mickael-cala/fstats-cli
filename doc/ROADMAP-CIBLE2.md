@@ -1,7 +1,7 @@
 # Roadmap Cible 2 — Corpus Profiler
 
-Statut : **C2-A et C2-B livrés** (v2.4.0, tests OK, 2026-08-26). C2-C
-(lisibilité, optionnel) à venir.
+Statut : **C2-A, C2-B et C2-C livrés** (v2.5.0, tests OK, 2026-08-26).
+Cible 2 complète.
 
 Positionnement : `fstats` explore un corpus texte : vocabulaire, n-grammes,
 distributions, export pour pandas/R/Excel.
@@ -69,12 +69,17 @@ mono-fichier, streaming et ASCII-pur.
 - `--char-classes` : `letters`/`digits`/`whitespace`/`punctuation`/`control`/
   `other` (JSON + console).
 
-### C2-C — Lisibilité (petite valeur ajoutée, optionnel)
+### C2-C — Lisibilité (petite valeur ajoutée, optionnel) — LIVRÉ (v2.5.0)
 
 - `--readability` : `avg_sentence_words`, `avg_word_chars`,
   `pct_long_words` (>= 7 caractères), score simple 0-100 (formule inspirée de
   Flesch, sans syllabes, documentée).
 - Pas de Flesch-Kincaid exact : le dire dans le README.
+- Livré : formule figée dans `doc/SEMANTIQUE.md` (« Sémantique de la
+  lisibilité ») ; 6 nouveaux cas dans les deux suites (39 au total) ;
+  `readability` en console, JSON pretty/NDJSON, `--summary-json` (clés
+  plates), CSV summary ; non agrégé en `--json-mode=aggregate` (comme les
+  n-grams).
 
 ## Sémantique à figer (dès C2-A)
 

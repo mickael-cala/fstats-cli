@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.4.0 · Free Pascal (mode objfpc) · MIT
+Version 2.5.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -44,6 +44,7 @@ fstats --json mon-fichier.txt   # export JSON
 | **Vocabulaire** | mots uniques, hapax, type-token ratio, longueur moyenne des mots, entropie |
 | **Répétitions** | n-grammes (1 à 5 mots), avec filtrage des mots vides (français/anglais) |
 | **Distribution** | histogrammes (longueur de ligne, de mot, mots par phrase), classes de caractères |
+| **Lisibilité** | mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7), score 0-100 (sans syllabes) |
 | **Export** | console alignée ASCII pur, JSON (objet / NDJSON / tableau / agrégat), CSV |
 
 ## Utilisation
@@ -69,6 +70,7 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 | `--word-mode=raw\|ascii\|unicode` | Définition des mots (ponctuation incluse ou non) |
 | `--casefold=ascii\|unicode\|none` | Normalisation des majuscules et des accents |
 | `--lexical-stats` | Mots uniques, hapax, TTR, longueur moyenne, entropie |
+| `--readability` | Mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7 caractères), score 0-100 — approximation **sans syllabes**, pas de Flesch-Kincaid exact |
 | `--max-unique=N` | Borne mémoire des mots uniques (défaut 100 000) |
 | `--ngrams=N` | N-grammes sur les mots du mode courant (N = 1..5, fenêtres par ligne) |
 | `--top-ngrams=K` | Limite du top-K des n-grammes (défaut 10 ; `0` = tous) |
@@ -106,17 +108,20 @@ fstats --ngrams=3 --top-ngrams=20 --word-mode=ascii corpus.txt
 fstats --ngrams=2 --stopwords=fr corpus_fr.txt
 fstats --histogram=line_length --histogram=word_length rapport.txt
 fstats --char-classes --json corpus.txt
+fstats --readability rapport.txt
+fstats --readability --word-mode=ascii --summary-json corpus.txt
 fstats --help
 ```
 
 ## Formats de sortie
 
 - **Console** : sections alignées en ASCII pur (`Summary`, `Quality`, `Lexical`,
-  `Top Characters/Words`, `Longest Lines`, `N-grams`, `Histogram`,
-  `Character Classes`), sans séquence ANSI — sûre pour les scripts et pipes.
+  `Readability`, `Top Characters/Words`, `Longest Lines`, `N-grams`,
+  `Histogram`, `Character Classes`), sans séquence ANSI — sûre pour les
+  scripts et pipes.
 - **JSON** : champs de traçabilité (`tool`, `version`, `schema_version`,
   `generated`) + `statistics`, `quality`, et blocs additifs (`lexical`,
-  `ngrams`, `histogram`, `char_classes`) selon les options.
+  `readability`, `ngrams`, `histogram`, `char_classes`) selon les options.
 - **CSV v2** : en-tête fixe `file,type,rank,value,code_point,count,length`,
   trois sous-formats (`summary`, `words`, `chars`).
 
@@ -141,7 +146,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
 | [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée en v2.2.0) |
-| [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0) |
+| [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » |
 | [doc/ROADMAPFULL.txt](doc/ROADMAPFULL.txt) | Vision d'ensemble et roadmaps complètes |
 | [doc/README.md](doc/README.md) | Index de la documentation |
@@ -149,7 +154,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 ## Tests automatisés
 
 - `tests\run.bat` (Windows / CMD) et `tests\run.sh` (Linux / Git Bash) :
-  compilation + 33 cas d'acceptation (incréments A, C2-A, C2-B) avec
+  compilation + 39 cas d'acceptation (incréments A, C2-A, C2-B, C2-C) avec
   validation JSON via node et vérification des codes de retour.
 - Prérequis : `fpc` et `node` sur le PATH.
 - La CI GitHub Actions exécute les deux suites sur `windows-latest` et
@@ -180,6 +185,9 @@ fstats/
 - N-grammes : top-K **approximatif** sur très gros corpus (sketch mémoire
   borné) ; non agrégés en `--json-mode=aggregate`.
 - Les points décimaux (`3.14`) clôturent une phrase (limite documentée).
+- Le score de lisibilité (`--readability`) est une approximation **sans
+  syllabes** : ce n'est pas un Flesch-Kincaid exact (la formule est figée dans
+  la spécification technique).
 
 Toutes les sémantiques sont détaillées et figées dans la
 [spécification technique](doc/SEMANTIQUE.md).
