@@ -1,0 +1,4 @@
+# Artefacts de compilation (regenerables : fpc -O2 -Mobjfpc fstats.pas / wbld.bat)
+*.o
+*.ppu
+*.exe

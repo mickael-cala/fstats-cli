@@ -1,0 +1,3 @@
+Voici un exemple simple.
+Deuxième phrase avec des mots.
+Encore un test !

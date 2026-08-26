@@ -1,0 +1,27 @@
+# ============================================
+# demo.obm — demonstration OBM Basic v0.3
+# instruction print NATIVE (mot-cle reserve),
+# boucle FOR, GOSUB/RETURN, fonctions chaines,
+# operateurs <= et >= (nouveautes v2)
+# ============================================
+10 let titre = "Demo OBM Basic v0.3"
+20 print titre
+30 let total = 0
+40 for i = 1 to 10 do
+50 let total = total + i
+60 next
+70 print "somme 1..10 =", total
+80 gosub 200
+90 print "gosub 200 -> carre(7) =", carre
+100 let mot = ucase$(left$("free pascal", 4)) & right$("pascal!", 1)
+110 print "ucase$/left$/right$ :", mot
+120 let extrait = mid$("interpreteur", 2, 5)
+130 print "mid$(2,5) =", extrait, ", len =", len(extrait)
+140 if total >= 55 then print "comparaison >= OK : total =", total
+150 if len(mot) <= 5 then print "comparaison <= OK : mot court"
+160 let pos = instr(mot, "R")
+170 print "instr(mot, 'E') =", instr(mot, "E")
+180 end
+# --- sous-programme : carre de 7 ---
+200 let carre = 7 * 7
+210 return
