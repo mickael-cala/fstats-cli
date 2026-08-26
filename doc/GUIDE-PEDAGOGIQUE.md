@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.6.0`.
+Doit afficher quelque chose comme `fstats 2.6.1`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -273,7 +273,9 @@ comme un mot. Pour des mots « propres », utilise `--word-mode=ascii` ou
 
 Une phrase se termine par `.`, `!`, `?` ou `…` (points de suspension). Si le
 fichier se termine par du texte sans ponctuation finale, une dernière phrase
-est comptée. Limite connue : `3.14` clôture une phrase (le point décimal).
+est comptée. Depuis la v2.6.1, un point **entre deux chiffres** (`3.14`) ne
+clôture pas une phrase : c'est une décimale. En revanche `Version 3. Fin.`
+clôture bien après le `3.` (le point est suivi d'un espace).
 
 ### Un « n-gramme »
 
@@ -314,7 +316,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.6.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -327,7 +329,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.6.1", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -425,7 +427,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "tool": "fstats", "version": "2.6.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient
@@ -471,7 +473,8 @@ normale (les données) sur **stdout** : tu peux rediriger l'une sans l'autre.
   français/allemand courants, pas tout l'Unicode.
 - Sur de **très gros** corpus, le top des n-grammes est approximatif (mémoire
   bornée) ; `--top-ngrams=0` lève la limite au prix de la mémoire.
-- Un point décimal (`3.14`) compte comme fin de phrase.
+- Un point **entre deux chiffres** (`3.14`) ne compte pas comme fin de phrase
+  (v2.6.1) ; un point après un chiffre suivi d'un espace, si.
 
 Dans 95 % des cas — fichiers normaux, textes de taille raisonnable — les
 résultats sont exacts et fiables.

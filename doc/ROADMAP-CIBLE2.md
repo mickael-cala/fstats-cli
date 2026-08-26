@@ -32,7 +32,7 @@ mono-fichier, streaming et ASCII-pur.
 |---|---|---|
 | Top words amélioré (`--word-mode`) | **FAIRE** (C2-A) | mécanisme simple sur le flux existant |
 | Unicode case folding complet | **ADAPTER** : `ascii` d'abord, puis table basique d'accents | pas de case folding Unicode dans la RTL FPC ; périmètre documenté |
-| Détection de phrases `smart` (décimales, abréviations, URLs) | **ADAPTER** : éviter les décimales seulement | heuristique complète hors de portée raisonnable, sémantique opaque |
+| Détection de phrases `smart` (décimales, abréviations, URLs) | **FAIT partiellement (v2.6.1)** : les décimales `3.14` ne clôturent plus une phrase ; abréviations/URLs restent hors périmètre (documenté) | heuristique complète hors de portée raisonnable, sémantique opaque |
 | Statistiques lexicales (unique, hapax, TTR, entropie) | **FAIRE** (C2-A) | calcul trivial depuis les fréquences |
 | N-grams | **FAIRE** (C2-B) | fenêtres bornées sur les mots |
 | Histogrammes ASCII | **FAIRE** (C2-B) | réutilise la sortie console existante |

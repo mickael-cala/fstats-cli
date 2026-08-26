@@ -502,3 +502,39 @@ figee, 10 metriques + alias, statuts ok/warn/fail, exit 0/1/2/3, mode analyse
 non rompu), baseline NDJSON + derive en % (base=0 documentee), section
 Checks console + bloc checks JSON (id stables), dogfood CI, 56/56 sur les
 deux suites.
+
+---
+
+## 12. Correctif v2.6.1 — les decimales 3.14 ne cloturent plus une phrase
+
+Date : 2026-08-26. Limite connue traitee : un point decimal (`3.14`) comptait
+comme fin de phrase. Corrections : `FSTATS_VERSION` 2.6.0 → 2.6.1, logique de
+cloture differee dans `AnalyzeData` (`DotPending`/`LastCP`, procedure imbriquee
+`CloseSentence`), nouvelles fixtures `tests/fixtures/decimal.txt` et
+`tests/fixtures/decimal_end.txt`, 3 nouveaux cas (57-59) dans les deux suites.
+
+### 12.1 Regle figee (verifiee par node)
+
+- `Le prix est 3.14 euros. Bravo !` → **2 phrases** (avant : 3), 7 mots.
+- `Le prix est 3.14` (fin de flux) → **1 phrase** (avant : 2).
+- `Version 3. Fin.` → **2 phrases** (le point apres `3` suivi d'un espace
+  cloture toujours).
+- `3 . 14. Fin.` → **3 phrases** (point entoure d'espaces = fin de phrase).
+- `3.14. 5. Fin.` → **3 phrases** (point entre chiffres ignore, point final
+  apres `4` cloture).
+- Regression : test_fr.txt reste 3 phrases (3/13/72/3).
+- Histogramme words_per_sentence : somme des classes = phrases (2 sur
+decimal.txt).
+
+### 12.2 Suites automatisees
+
+`tests\run.bat` : exit=0, **59/59 PASS**. `tests/run.sh` : exit=0, **59/59
+PASS**. Les 56 cas precedents passent inchanges.
+
+### Bilan
+
+Correctif verifie : aucun NaN, aucune regression, sémantique figee dans
+SEMANTIQUE.md (point entre deux chiffres ≠ fin de phrase ; point apres
+chiffre suivi d'un espace = fin de phrase ; point espace = fin de phrase).
+La §6.3 du ROADMAPFULL (detection de phrases) est partiellement traitee :
+decimales ok, abréviations/URLs hors perimetre.

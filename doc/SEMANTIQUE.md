@@ -271,8 +271,11 @@ Exemple : `tests/fixtures/crlf.txt` (2 fins de ligne CRLF) donne
   ponctuation (voir « Sémantique lexicale »).
 - **Phrases** : clôturées par `.`, `!`, `?` ou `…` (U+2026) ; si le fichier se
   termine avec du contenu non blanc après le dernier terminateur, une phrase
-  finale supplémentaire est comptée. Un point décimal (`3.14`) clôture donc une
-  phrase (limite documentée).
+  finale supplémentaire est comptée. Depuis v2.6.1, un point **entre deux
+  chiffres** (`3.14`) ne clôture PAS une phrase (décimale) ; un point après un
+  chiffre suivi d'autre chose qu'un chiffre (`Version 3. Fin.`) clôture
+  toujours. Un point entouré d'espaces (`3 . 14`) clôture (pas une décimale
+  collée).
 - **Lignes** : terminées par LF, CR ou CRLF ; la longueur est en caractères,
   sans le saut de ligne ; min/max/moyenne portent sur les lignes non vides.
 - Les mots ASCII sont normalisés en minuscules (fréquences insensibles à la

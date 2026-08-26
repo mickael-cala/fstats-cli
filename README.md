@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.6.0 · Free Pascal (mode objfpc) · MIT
+Version 2.6.1 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -179,7 +179,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 ## Tests automatisés
 
 - `tests\run.bat` (Windows / CMD) et `tests\run.sh` (Linux / Git Bash) :
-  compilation + 56 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C) avec
+  compilation + 59 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C) avec
   validation JSON via node et vérification des codes de retour.
 - Prérequis : `fpc` et `node` sur le PATH.
 - La CI GitHub Actions exécute les deux suites sur `windows-latest` et
@@ -209,7 +209,9 @@ fstats/
   français/allemand), pas un folding Unicode complet.
 - N-grammes : top-K **approximatif** sur très gros corpus (sketch mémoire
   borné) ; non agrégés en `--json-mode=aggregate`.
-- Les points décimaux (`3.14`) clôturent une phrase (limite documentée).
+- Un point **entre deux chiffres** (`3.14`) ne clôture pas une phrase (v2.6.1) ;
+  un point après un chiffre suivi d'un espace (`Version 3.`) reste une fin de
+  phrase.
 - Le score de lisibilité (`--readability`) est une approximation **sans
   syllabes** : ce n'est pas un Flesch-Kincaid exact (la formule est figée dans
   la spécification technique).
