@@ -32,7 +32,7 @@ mono-fichier, streaming et ASCII-pur.
 |---|---|---|
 | Top words amélioré (`--word-mode`) | **FAIRE** (C2-A) | mécanisme simple sur le flux existant |
 | Unicode case folding complet | **ADAPTER** : `ascii` d'abord, puis table basique d'accents | pas de case folding Unicode dans la RTL FPC ; périmètre documenté |
-| Détection de phrases `smart` (décimales, abréviations, URLs) | **FAIT partiellement (v2.6.1)** : les décimales `3.14` ne clôturent plus une phrase ; abréviations/URLs restent hors périmètre (documenté) | heuristique complète hors de portée raisonnable, sémantique opaque |
+| Détection de phrases `smart` (décimales, abréviations, URLs) | **FAIT (v2.6.1 + v2.7.0)** : décimales `3.14` dans le mode par défaut ; `--sentence-mode=basic\|smart` — `smart` protège une liste figée d'abréviations fr/en (`M.`, `etc.`…) et les URLs `://` ; périmètre documenté (`www.` sans protocole partiel, `e. g` avale son point) | heuristique complète hors de portée raisonnable, sémantique opaque → liste figée + règles simples documentées |
 | Statistiques lexicales (unique, hapax, TTR, entropie) | **FAIRE** (C2-A) | calcul trivial depuis les fréquences |
 | N-grams | **FAIRE** (C2-B) | fenêtres bornées sur les mots |
 | Histogrammes ASCII | **FAIRE** (C2-B) | réutilise la sortie console existante |
@@ -80,6 +80,17 @@ mono-fichier, streaming et ASCII-pur.
   `readability` en console, JSON pretty/NDJSON, `--summary-json` (clés
   plates), CSV summary ; non agrégé en `--json-mode=aggregate` (comme les
   n-grams).
+
+### Détection de phrases `smart` — LIVRÉ (v2.6.1 + v2.7.0)
+
+- v2.6.1 : les décimales `3.14` ne clôturent plus une phrase (règle du point
+  entre deux chiffres, dans le mode par défaut).
+- v2.7.0 : `--sentence-mode=basic|smart`. `smart` = `basic` + abréviations
+  (liste figée `SMART_ABBREVIATIONS`, fr/en) + URLs `://` (fenêtre des 8
+  derniers caractères). Périmètre documenté dans `doc/SEMANTIQUE.md`
+  (« Sémantique des phrases ») : `www.` sans protocole partiel, `e. g` avale
+  son point, `!`/`?`/`…` clôturent toujours. 8 nouveaux cas dans les deux
+  suites (67 au total).
 
 ## Sémantique à figer (dès C2-A)
 

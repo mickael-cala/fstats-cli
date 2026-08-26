@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.6.1 · Free Pascal (mode objfpc) · MIT
+Version 2.7.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -72,6 +72,7 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 |---|---|
 | `--word-mode=raw\|ascii\|unicode` | Définition des mots (ponctuation incluse ou non) |
 | `--casefold=ascii\|unicode\|none` | Normalisation des majuscules et des accents |
+| `--sentence-mode=basic\|smart` | Fin de phrase : `basic` (défaut) = `.` `!` `?` `…` + décimales ; `smart` = + abréviations (`M.`, `etc.`…) et URLs (`https://…`) |
 | `--lexical-stats` | Mots uniques, hapax, TTR, longueur moyenne, entropie |
 | `--readability` | Mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7 caractères), score 0-100 — approximation **sans syllabes**, pas de Flesch-Kincaid exact |
 | `--max-unique=N` | Borne mémoire des mots uniques (défaut 100 000) |
@@ -122,6 +123,8 @@ fstats --recursive=docs --include='**/*.md' --summary-json
 echo "un deux trois." | fstats - --json
 fstats 'tests/**/*.md' --json-mode=aggregate
 fstats --word-mode=ascii --top-words=20 --lexical-stats corpus.txt
+fstats --sentence-mode=smart rapport.txt
+fstats --sentence-mode=smart --check --fail-if avg_words_per_sentence>25 docs/*.md
 fstats --casefold=unicode --lexical-stats --json corpus_fr.txt
 fstats --ngrams=3 --top-ngrams=20 --word-mode=ascii corpus.txt
 fstats --ngrams=2 --stopwords=fr corpus_fr.txt

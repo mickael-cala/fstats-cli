@@ -276,6 +276,18 @@ Exemple : `tests/fixtures/crlf.txt` (2 fins de ligne CRLF) donne
   chiffre suivi d'autre chose qu'un chiffre (`Version 3. Fin.`) clôture
   toujours. Un point entouré d'espaces (`3 . 14`) clôture (pas une décimale
   collée).
+- **`--sentence-mode` (v2.7.0)** : `basic` (défaut) = règle ci-dessus.
+  `smart` = en plus, pour le point `.` uniquement (`!`, `?`, `…` clôturent
+  toujours) : le point est **avalé** (aucune clôture) si le mot courant est
+  une abréviation de la liste figée `SMART_ABBREVIATIONS` (minuscules :
+  `e.g`, `i.e`, `m`, `mme`, `mlle`, `dr`, `pr`, `st`, `ste`, `etc`, `mr`,
+  `mrs`, `ms`, `jr`, `sr`, `inc`, `ltd`, `co`, `dept`, `fig`, `vs`, `www` —
+  avec règle de préfixe pour `e.g.`/`i.e.` : le premier point est protégé car
+  `e.` est un préfixe de `e.g`), ou si la fenêtre des 8 derniers caractères
+  contient `://` (URL, ex. `https://ex.com`). Périmètre documenté : un
+  point qui suit un mot non reconnu clôture ; `www.` sans protocole ne
+  protège que son premier point (`www.ex.com` clôture sur `.com`) ; `e. g`
+  (espace) avale son point par la règle de préfixe.
 - **Lignes** : terminées par LF, CR ou CRLF ; la longueur est en caractères,
   sans le saut de ligne ; min/max/moyenne portent sur les lignes non vides.
 - Les mots ASCII sont normalisés en minuscules (fréquences insensibles à la

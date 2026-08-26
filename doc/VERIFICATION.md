@@ -536,5 +536,42 @@ PASS**. Les 56 cas precedents passent inchanges.
 Correctif verifie : aucun NaN, aucune regression, sémantique figee dans
 SEMANTIQUE.md (point entre deux chiffres ≠ fin de phrase ; point apres
 chiffre suivi d'un espace = fin de phrase ; point espace = fin de phrase).
-La §6.3 du ROADMAPFULL (detection de phrases) est partiellement traitee :
-decimales ok, abréviations/URLs hors perimetre.
+
+## 13. v2.7.0 - --sentence-mode=basic|smart
+
+Verifie le : 2026-08-26 22:55 - executable : `fstats.exe` (`fstats 2.7.0`)
+
+### 13.1 Regle figee du mode smart (verifiee par node, stdin)
+
+- `M. Dupont est la. Bravo.` : smart → **2 phrases** (le point de `M.` est
+  avale), basic → **3 phrases** (comportement historique inchange).
+- `Visitez https://ex.com maintenant.` : smart → **1 phrase** (le point de
+  `.com` est avale : `://` dans la fenetre des 8 derniers caracteres),
+  basic → **2 phrases**.
+- `e.g. ceci.` : smart → **1 phrase** (les deux points de `e.g.` avales :
+  premier par la regle de prefixe `e.` vers `e.g`, second par
+  correspondance exacte `e.g`).
+- `Coût 3.14 euros.` : smart → **1 phrase** (regle decimale v2.6.1
+  conservee en smart).
+- `www.ex.com ici.` : smart → **2 phrases** (limite documentee : seul le
+  premier point de `www.` est protege, celui de `.com` cloture).
+- `--sentence-mode=bogus` : exit=1, stderr ASCII pur
+  `Erreur: --sentence-mode attend "basic" ou "smart" (recu "bogus")`.
+- `--sentence-mode=SMART` et `--sentence-mode:smart` : acceptes (casse
+  insensible, `=` et `:`).
+- Regression : test_fr.txt sans option reste 3 phrases (3/13/72/3) ;
+  `--sentence-mode=basic` explicite donne le meme resultat.
+
+### 13.2 Suites automatisees
+
+`tests\run.bat` : exit=0, **67/67 PASS**. `tests/run.sh` : exit=0, **67/67
+PASS**. Les 59 cas precedents passent inchanges (seul le cas 12
+`--version` est passe de 2.6.1 a 2.7.0).
+
+### Bilan
+
+La §6.3 du ROADMAPFULL (detection de phrases) est traitee : decimales
+(v2.6.1, mode par defaut), abréviations et URLs (v2.7.0, mode smart,
+perimetre documente dans SEMANTIQUE.md). Le plan `--sentence-mode` a trois
+valeurs de la roadmap a ete simplifie a deux (`none` ecarte : ne pas
+compter les phrases n'apporte rien).
