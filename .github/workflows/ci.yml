@@ -35,6 +35,10 @@ jobs:
           Set-Content -Path (Join-Path $bin 'fpc.cfg') -Value $cfg -Encoding Ascii
           Add-Content $env:GITHUB_PATH $bin
           Write-Output "FPC pret : $bin (fpc.cfg regenere)"
+          # Smoke test : trace de recherche du cfg + compilation reelle
+          New-Item -ItemType Directory -Force -Path "$env:TEMP/smoke" | Out-Null
+          & (Join-Path $bin 'fpc.exe') -vt -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fstats.pas" 2>&1 | Select-Object -Last 15
+          if ($LASTEXITCODE -ne 0) { throw "compilation smoke test echouee (exit $LASTEXITCODE)" }
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
