@@ -1,7 +1,7 @@
 # Roadmap Cible 1 — CI / Text Quality Gate pour docs & logs
 
 Statut : **validée** — incrément A livré (v2.2.0, 12/12 tests OK, 2026-08-26). B et C à venir.
-Base : ROADMAPFULL.txt (sections 3, 5, 10, 13) — positionnement « fstats = text profiler & quality gate »
+Base : ROADMAPFULL.md (sections 3, 5, 10, 13) — positionnement « fstats = text profiler & quality gate »
 
 ## Verdict
 

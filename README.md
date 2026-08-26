@@ -148,7 +148,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 | [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée en v2.2.0) |
 | [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » |
-| [doc/ROADMAPFULL.txt](doc/ROADMAPFULL.txt) | Vision d'ensemble et roadmaps complètes |
+| [doc/ROADMAPFULL.md](doc/ROADMAPFULL.md) | Vision d'ensemble et roadmaps complètes |
 | [doc/README.md](doc/README.md) | Index de la documentation |
 
 ## Tests automatisés

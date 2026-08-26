@@ -6,7 +6,7 @@ Index de la documentation de `fstats`.
 |---|---|
 | [GUIDE-PEDAGOGIQUE.md](GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon, exemples commentés |
 | [SEMANTIQUE.md](SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
-| [ROADMAPFULL.txt](ROADMAPFULL.txt) | Vision globale : positionnement produit et roadmaps complètes (texte brut, toutes cibles) |
+| [ROADMAPFULL.md](ROADMAPFULL.md) | Vision globale : positionnement produit et roadmaps complètes (Markdown, toutes cibles) |
 | [ROADMAP-CIBLE1.md](ROADMAP-CIBLE1.md) | Cible 1 — « CI / Text Quality Gate » (validée : incrément A livré, v2.2.0) |
 | [ROADMAP-CIBLE2.md](ROADMAP-CIBLE2.md) | Cible 2 — « Corpus Profiler » (validée : C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [ROADMAP-CIBLE3.md](ROADMAP-CIBLE3.md) | Cible 3 — « Log Sentinel » (surveillance de logs applicatifs et SCADA/PLC) |
@@ -21,7 +21,7 @@ Index de la documentation de `fstats`.
    d'acceptation.
 5. `VERIFICATION.md` — le journal des vérifications effectuées (sorties réelles).
 6. `ROADMAP-CIBLE2.md` (validée) / `ROADMAP-CIBLE3.md` — les cibles.
-7. `ROADMAPFULL.txt` — la vision d'ensemble de référence.
+7. `ROADMAPFULL.md` — la vision d'ensemble de référence.
 
 > **Note (post-restructuration)** : les documents ont été déplacés de la racine
 > du dépôt vers `doc/` ; la compilation se fait depuis la racine :

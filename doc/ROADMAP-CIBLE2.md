@@ -6,7 +6,7 @@ Cible 2 complète.
 Positionnement : `fstats` explore un corpus texte : vocabulaire, n-grammes,
 distributions, export pour pandas/R/Excel.
 
-Base : ROADMAPFULL.txt (Mode 2 « Corpus Profiler », §6.1-6.8, §8 CSV).
+Base : ROADMAPFULL.md (Mode 2 « Corpus Profiler », §6.1-6.8, §8 CSV).
 Dépend : Cible 1 livrée (v2.2.0 : glob, NDJSON/array/aggregate, --summary-json,
 streaming, UTF-8 strict, compteurs qualité).
 

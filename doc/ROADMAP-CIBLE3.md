@@ -4,7 +4,7 @@ Positionnement : `fstats` surveille les logs applicatifs et SCADA/PLC :
 niveaux, top messages, patterns, redaction, watch. Sortie NDJSON pour
 pipelines/Grafana.
 
-Base : ROADMAPFULL.txt (Mode 3 « Log Sentinel », §7.1-7.4, §6.9 redaction).
+Base : ROADMAPFULL.md (Mode 3 « Log Sentinel », §7.1-7.4, §6.9 redaction).
 Dépend : Cible 1 livrée (v2.2.0 : stdin, NDJSON, glob, compteurs qualité,
 statistiques de lignes).
 
