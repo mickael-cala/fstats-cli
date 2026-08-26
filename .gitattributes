@@ -1,2 +1,5 @@
 # Fixture volontairement non-UTF8 : jamais de conversion de fins de ligne
 tests/fixtures/invalid-utf8.bin binary
+
+# Script de test bash : toujours en LF
+tests/run.sh text eol=lf

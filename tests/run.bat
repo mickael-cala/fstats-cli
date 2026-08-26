@@ -25,18 +25,18 @@ where node >nul 2>nul
 if not errorlevel 1 set NODE_OK=1
 
 rem --- 1. Compilation ---------------------------------------------------------
-fpc -O2 -Mobjfpc fstats.pas > "%TMPD%\compile.log" 2>&1
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc fstats.pas [exit 0]) else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc fstats.pas [exit 0])
+fpc -O2 -Mobjfpc -FE. src\fstats.pas > "%TMPD%\compile.log" 2>&1
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [exit 0]) else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [exit 0])
 findstr /C:"lines compiled" "%TMPD%\compile.log"
 
-rem --- 2. Compteurs de reference (test_fr.txt) --------------------------------
-"%FSTATS%" --summary-json test_fr.txt > "%TMPD%\test_fr.json" 2>nul
+rem --- 2. Compteurs de reference (tests\fixtures\test_fr.txt) -----------------
+"%FSTATS%" --summary-json tests\fixtures\test_fr.txt > "%TMPD%\test_fr.json" 2>nul
 if "%NODE_OK%"=="1" goto :node2
 echo SKIP: test_fr.json (node indisponible)
 goto :after2
 :node2
-node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('  test_fr.txt -> lines='+o.lines+' words='+o.words+' chars='+o.characters+' sentences='+o.sentences+' avg='+o.avg_words_per_sentence+' min/max/avg='+o.line_min+'/'+o.line_max+'/'+o.line_avg);process.exit((o.lines===3?0:1)+(o.words===13?0:1)+(o.characters===72?0:1)+(o.sentences===3?0:1)+(o.avg_words_per_sentence===4?0:1)+(o.line_min===16?0:1)+(o.line_max===30?0:1)+(o.line_avg===23?0:1));" < "%TMPD%\test_fr.json"
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: test_fr.txt : 3/13/72/3, moy 4, min/max/moy 16/30/23) else (set /a PASS+=1&echo PASS: test_fr.txt : 3/13/72/3, moy 4, min/max/moy 16/30/23)
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('  tests\\fixtures\\test_fr.txt -> lines='+o.lines+' words='+o.words+' chars='+o.characters+' sentences='+o.sentences+' avg='+o.avg_words_per_sentence+' min/max/avg='+o.line_min+'/'+o.line_max+'/'+o.line_avg);process.exit((o.lines===3?0:1)+(o.words===13?0:1)+(o.characters===72?0:1)+(o.sentences===3?0:1)+(o.avg_words_per_sentence===4?0:1)+(o.line_min===16?0:1)+(o.line_max===30?0:1)+(o.line_avg===23?0:1));" < "%TMPD%\test_fr.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: tests\fixtures\test_fr.txt : 3/13/72/3, moy 4, min/max/moy 16/30/23) else (set /a PASS+=1&echo PASS: tests\fixtures\test_fr.txt : 3/13/72/3, moy 4, min/max/moy 16/30/23)
 :after2
 
 rem --- 3. stdin JSON ----------------------------------------------------------
@@ -50,12 +50,12 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: stdin : echo "un deux trois." ^| fsta
 :after3
 
 rem --- 4. stdin melange avec des fichiers = erreur fatale ---------------------
-"%FSTATS%" - test_fr.txt > "%TMPD%\mix.out" 2> "%TMPD%\mix.err"
+"%FSTATS%" - tests\fixtures\test_fr.txt > "%TMPD%\mix.out" 2> "%TMPD%\mix.err"
 set MIX_OK=1
 if not errorlevel 1 set MIX_OK=0
 findstr /C:"standard" "%TMPD%\mix.err" >nul 2>nul
 if errorlevel 1 set MIX_OK=0
-if "%MIX_OK%"=="1" (set /a PASS+=1&echo PASS: stdin + fichier : fstats - test_fr.txt -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: stdin + fichier : fstats - test_fr.txt -^> exit 1 + message stderr)
+if "%MIX_OK%"=="1" (set /a PASS+=1&echo PASS: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr)
 
 rem --- 5. NDJSON multi-fichiers ------------------------------------------------
 "%FSTATS%" tests\fixtures\bom.txt tests\fixtures\crlf.txt --json > "%TMPD%\nd.json" 2>nul
@@ -78,13 +78,13 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: aggregate : tests\docs\**\*.md -^> 3 
 :after6
 
 rem --- 7. summary-json (objet plat) --------------------------------------------
-"%FSTATS%" --summary-json test_fr.txt > "%TMPD%\sum.json" 2>nul
+"%FSTATS%" --summary-json tests\fixtures\test_fr.txt > "%TMPD%\sum.json" 2>nul
 if "%NODE_OK%"=="1" goto :node7
 echo SKIP: sum.json (node indisponible)
 goto :after7
 :node7
 node -e "JSON.parse(require('fs').readFileSync(0,'utf8'));" < "%TMPD%\sum.json"
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --summary-json test_fr.txt -^> objet plat JSON valide) else (set /a PASS+=1&echo PASS: --summary-json test_fr.txt -^> objet plat JSON valide)
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --summary-json tests\fixtures\test_fr.txt -^> objet plat JSON valide) else (set /a PASS+=1&echo PASS: --summary-json tests\fixtures\test_fr.txt -^> objet plat JSON valide)
 :after7
 
 rem --- 8. Compteur qualite invalid_utf8 ----------------------------------------
@@ -110,7 +110,7 @@ rem --- 10. Glob sans correspondance -^> exit 1 --------------------------------
 if errorlevel 1 (set /a PASS+=1&echo PASS: glob sans correspondance -^> exit 1 [gate CI jamais silencieusement vide]) else (set /a FAIL+=1&echo FAIL: glob sans correspondance -^> exit 1 [gate CI jamais silencieusement vide])
 
 rem --- 11. Sortie pipee sans sequence ANSI --------------------------------------
-"%FSTATS%" test_fr.txt > "%TMPD%\console.txt" 2>nul
+"%FSTATS%" tests\fixtures\test_fr.txt > "%TMPD%\console.txt" 2>nul
 if "%NODE_OK%"=="1" goto :node11
 echo SKIP: controle ANSI (node indisponible)
 goto :after11

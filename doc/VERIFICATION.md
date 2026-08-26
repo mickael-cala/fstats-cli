@@ -1,5 +1,8 @@
 # fstats - journal de verification (sorties reelles)
 
+> **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
+> racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
+
 Genere le : 2026-08-26 11:56 - executable : `fstats.exe` (`fstats 2.2.0`)
 Perimetre : increment A de ROADMAP-CIBLE1.md (stdin, glob interne,
 recursivite, JSON multi-fichiers valide NDJSON/array/aggregate, `--summary-json`,

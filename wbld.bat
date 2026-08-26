@@ -1,2 +1,2 @@
-fpc -O2 -Mobjfpc fstats.pas
+fpc -O2 -Mobjfpc -FE. src\fstats.pas
 Pause

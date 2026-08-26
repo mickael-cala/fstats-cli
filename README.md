@@ -1,5 +1,8 @@
 # fstats — analyseur statistique de fichiers texte
 
+[![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
+[![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
+
 Version 2.2.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` analyse un ou plusieurs fichiers texte et compte les **caractères** (code
@@ -12,14 +15,17 @@ terminal et les scripts (aucune séquence ANSI par défaut, redirection sûre).
 L'encodage de sortie est **UTF-8 déterministe**, y compris redirigé vers un
 fichier ou un pipe (code page console forcé à UTF-8 au démarrage).
 
-## Compilation
+## Compilation / Démarrage rapide
+
+Depuis la racine du dépôt :
 
 ```
-fpc -O2 -Mobjfpc fstats.pas
+fpc -O2 -Mobjfpc -FE. src\fstats.pas
 ```
 
-ou via `wbld.bat` (Windows). Un exécutable précompilé `fstats.exe` (Windows 32/64)
-est fourni. `wclr.bat` supprime les artefacts de compilation (`*.o`, `*.ppu`, `*.exe`).
+ou via `wbld.bat` (Windows, avec `Pause` en fin de compilation). L'exécutable
+`fstats.exe` est produit à la racine du dépôt. `wclr.bat` supprime les artefacts
+de compilation (`*.o`, `*.ppu`, `*.exe`, y compris dans `src\`).
 
 ## Utilisation
 
@@ -70,14 +76,15 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 ### Exemples
 
 ```
-fstats demo.obm
-fstats --json --out=stats.json demo.obm
+fstats examples\demo.obm
+fstats --json --out=stats.json examples\demo.obm
 fstats --csv --all rapport.txt
-fstats --word --line demo.obm
+fstats --word --line examples\demo.obm
 fstats --recursive=docs --include='**/*.md' --summary-json
 fstats --recursive=src --exclude='**/vendor/**' --json-mode=aggregate
 echo "un deux trois." | fstats - --json
 fstats 'tests/**/*.md' --json-mode=array
+fstats tests\fixtures\test_fr.txt
 fstats --help
 ```
 
@@ -102,7 +109,7 @@ fstats --help
 ### Console
 
 ```
-File: demo.obm
+File: examples\demo.obm
 Generated: 2026-08-26 11:47:13
 
 Summary
@@ -144,7 +151,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
 
 ```json
 {
-  "file": "test_fr.txt",
+  "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
   "version": "2.2.0",
@@ -201,7 +208,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "test_fr.txt", "tool": "fstats", "version": "2.2.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.2.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 ### CSV
@@ -214,7 +221,7 @@ les lignes de résumé et de traçabilité :
 ```
 sentence_count,,7,,
 avg_words_per_sentence,,24,,
-source_file,,demo.obm,,
+source_file,,examples/demo.obm,,
 generated,,2026-08-26 10:35:45,,
 ```
 
@@ -265,8 +272,8 @@ Exemple : `tests/fixtures/crlf.txt` (2 fins de ligne CRLF) donne
 
 ## Validation (texte de référence)
 
-`test_fr.txt` (3 lignes) : « Voici un exemple simple. / Deuxième phrase avec
-des mots. / Encore un test ! »
+`tests/fixtures/test_fr.txt` (3 lignes) : « Voici un exemple simple. / Deuxième
+phrase avec des mots. / Encore un test ! »
 
 | Métrique                  | Valeur attendue |
 |---------------------------|-----------------|
@@ -280,13 +287,57 @@ des mots. / Encore un test ! »
 Commandes de vérification :
 
 ```
-fstats test_fr.txt
-fstats --json test_fr.txt    # valider avec un parseur JSON
-fstats --csv  test_fr.txt
+fstats tests\fixtures\test_fr.txt
+fstats --json tests\fixtures\test_fr.txt   # valider avec un parseur JSON
+fstats --csv  tests\fixtures\test_fr.txt
 fstats --help                # code 0
 fstats fichier_inconnu.txt   # code 1, message sur stderr
-fstats verifier : voir VERIFICATION.md (journal de validation, sorties reelles)
 ```
+
+Voir `doc/VERIFICATION.md` pour le journal de validation (sorties réelles).
+
+## Structure du projet
+
+```
+fstats/
+├── .github/workflows/
+│   └── ci.yml            # CI GitHub Actions (Windows + Linux)
+├── doc/                  # Documentation (roadmaps, journal de validation)
+│   ├── README.md
+│   ├── ROADMAPFULL.txt
+│   ├── ROADMAP-CIBLE1.md
+│   ├── ROADMAP-CIBLE2.md
+│   ├── ROADMAP-CIBLE3.md
+│   └── VERIFICATION.md
+├── examples/
+│   └── demo.obm          # Fichier de démonstration
+├── src/
+│   └── fstats.pas        # Code source unique (Free Pascal)
+├── tests/
+│   ├── run.bat           # Suite de tests Windows (CMD)
+│   ├── run.sh            # Suite de tests Linux/Git Bash
+│   ├── docs/             # Fixtures markdown (glob/agrégats)
+│   └── fixtures/         # Fixtures de test (test_fr.txt, BOM, CRLF…)
+├── .gitattributes
+├── .gitignore
+├── LICENSE               # Licence MIT
+├── README.md
+├── wbld.bat              # Compilation rapide (Windows)
+└── wclr.bat              # Nettoyage des artefacts
+```
+
+## Documentation
+
+- `doc/ROADMAP-CIBLE1.md` — Cible 1 « CI / Text Quality Gate » (validée en
+  v2.2.0, incrément A : stdin, glob interne, NDJSON/array/aggregate,
+  `--summary-json`, compteurs qualité).
+- `doc/ROADMAP-CIBLE2.md` — Cible 2 « Corpus Profiler » (vocabulaire,
+  n-grammes, distributions, export pandas/R/Excel).
+- `doc/ROADMAP-CIBLE3.md` — Cible 3 « Log Sentinel » (niveaux, top messages,
+  patterns, rédaction, watch, sortie NDJSON pour pipelines/Grafana).
+- `doc/VERIFICATION.md` — journal de validation (sorties réelles, historique).
+- `doc/ROADMAPFULL.txt` — vision d'ensemble et roadmaps complètes.
+- `doc/README.md` — index de la documentation.
 
 ## Tests automatisés
 
@@ -297,6 +348,9 @@ fstats verifier : voir VERIFICATION.md (journal de validation, sorties reelles)
 - `tests\run.bat` (CMD) : équivalent Windows, mêmes cas et mêmes assertions
   (validation JSON avec node si disponible ; aucun `Pause` final, CI-friendly).
 - Prérequis : `fpc` et `node` sur le PATH.
+- La CI GitHub Actions exécute les deux suites sur `windows-latest` et
+  `ubuntu-latest` à chaque push sur `main`/`master` et sur chaque
+  `pull_request`.
 
 ## Limites connues
 
