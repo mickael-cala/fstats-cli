@@ -53,8 +53,10 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: stdin : echo "un deux trois." ^| fsta
 
 rem --- 4. stdin melange avec des fichiers = erreur fatale ---------------------
 "%FSTATS%" - tests\fixtures\test_fr.txt > "%TMPD%\mix.out" 2> "%TMPD%\mix.err"
+set MIX_EXIT=%ERRORLEVEL%
+echo [diag4] exit=%MIX_EXIT% err: & type "%TMPD%\mix.err"
 set MIX_OK=1
-if not errorlevel 1 set MIX_OK=0
+if "%MIX_EXIT%"=="0" set MIX_OK=0
 findstr /C:"standard" "%TMPD%\mix.err" >nul 2>nul
 if errorlevel 1 set MIX_OK=0
 if "%MIX_OK%"=="1" (set /a PASS+=1&echo PASS: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: stdin + fichier : fstats - tests\fixtures\test_fr.txt -^> exit 1 + message stderr)
@@ -101,8 +103,10 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: fixture invalid-utf8.bin : invalid_ut
 
 rem --- 9. Fichier absent -^> exit 1 ---------------------------------------------
 "%FSTATS%" absent.txt > "%TMPD%\abs.out" 2> "%TMPD%\abs.err"
+set ABS_EXIT=%ERRORLEVEL%
+echo [diag9] exit=%ABS_EXIT% out: & type "%TMPD%\abs.out" & echo [diag9] err: & type "%TMPD%\abs.err"
 set ABS_OK=1
-if not errorlevel 1 set ABS_OK=0
+if "%ABS_EXIT%"=="0" set ABS_OK=0
 findstr . "%TMPD%\abs.out" >nul 2>nul
 if not errorlevel 1 set ABS_OK=0
 if "%ABS_OK%"=="1" (set /a PASS+=1&echo PASS: fstats absent.txt -^> exit 1, stdout vide, message stderr) else (set /a FAIL+=1&echo FAIL: fstats absent.txt -^> exit 1, stdout vide, message stderr)
@@ -218,8 +222,10 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: --word-mode=unicode corpus_fr.txt -^>
 
 rem --- 22. Option lexicale invalide -^> exit 1 -----------------------------------
 "%FSTATS%" --word-mode=bogus tests\fixtures\test_fr.txt > "%TMPD%\bad.out" 2> "%TMPD%\bad.err"
+set BAD_EXIT=%ERRORLEVEL%
+echo [diag22] exit=%BAD_EXIT% out: & type "%TMPD%\bad.out" & echo [diag22] err: & type "%TMPD%\bad.err"
 set BAD_OK=1
-if not errorlevel 1 set BAD_OK=0
+if "%BAD_EXIT%"=="0" set BAD_OK=0
 findstr /C:"word-mode" "%TMPD%\bad.err" >nul 2>nul
 if errorlevel 1 set BAD_OK=0
 if "%BAD_OK%"=="1" (set /a PASS+=1&echo PASS: --word-mode=bogus -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --word-mode=bogus -^> exit 1 + message stderr)
@@ -256,14 +262,17 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: --ngrams=3 --top-ngrams=2 -^> exactem
 
 rem --- 26. ngrams=0 et ngrams=6 -^> exit 1 --------------------------------------
 "%FSTATS%" --ngrams=0 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng0.err"
+set NG0_EXIT=%ERRORLEVEL%
 set NG0_OK=1
 if not errorlevel 1 set NG0_OK=0
 findstr /C:"ngrams" "%TMPD%\ng0.err" >nul 2>nul
 if errorlevel 1 set NG0_OK=0
 "%FSTATS%" --ngrams=6 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng6.err"
+set NG6_EXIT=%ERRORLEVEL%
 if not errorlevel 1 set NG0_OK=0
 findstr /C:"ngrams" "%TMPD%\ng6.err" >nul 2>nul
 if errorlevel 1 set NG0_OK=0
+echo [diag26] ng0exit=%NG0_EXIT% ng6exit=%NG6_EXIT% ng0: & type "%TMPD%\ng0.err" & echo [diag26] ng6: & type "%TMPD%\ng6.err"
 if "%NG0_OK%"=="1" (set /a PASS+=1&echo PASS: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr)
 
 rem --- 27. stopwords=fr + ngrams=2 corpus_fr (golden) ---------------------------
