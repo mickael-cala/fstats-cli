@@ -3,7 +3,7 @@
 # tests/run.sh — Journal de validation reproductible de fstats
 # (incréments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilité"
 # + Cible 1 B "Checks" + Cible 1 C "Baseline"
-# + v2.6.1 (3.14 ne cloture pas une phrase))
+# + v2.6.1 (3.14 ne cloture pas une phrase) + v2.7.0 (--sentence-mode basic|smart))
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -132,8 +132,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.6.1"
-report "--version affiche 2.6.1" $?
+"$FSTATS" --version | grep -q "2.7.0"
+report "--version affiche 2.7.0" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -608,6 +608,93 @@ process.exit((sum === o.sentences && sum === 2) ? 0 : 1);
 OK59=$?
 if [ $OK59 -eq 0 ]; then OK=0; else OK=1; fi
 report "histogramme words_per_sentence sur decimal.txt : somme=2=sentences" $OK
+
+# --- 60. v2.7.0 : --sentence-mode=smart vs basic sur M. Dupont ----------------
+node -e '
+var cp = require("child_process");
+var s = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=smart"], { input: "M. Dupont est l\u00e0. Bravo.", encoding: "utf8" });
+var b = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=basic"], { input: "M. Dupont est l\u00e0. Bravo.", encoding: "utf8" });
+var os = JSON.parse(s.stdout);
+var ob = JSON.parse(b.stdout);
+process.exit((os.sentences === 2 && ob.sentences === 3) ? 0 : 1);
+' "$FSTATS"
+OK60=$?
+if [ $OK60 -eq 0 ]; then OK=0; else OK=1; fi
+report "--sentence-mode stdin M. Dupont est là. Bravo. -> smart 2 phrases, basic 3 phrases" $OK
+
+# --- 61. v2.7.0 : URL protégée en smart (https://ex.com) ----------------------
+node -e '
+var cp = require("child_process");
+var s = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=smart"], { input: "Visitez https://ex.com maintenant.", encoding: "utf8" });
+var b = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=basic"], { input: "Visitez https://ex.com maintenant.", encoding: "utf8" });
+var os = JSON.parse(s.stdout);
+var ob = JSON.parse(b.stdout);
+process.exit((os.sentences === 1 && ob.sentences === 2) ? 0 : 1);
+' "$FSTATS"
+OK61=$?
+if [ $OK61 -eq 0 ]; then OK=0; else OK=1; fi
+report "URL https://ex.com en smart -> 1 phrase, basic 2 phrases" $OK
+
+# --- 62. v2.7.0 : abréviation e.g. deux points avalés -------------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=smart"], { input: "e.g. ceci.", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit(o.sentences === 1 ? 0 : 1);
+' "$FSTATS"
+OK62=$?
+if [ $OK62 -eq 0 ]; then OK=0; else OK=1; fi
+report "e.g. en smart -> les deux points avalés, 1 phrase" $OK
+
+# --- 63. v2.7.0 : décimale 3.14 toujours gérée en smart -----------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=smart"], { input: "Co\u00fbt 3.14 euros.", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit(o.sentences === 1 ? 0 : 1);
+' "$FSTATS"
+OK63=$?
+if [ $OK63 -eq 0 ]; then OK=0; else OK=1; fi
+report "3.14 en smart -> décimale pas de clôture, 1 phrase" $OK
+
+# --- 64. v2.7.0 : --sentence-mode=bogus -> exit 1 + stderr --------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["--sentence-mode=bogus", "tests/fixtures/test_fr.txt"], { encoding: "utf8" });
+process.exit((r.status === 1 && /sentence-mode/.test(r.stderr)) ? 0 : 1);
+' "$FSTATS"
+OK64=$?
+if [ $OK64 -eq 0 ]; then OK=0; else OK=1; fi
+report "--sentence-mode=bogus -> exit 1 + stderr sentence-mode" $OK
+
+# --- 65. v2.7.0 : défaut sans option = basic (régression test_fr) -------------
+"$FSTATS" --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/def65.json" 2>/dev/null
+"$FSTATS" --summary-json --sentence-mode=basic tests/fixtures/test_fr.txt > "$TMPDIR/bas65.json" 2>/dev/null
+node -e '
+var a = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var b = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));
+process.exit((a.sentences === 3 && b.sentences === 3) ? 0 : 1);
+' "$TMPDIR/def65.json" "$TMPDIR/bas65.json"
+OK65=$?
+if [ $OK65 -eq 0 ]; then OK=0; else OK=1; fi
+report "test_fr.txt sans option -> 3 phrases et --sentence-mode=basic idem" $OK
+
+# --- 66. v2.7.0 : smart + histogramme words_per_sentence ----------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--sentence-mode=smart", "--histogram=words_per_sentence"], { input: "M. Dupont est l\u00e0. Bravo.", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+var sum = o.histogram.classes.reduce(function (a, c) { return a + c.count; }, 0);
+process.exit((sum === 2 && sum === o.sentences) ? 0 : 1);
+' "$FSTATS"
+OK66=$?
+if [ $OK66 -eq 0 ]; then OK=0; else OK=1; fi
+report "smart histogram words_per_sentence somme=2=sentences" $OK
+
+# --- 67. v2.7.0 : sortie pipee --sentence-mode=smart sans ANSI ----------------
+"$FSTATS" --sentence-mode=smart tests/fixtures/test_fr.txt > "$TMPDIR/smconsole.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/smconsole.txt"; then OK=1; else OK=0; fi
+report "sortie pipee --sentence-mode=smart sans sequence ANSI" $OK
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

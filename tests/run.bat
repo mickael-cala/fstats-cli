@@ -4,7 +4,7 @@ rem ============================================================================
 rem tests\run.bat - Journal de validation reproductible de fstats
 rem (increments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilite"
 rem + Cible 1 B "Checks" + Cible 1 C "Baseline"
-rem + v2.6.1 (3.14 ne cloture pas une phrase))
+rem + v2.6.1 (3.14 ne cloture pas une phrase) + v2.7.0 (--sentence-mode basic|smart))
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
@@ -128,8 +128,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.6.1" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.6.1) else (set /a PASS+=1&echo PASS: --version affiche 2.6.1)
+"%FSTATS%" --version | findstr /C:"2.7.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.7.0) else (set /a PASS+=1&echo PASS: --version affiche 2.7.0)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -608,6 +608,88 @@ node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--
 if errorlevel 1 (set C59_OK=0) else (set C59_OK=1)
 :after59
 if "%C59_OK%"=="1" (set /a PASS+=1&echo PASS: histogramme words_per_sentence sur decimal.txt : somme=2=sentences) else (set /a FAIL+=1&echo FAIL: histogramme words_per_sentence sur decimal.txt : somme=2=sentences)
+
+rem --- 60. v2.7.0 : --sentence-mode=smart vs basic sur M. Dupont --------------
+if "%NODE_OK%"=="1" goto :node60
+set C60_OK=1
+goto :after60
+:node60
+node -e "var cp=require('child_process');var s=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=smart'],{input:'M. Dupont est l\u00e0. Bravo.',encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=basic'],{input:'M. Dupont est l\u00e0. Bravo.',encoding:'utf8'});var os=JSON.parse(s.stdout);var ob=JSON.parse(b.stdout);if(os.sentences===2&&ob.sentences===3){process.exit(0);}console.error('[cas60] smart='+os.sentences+' basic='+ob.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C60_OK=0) else (set C60_OK=1)
+:after60
+if "%C60_OK%"=="1" (set /a PASS+=1&echo PASS: --sentence-mode stdin M. Dupont est la. Bravo. -^> smart 2 phrases basic 3 phrases) else (set /a FAIL+=1&echo FAIL: --sentence-mode stdin M. Dupont est la. Bravo. -^> smart 2 phrases basic 3 phrases)
+
+rem --- 61. v2.7.0 : URL protegee en smart (https://ex.com) --------------------
+if "%NODE_OK%"=="1" goto :node61
+set C61_OK=1
+goto :after61
+:node61
+node -e "var cp=require('child_process');var s=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=smart'],{input:'Visitez https://ex.com maintenant.',encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=basic'],{input:'Visitez https://ex.com maintenant.',encoding:'utf8'});var os=JSON.parse(s.stdout);var ob=JSON.parse(b.stdout);if(os.sentences===1&&ob.sentences===2){process.exit(0);}console.error('[cas61] smart='+os.sentences+' basic='+ob.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C61_OK=0) else (set C61_OK=1)
+:after61
+if "%C61_OK%"=="1" (set /a PASS+=1&echo PASS: URL https://ex.com en smart -^> 1 phrase basic 2 phrases) else (set /a FAIL+=1&echo FAIL: URL https://ex.com en smart -^> 1 phrase basic 2 phrases)
+
+rem --- 62. v2.7.0 : abreviation e.g. deux points avales -----------------------
+if "%NODE_OK%"=="1" goto :node62
+set C62_OK=1
+goto :after62
+:node62
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=smart'],{input:'e.g. ceci.',encoding:'utf8'});var o=JSON.parse(r.stdout);if(o.sentences===1){process.exit(0);}console.error('[cas62] sentences='+o.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C62_OK=0) else (set C62_OK=1)
+:after62
+if "%C62_OK%"=="1" (set /a PASS+=1&echo PASS: e.g. en smart -^> deux points avales 1 phrase) else (set /a FAIL+=1&echo FAIL: e.g. en smart -^> deux points avales 1 phrase)
+
+rem --- 63. v2.7.0 : decimale 3.14 toujours geree en smart ---------------------
+if "%NODE_OK%"=="1" goto :node63
+set C63_OK=1
+goto :after63
+:node63
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=smart'],{input:'Co\u00fbt 3.14 euros.',encoding:'utf8'});var o=JSON.parse(r.stdout);if(o.sentences===1){process.exit(0);}console.error('[cas63] sentences='+o.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C63_OK=0) else (set C63_OK=1)
+:after63
+if "%C63_OK%"=="1" (set /a PASS+=1&echo PASS: 3.14 en smart -^> decimale pas de cloture 1 phrase) else (set /a FAIL+=1&echo FAIL: 3.14 en smart -^> decimale pas de cloture 1 phrase)
+
+rem --- 64. v2.7.0 : --sentence-mode=bogus -^> exit 1 + stderr -----------------
+if "%NODE_OK%"=="1" goto :node64
+set C64_OK=1
+goto :after64
+:node64
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--sentence-mode=bogus','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===1&&/sentence-mode/.test(r.stderr)){process.exit(0);}console.error('[cas64] exit='+r.status+' stderr='+JSON.stringify(r.stderr));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C64_OK=0) else (set C64_OK=1)
+:after64
+if "%C64_OK%"=="1" (set /a PASS+=1&echo PASS: --sentence-mode=bogus -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --sentence-mode=bogus -^> exit 1 + stderr)
+
+rem --- 65. v2.7.0 : defaut sans option = basic (regression test_fr) -----------
+"%FSTATS%" --summary-json tests\fixtures\test_fr.txt > "%TMPD%\def65.json" 2>nul
+"%FSTATS%" --summary-json --sentence-mode=basic tests\fixtures\test_fr.txt > "%TMPD%\bas65.json" 2>nul
+if "%NODE_OK%"=="1" goto :node65
+set C65_OK=1
+goto :after65
+:node65
+node -e "var a=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));var b=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));if(a.sentences===3&&b.sentences===3){process.exit(0);}console.error('[cas65] defaut='+a.sentences+' basic='+b.sentences);process.exit(1);" "%TMPD%\def65.json" "%TMPD%\bas65.json"
+if errorlevel 1 (set C65_OK=0) else (set C65_OK=1)
+:after65
+if "%C65_OK%"=="1" (set /a PASS+=1&echo PASS: test_fr.txt sans option -^> 3 phrases et basic explicite idem) else (set /a FAIL+=1&echo FAIL: test_fr.txt sans option -^> 3 phrases et basic explicite idem)
+
+rem --- 66. v2.7.0 : smart + histogramme words_per_sentence --------------------
+if "%NODE_OK%"=="1" goto :node66
+set C66_OK=1
+goto :after66
+:node66
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--sentence-mode=smart','--histogram=words_per_sentence'],{input:'M. Dupont est l\u00e0. Bravo.',encoding:'utf8'});var o=JSON.parse(r.stdout);var sum=o.histogram.classes.reduce(function(a,c){return a+c.count;},0);if(sum===2&&sum===o.sentences){process.exit(0);}console.error('[cas66] sum='+sum+' sentences='+o.sentences);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C66_OK=0) else (set C66_OK=1)
+:after66
+if "%C66_OK%"=="1" (set /a PASS+=1&echo PASS: smart histogram words_per_sentence somme=2=sentences) else (set /a FAIL+=1&echo FAIL: smart histogram words_per_sentence somme=2=sentences)
+
+rem --- 67. v2.7.0 : sortie pipee --sentence-mode=smart sans ANSI ---------------
+"%FSTATS%" --sentence-mode=smart tests\fixtures\test_fr.txt > "%TMPD%\smconsole.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node67
+echo SKIP: controle ANSI sentence-mode (node indisponible)
+goto :after67
+:node67
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\smconsole.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --sentence-mode=smart sans sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --sentence-mode=smart sans sequence ANSI [ESC])
+:after67
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)
 rd /s /q "%TMPD%" >nul 2>nul

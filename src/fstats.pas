@@ -113,7 +113,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.6.1';
+  FSTATS_VERSION = '2.7.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
@@ -277,6 +277,14 @@ type
 
   // Normalisation de casse des mots (--casefold, incrément C2-A)
   TCaseFold = (cfAscii, cfUnicode, cfNone);
+
+  // Mode de comptage des phrases (--sentence-mode, v2.7.0)
+  // smBasic : comportement historique exact (y compris la règle décimale
+  //           v2.6.1 : 3.14 ne clôture pas) ;
+  // smSmart : identique à basic, sauf pour le point '.' qui peut être
+  //           avalé (abréviations, URLs) — sémantique figée dans le
+  //           commentaire du bloc « Comptage des phrases » d'AnalyzeData.
+  TSentenceMode = (smBasic, smSmart);
 
   // Sous-format d'export CSV v2 (--csv=summary|words|chars, C2-A)
   TCsvKind = (ckSummary, ckWords, ckChars);
@@ -1566,9 +1574,42 @@ end;
   Performance : Utilisation de dictionnaires hashés pour O(1) par opération
   Sécurité : Gestion robuste des erreurs de lecture, validation UTF-8 stricte
   =============================================================================}
+
+// v2.7.0 : abréviations protégées par --sentence-mode=smart. Liste en
+// minuscules — le mot courant est comparé après LowerCase. Chaque motif
+// protège un point qui le suit immédiatement : « M. » (mot 'm'), « e.g. »
+// (premier point : 'e.' est un préfixe de 'e.g' ; second point : le mot
+// courant vaut 'e.g' — le '.' fait partie du mot en mode raw par défaut),
+// « www. », « etc. », etc. Les abréviations non reconnues (ex. « art. »)
+// clôturent normalement la phrase.
+const
+  SMART_ABBREVIATIONS: array[0..21] of string = (
+    'e.g', 'i.e', 'm', 'mme', 'mlle', 'dr', 'pr', 'st', 'ste', 'etc',
+    'mr', 'mrs', 'ms', 'jr', 'sr', 'inc', 'ltd', 'co', 'dept', 'fig',
+    'vs', 'www'
+  );
+
+// v2.7.0 : test d'abréviation du mode smart — vrai si W est exactement une
+// abréviation de la liste, ou si W + '.' est un préfixe d'une abréviation
+// (cas « e.g. » / « i.e. » : au premier point W = 'e' et 'e.' est un préfixe
+// de 'e.g'). N'utilise que Copy/Length (RTL standard, aucune dépendance).
+function IsSmartAbbreviation(const W: string): Boolean;
+var
+  X: string;
+begin
+  Result := False;
+  for X in SMART_ABBREVIATIONS do
+  begin
+    if X = W then Exit(True);
+    if (Length(X) >= Length(W) + 1) and
+       (Copy(X, 1, Length(W) + 1) = W + '.') then Exit(True);
+  end;
+end;
+
 procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats;
                       OptAll: Boolean; WordMode: TWordMode; CaseFoldMode: TCaseFold;
-                      MaxUnique: Int64; const SOpts: TStructureOptions);
+                      SentenceMode: TSentenceMode; MaxUnique: Int64;
+                      const SOpts: TStructureOptions);
 var
   Buffer: array[0..BUF_SIZE - 1] of Byte;
   ReadBytes, Pos, Used, i: Integer;
@@ -1582,6 +1623,8 @@ var
   FirstChar: Boolean;        // Vrai tant que le premier caractère du flux n'est pas consommé (BOM)
   LastCP: UInt32;            // Dernier code point traité (v2.6.1 : détection des décimales 3.14)
   DotPending: Boolean;       // Point précédé d'un chiffre en attente de décision (v2.6.1)
+  LastChars: string;         // Fenêtre des 8 derniers caractères du flux (v2.7.0 : règle URL)
+  W: string;                 // Mot courant en minuscules (v2.7.0 : test d'abréviation smart)
   
   // Dictionnaires hashés pour accumulation O(1) - CLÉ DE PERFORMANCE
   CharDict: TCharDict;
@@ -1693,6 +1736,7 @@ begin
   PendingSentence := False;
   LastCP := 0;
   DotPending := False;
+  LastChars := '';
   CurrentLine := '';
   Stats.MinLen := High(Int64);  // Pour trouver le minimum
   Stats.MaxLen := 0;            // Pour trouver le maximum
@@ -1767,12 +1811,49 @@ begin
         // terminateur, pour compter l'éventuelle phrase finale en fin de fichier.
         // v2.6.1 : un point précédé d'un chiffre est mis en attente — s'il est
         // suivi d'un chiffre (3.14), il ne clôture PAS la phrase (décimale).
+        // v2.7.0 (--sentence-mode=smart) : sémantique figée — identique à
+        // basic sauf pour le point '.', traité avant la règle décimale :
+        //   1. W := LowerCase(CurrentWord) ; si W est une abréviation de
+        //      SMART_ABBREVIATIONS, ou si W + '.' est un préfixe d'une
+        //      abréviation (cas « e.g. » / « i.e. » : au premier point
+        //      W = 'e' et 'e.' est un préfixe de 'e.g'), le point est AVALÉ
+        //      (aucune clôture, pas de DotPending : ni maintenant ni au
+        //      caractère suivant) ;
+        //   2. sinon, si la fenêtre LastChars (les 8 derniers caractères du
+        //      flux) contient '://', le point est avalé (URL, ex.
+        //      « https://ex.com ») ;
+        //   3. sinon, règle décimale v2.6.1 inchangée (LastCP chiffre ->
+        //      DotPending ; sinon CloseSentence).
+        // Périmètre (limites assumées, documentées) : les abréviations ne
+        // sont reconnues que si le point les suit immédiatement (mot courant
+        // = abréviation) ; « www. » sans protocole ne protège que son premier
+        // point — les points suivants du domaine (ex. « www.ex.com »)
+        // clôturent, faute de '://' dans la fenêtre ; un point qui suit un mot
+        // NON reconnu, ni '://' dans la fenêtre (ex. « Bonjour. Ensuite »),
+        // clôture normalement — noter que la règle des préfixes s'applique
+        // dès que W + '.' est un préfixe d'une abréviation, sans condition
+        // sur le caractère suivant (« e. g » avec espace avale donc son
+        // point, au même titre que le premier point de « e.g. ») ; '!', '?'
+        // et '…' clôturent toujours dans les deux modes.
         // C2-B : l'histogramme words_per_sentence reçoit le nombre de mots de
         // la phrase qui se clôt (0 pour une phrase vide, ex. terminuteurs
         // consécutifs : la somme des classes reste égale à sentences).
         if CP = $2E then
         begin
-          if (LastCP >= $30) and (LastCP <= $39) then
+          if SentenceMode = smSmart then
+          begin
+            W := LowerCase(CurrentWord);
+            if IsSmartAbbreviation(W) or (System.Pos('://', LastChars) > 0) then
+            begin
+              // Point avalé : aucune clôture, pas de DotPending — la phrase
+              // se poursuit sans coupure (décision définitive).
+            end
+            else if (LastCP >= $30) and (LastCP <= $39) then
+              DotPending := True
+            else
+              CloseSentence;
+          end
+          else if (LastCP >= $30) and (LastCP <= $39) then
             DotPending := True
           else
             CloseSentence;
@@ -1859,6 +1940,14 @@ begin
         // Mémorise le caractère précédent (v2.6.1 : décision décimale au point
         // suivant). Le LF ignoré d'un CRLF (Continue ci-dessus) ne l'écrase pas.
         LastCP := CP;
+        // v2.7.0 : fenêtre des 8 DERNIERS caractères du flux (règle URL du
+        // mode smart). Même convention que LastCP : le LF ignoré d'un CRLF ne
+        // l'écrase pas. La garde Length > 8 tronque par la gauche — c'est bien
+        // la fin de la fenêtre qui doit rester (Copy(..., 1, 8) garderait les
+        // 8 PREMIERS caractères, rendant la règle URL inopérante).
+        LastChars := LastChars + VisualChar(CP);
+        if Length(LastChars) > 8 then
+          LastChars := Copy(LastChars, Length(LastChars) - 7, 8);
       end;
     until ReadBytes = 0;  // Fin du fichier
 
@@ -1971,14 +2060,16 @@ end;
              (interceptées par l'appelant pour un message clair).
   -----------------------------------------------------------------------------}
 procedure AnalyzeFile(const Path: string; out Stats: TStats; OptAll: Boolean;
-                      WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64;
+                      WordMode: TWordMode; CaseFoldMode: TCaseFold;
+                      SentenceMode: TSentenceMode; MaxUnique: Int64;
                       const SOpts: TStructureOptions);
 var
   FS: TFileStream;
 begin
   FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
   try
-    AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
+    AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
+                MaxUnique, SOpts);
   finally
     FS.Free;
   end;
@@ -1990,14 +2081,16 @@ end;
   donc pas fermé ici.
   -----------------------------------------------------------------------------}
 procedure AnalyzeStdin(out Stats: TStats; OptAll: Boolean;
-                       WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64;
+                       WordMode: TWordMode; CaseFoldMode: TCaseFold;
+                       SentenceMode: TSentenceMode; MaxUnique: Int64;
                        const SOpts: TStructureOptions);
 var
   HS: THandleStream;
 begin
   HS := THandleStream.Create(StdInputHandle);
   try
-    AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
+    AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
+                MaxUnique, SOpts);
   finally
     HS.Free;
   end;
@@ -3896,6 +3989,8 @@ begin
   WriteLn(Out, 'Analyse lexicale (v2.3.0) :');
   WriteLn(Out, '  --word-mode=MODE  raw | ascii | unicode (tokenisation des mots)');
   WriteLn(Out, '  --casefold=MODE   ascii | unicode | none (repli de casse)');
+  WriteLn(Out, '  --sentence-mode=MODE basic | smart (defaut basic ; smart :');
+  WriteLn(Out, '                    abreviations et URLs protegees)');
   WriteLn(Out, '  --lexical-stats   Unique, hapax, TTR, longueur moy., entropie');
   WriteLn(Out, '  --top-words=N     Limite de la section mots (0 = tous)');
   WriteLn(Out, '  --top-chars=N     Limite de la section caracteres (0 = tous)');
@@ -3975,6 +4070,7 @@ var
   // Options d'analyse lexicale (incrément C2-A)
   WordMode: TWordMode;         // --word-mode (raw par défaut)
   CaseFoldMode: TCaseFold;     // --casefold (ascii par défaut)
+  SentenceMode: TSentenceMode; // --sentence-mode (basic par défaut, v2.7.0)
   CsvKind: TCsvKind;           // --csv=summary|words|chars
   OptLexicalStats: Boolean;    // --lexical-stats
   OptReadability: Boolean;     // --readability (C2-C)
@@ -4056,6 +4152,7 @@ begin
   // Analyse lexicale (C2-A) : défauts = comportement historique strict
   WordMode := wmRaw;
   CaseFoldMode := cfAscii;
+  SentenceMode := smBasic;     // v2.7.0 : --sentence-mode, défaut = historique
   CsvKind := ckSummary;
   OptLexicalStats := False;
   OptReadability := False;     // --readability (C2-C) : désactivé par défaut
@@ -4279,6 +4376,25 @@ begin
         WriteLn(ErrOutput, 'Erreur: utilisez --casefold=ascii|unicode|none');
         Halt(1);
       end
+
+      // Mode de comptage des phrases (v2.7.0)
+      else if (Copy(Param, 1, 16) = '--sentence-mode=') or (Copy(Param, 1, 16) = '--sentence-mode:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 17, Length(ParamOrig)));
+        if V = 'basic' then SentenceMode := smBasic
+        else if V = 'smart' then SentenceMode := smSmart
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --sentence-mode attend "basic" ou "smart" (recu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--sentence-mode' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --sentence-mode=basic|smart');
+        Halt(1);
+      end
+
       else if Param = '--lexical-stats' then
         OptLexicalStats := True
       else if Param = '--readability' then
@@ -4759,9 +4875,10 @@ begin
       try
         // Analyse du fichier courant (ou de l'entrée standard)
         if Files[i] = 'stdin' then
-          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts)
+          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, SentenceMode, MaxUnique, SOpts)
         else
-          AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
+          AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
+                      MaxUnique, SOpts);
 
         // C2 (v2.6.0) : évaluation des checks APRÈS l'analyse, sur les
         // compteurs TStats — le streaming et la mémoire bornée ne sont pas
