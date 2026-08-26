@@ -2,19 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Installer Free Pascal
-        run: choco install -y freepascal
-      - name: Lancer la suite de tests
+      - name: Installer Free Pascal et lancer les tests
         shell: cmd
-        run: tests\run.bat
+        run: |
+          choco install -y freepascal --no-progress
+          call "C:\ProgramData\chocolatey\bin\refreshenv.bat"
+          tests\run.bat
 
   test-linux:
     runs-on: ubuntu-latest

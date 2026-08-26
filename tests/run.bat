@@ -28,7 +28,7 @@ if not errorlevel 1 set NODE_OK=1
 
 rem --- 1. Compilation ---------------------------------------------------------
 fpc -O2 -Mobjfpc -FE. src\fstats.pas > "%TMPD%\compile.log" 2>&1
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [exit 0]) else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [exit 0])
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%]) else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%])
 findstr /C:"lines compiled" "%TMPD%\compile.log"
 
 rem --- 2. Compteurs de reference (tests\fixtures\test_fr.txt) -----------------
