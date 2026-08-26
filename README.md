@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.3.0 · Free Pascal (mode objfpc) · MIT
+Version 2.4.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` analyse un ou plusieurs fichiers texte et compte les **caractères** (code
 points UTF-8), **mots**, **lignes** et **phrases**, avec export **JSON**/**CSV**,
@@ -14,6 +14,10 @@ En option (v2.3.0), une **analyse lexicale** : modes de tokenisation
 (`--word-mode`), repli de casse (`--casefold`), statistiques de vocabulaire
 (`--lexical-stats` : mots uniques, hapax, TTR, longueur moyenne, entropie),
 limites Top configurables et CSV v2.
+En option (v2.4.0), une **analyse structure** : n-grams sur les mots du mode
+courant (`--ngrams`, `--top-ngrams`, `--stopwords`), histogrammes ASCII
+(`--histogram` : longueur de ligne, longueur de mot, mots par phrase) et
+classes de caractères (`--char-classes`).
 La sortie console est compacte, alignée, en **ASCII pur** : conçue pour le
 terminal et les scripts (aucune séquence ANSI par défaut, redirection sûre).
 L'encodage de sortie est **UTF-8 déterministe**, y compris redirigé vers un
@@ -70,6 +74,18 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 
 Sémantique figée : voir « [Sémantique lexicale](#sémantique-lexicale-v230) ».
 
+### Structure (v2.4.0)
+
+| Option              | Effet                                                        |
+|---------------------|--------------------------------------------------------------|
+| `--ngrams=N`        | N-grams sur les mots du mode courant (`--word-mode` + `--casefold`), N = 1..5 ; fenêtres **par ligne** (ne traversent pas les sauts de ligne) |
+| `--top-ngrams=K`    | Limite top-K des n-grams (défaut 10 ; `0` = tous, mémoire non bornée) |
+| `--stopwords=L`     | `fr` \| `en` \| `none` (défaut) : retire les mots vides du flux n-gram **uniquement** (les statistiques de mots existantes ne sont pas affectées) ; sans `--ngrams`, l'option est **ignorée silencieusement** |
+| `--histogram=M`     | `line_length` \| `word_length` \| `words_per_sentence` (barres ASCII, classes documentées ci-dessous ; les formes à tirets `line-length`, `word-length`, `words-per-sentence` de la roadmap sont aussi acceptées) |
+| `--char-classes`    | Classe chaque code point **une seule fois** dans `letters` \| `digits` \| `whitespace` \| `punctuation` \| `control` \| `other` (somme = `characters`) |
+
+Sémantique figée : voir « [Sémantique structure (v2.4.0)](#sémantique-structure-v240) ».
+
 ### Exports
 
 | Option                | Effet                                                        |
@@ -105,6 +121,10 @@ fstats tests\fixtures\test_fr.txt
 fstats --word-mode=ascii --top-words=20 --lexical-stats corpus.txt
 fstats --casefold=unicode --lexical-stats --json corpus_fr.txt
 fstats --csv=words --top-words=50 rapport.txt
+fstats --ngrams=3 --top-ngrams=20 --word-mode=ascii corpus.txt
+fstats --ngrams=2 --stopwords=fr corpus_fr.txt
+fstats --histogram=line_length --histogram=word_length rapport.txt
+fstats --char-classes --json corpus.txt
 fstats --help
 ```
 
@@ -175,6 +195,38 @@ Lexical
   Entropy:        3.9219
 ```
 
+Console avec `--ngrams=2 --histogram=line_length --char-classes` (sections
+C2-B dédiées, ASCII pur) :
+
+```
+N-grams (N=2)
+-------------
+   #  N-gram                       Count
+   1  avec des                         1
+   2  des mots.                        1
+   ...
+
+Histogram (line_length)
+-----------------------
+  0-9     0
+ 10-19  # 1
+ 20-29  # 1
+ 30-39  # 1
+ 40+      0
+
+Character Classes
+-----------------
+  Letters:        57
+  Digits:          0
+  Whitespace:     12
+  Punctuation:     3
+  Control:         0
+  Other:           0
+```
+
+Les sections `N-grams`, `Histogram` et `Character Classes` s'ajoutent quand
+leurs options sont activées, **indépendamment** de `--char`/`--word`/`--line`.
+
 ### JSON
 
 Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
@@ -187,7 +239,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -224,8 +276,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.3.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.3.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -246,7 +298,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -259,7 +311,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.3.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Avec `--lexical-stats`, `--summary-json` ajoute (toujours à plat) les clés
@@ -425,6 +477,109 @@ ignorés pour le vocabulaire. Sémantique documentée : `unique_words` est
 portent alors sur le jeu de types stockés. `words` (tokens) et
 `average_word_length` restent exacts (comptés en streaming).
 
+## Sémantique structure (v2.4.0)
+
+### N-grams (`--ngrams`)
+
+- **Définition (figée)** : les n-grams sont des fenêtres glissantes de N mots
+  (1 ≤ N ≤ 5) sur les **mots du mode courant** — la tokenisation
+  (`--word-mode`) et le repli de casse (`--casefold`) actifs sont appliqués,
+  cohérent avec `--lexical-stats`.
+- **Non-traversée des lignes** : chaque ligne produit ses propres fenêtres ; un
+  saut de ligne « casse » le flux (aucun n-gram ne chevauche deux lignes).
+- **Top-K (mémoire bornée)** : seuls les `--top-ngrams=K` les plus fréquents
+  sont conservés (défaut 10, `0` = tous). Mémoire bornée par un **top-K
+  sketch** : quand le dictionnaire des n-grams dépasse `max(8×K, 64)` entrées,
+  il est réduit au top-K. Conséquence documentée : sur un très gros corpus, un
+  n-gram rare écarté en cours de route peut manquer dans le top final (les
+  comptes des n-grams conservés restent exacts). Sur les corpus de test, le
+  résultat est exact.
+- **JSON** : clé additif `"ngrams": [{"rank": r, "words": [...mots...], "count":
+  c}, ...]` (tableau de mots). Console : section « N-grams (N=…) » avec rang,
+  n-gram (mots séparés par un espace) et compte.
+- **Validation** : `--ngrams=0` ou `--ngrams>5` → erreur fatale (exit 1).
+  `--stopwords` et `--top-ngrams` **sans** `--ngrams` sont **ignorés
+  silencieusement** (aucun effet, exit 0) — cohérent avec `--include`/
+  `--exclude` sans `--recursive`.
+
+### Mots vides (`--stopwords`)
+
+Les mots vides sont retirés **du flux de tokens utilisé pour les n-grams
+uniquement** : les statistiques de mots existantes (`words`, top words,
+`--lexical-stats`, histogramme `word_length`…) ne sont **pas** affectées.
+Le matching s'applique au flux **casefoldé** (défaut `--casefold=ascii` :
+`Il` → `il` est retiré ; avec `--casefold=none`, `Il` ne l'est pas).
+
+Listes intégrées (figées, 20 mots par langue) :
+
+| Langue | Mots vides |
+|---|---|
+| `fr` | `le la les un une des de du et ou mais que qui ce il elle on je tu ne` |
+| `en` | `the a an and or but of to in on for with is are was it this that not as` |
+
+Exemple : `fstats --ngrams=2 --stopwords=fr corpus.txt` — « le » et « il » ne
+participent pas aux bigrammes, mais restent comptés dans les mots.
+
+### Histogrammes (`--histogram`)
+
+Trois métriques, barres en **ASCII pur** (`#`, 1 barre par occurrence plafonnée
+à 60) suivies du compte numérique. Classes **figées** (identiques à l'exemple
+de la roadmap §6.6 pour `line_length` ; définies et documentées ici pour les
+deux autres) :
+
+| Métrique | Classes | Index de la valeur V |
+|---|---|---|
+| `line_length` | `0-9`, `10-19`, `20-29`, `30-39`, `40+` | `min(V div 10, 4)` |
+| `word_length` | `1-2`, `3-4`, `5-6`, `7-8`, `9-10`, `11-12`, `13+` | `min((V−1) div 2, 6)` |
+| `words_per_sentence` | `0-4`, `5-9`, `10-14`, `15-19`, `20+` | `min(V div 5, 4)` |
+
+Sémantique :
+- `line_length` : longueur des lignes en **code points**, toutes les lignes
+  comprises (les lignes vides tombent dans `0-9`) ; **la somme des classes =
+  `lines`**.
+- `word_length` : longueur des mots du mode courant en **code points**
+  (cohérent avec `average_word_length`) ; **la somme des classes = `words`**.
+- `words_per_sentence` : mots par phrase selon la détection de phrases
+  existante (`.` `!` `?` `…`) ; une phrase vide (terminateurs consécutifs) est
+  comptée dans `0-4` ; **la somme des classes = `sentences`**. En mode
+  `--word-mode=raw` (défaut), la ponctuation attachée à un mot
+  (`simple.`) appartient au mot mais clôt la phrase immédiatement : les
+  comptes par phrase sont alors approximatifs (utiliser
+  `--word-mode=ascii|unicode` pour des mots « propres »).
+
+JSON : clé additif `"histogram": {"metric": "line_length", "classes":
+[{"range": "0-9", "count": n}, ...]}`. Console : section
+« Histogram (metric) ».
+
+### Classes de caractères (`--char-classes`)
+
+Chaque code point est classé **une seule fois** pendant le décodage ; la somme
+des six classes est **exactement `characters`** (assertion de test). Plages
+**figées** :
+
+| Classe | Plages exactes |
+|---|---|
+| `whitespace` | `U+0009` (TAB), `U+000A` (LF), `U+000D` (CR), `U+0020` (espace) — cohérent avec le compteur `tabs` (le TAB n'est pas un « non imprimable ») |
+| `control` | C0 hors TAB/LF/CR (`U+0000`–`U+001F` moins `U+0009`/`U+000A`/`U+000D`), DEL (`U+007F`), C1 (`U+0080`–`U+009F`) |
+| `digits` | `U+0030`–`U+0039` (chiffres ASCII) |
+| `letters` | `A-Z` (`U+0041`–`U+005A`), `a-z` (`U+0061`–`U+007A`), Latin-1 hors `×`/`÷` (`U+00C0`–`U+00D6`, `U+00D8`–`U+00F6`, `U+00F8`–`U+00FF`), Latin étendu A/B (`U+0100`–`U+024F`), grec hors point-virgule grec (`U+0370`–`U+03FF` sauf `U+037E`), cyrillique (`U+0400`–`U+04FF`), Latin étendu additionnel (`U+1E00`–`U+1EFF`) |
+| `punctuation` | Plages ASCII `U+0021`–`U+002F`, `U+003A`–`U+0040`, `U+005B`–`U+0060`, `U+007B`–`U+007E` + ponctuation/symboles Latin-1 (`U+00A1`–`U+00BF`) |
+| `other` | tout le reste : symboles, blancs Unicode non-ASCII (`U+00A0`, `U+2000`…), marques combinantes (`U+0300`–`U+036F`), API (`U+0250`–`U+02AF`), `U+FFFD` (séquences UTF-8 invalides), BOM `U+FEFF`… |
+
+JSON : clé additif `"char_classes": {"letters": n, "digits": n, "whitespace":
+n, "punctuation": n, "control": n, "other": n}`. Console : section
+« Character Classes ». Les classes `control` et le compteur `nonprintable`
+peuvent différer sur un fichier contenant des contrôles C1 (inclus dans
+`control`, exclus de `nonprintable`).
+
+### Agrégation multi-fichiers (`--json-mode=aggregate`)
+
+En mode aggregate, `char_classes` et `histogram` sont **sommés classe par
+classe** dans `totals` (clés `totals.char_classes` et `totals.histogram`, mêmes
+structures que par fichier). Les **n-grams ne sont pas agrégés** (limitation
+documentée) : `totals` ne contient pas de clé `ngrams` ; les n-grams restent
+présents dans chaque objet de `files`.
+
 ## Validation (texte de référence)
 
 `tests/fixtures/test_fr.txt` (3 lignes) : « Voici un exemple simple. / Deuxième
@@ -487,8 +642,8 @@ fstats/
   v2.2.0, incrément A : stdin, glob interne, NDJSON/array/aggregate,
   `--summary-json`, compteurs qualité).
 - `doc/ROADMAP-CIBLE2.md` — Cible 2 « Corpus Profiler » (vocabulaire,
-  n-grammes, distributions, export pandas/R/Excel ; incrément C2-A « Lexique »
-  livré en v2.3.0).
+  n-grammes, distributions, export pandas/R/Excel ; incréments C2-A « Lexique »
+  livré en v2.3.0 et C2-B « Structure » livré en v2.4.0).
 - `doc/ROADMAP-CIBLE3.md` — Cible 3 « Log Sentinel » (niveaux, top messages,
   patterns, rédaction, watch, sortie NDJSON pour pipelines/Grafana).
 - `doc/VERIFICATION.md` — journal de validation (sorties réelles, historique).
@@ -498,9 +653,9 @@ fstats/
 ## Tests automatisés
 
 - `bash tests/run.sh` (Git Bash / Linux) : compile, exécute les cas
-  d'acceptation des incréments A et C2-A, vérifie les exit codes et valide le
-  JSON avec node. Sortie : une ligne PASS/FAIL par cas, puis un bilan (exit 0
-  si tout passe).
+  d'acceptation des incréments A, C2-A et C2-B, vérifie les exit codes et
+  valide le JSON avec node. Sortie : une ligne PASS/FAIL par cas, puis un bilan
+  (exit 0 si tout passe).
 - `tests\run.bat` (CMD) : équivalent Windows, mêmes cas et mêmes assertions
   (validation JSON avec node si disponible ; aucun `Pause` final, CI-friendly).
 - Prérequis : `fpc` et `node` sur le PATH.
@@ -527,3 +682,12 @@ fstats/
 - Le case folding `--casefold=unicode` est une table **basique limitée**
   (accents français/allemand, voir « Sémantique lexicale »), pas un folding
   Unicode complet.
+- N-grams : top-K **approximatif** sur très gros corpus (top-K sketch, voir
+  « Sémantique structure ») ; `--top-ngrams=0` rend la mémoire non bornée ;
+  les n-grams ne sont **pas agrégés** en `--json-mode=aggregate` (présents par
+  fichier uniquement) ; en mode `raw`, la ponctuation attachée participe aux
+  n-grams (utiliser `--word-mode=ascii|unicode` pour des mots « propres »).
+- Classes de caractères : périmètre **figé** et documenté (voir « Sémantique
+  structure ») — pas une classification Unicode complète : les blancs
+  Unicode non-ASCII (U+00A0…), les marques combinantes et l'API tombent dans
+  `other`, et seuls les chiffres ASCII sont des `digits`.

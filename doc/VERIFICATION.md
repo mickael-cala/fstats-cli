@@ -261,3 +261,133 @@ par defaut (test_fr.txt 3/13/72/3, compteurs qualite, NDJSON/array/aggregate,
 --summary-json, stdin, globs, exit codes 0/1, ASCII pur en pipe), nouvelles
 options fonctionnelles et golden-teste, CSV v2 (rupture documentee) en place,
 version 2.3.0. B et C (n-grams, histogrammes, lisibilite) restent a venir.
+---
+
+## Increment C2-B « Structure » (v2.4.0) — 2026-08-26
+
+Validation de l'implementation de `doc/ROADMAP-CIBLE2.md` (C2-B : --ngrams,
+--top-ngrams, --stopwords, --histogram, --char-classes, agregation).
+Binaire compile depuis `src/fstats.pas` (mono-fichier, RTL FPC standard).
+
+### 1. Compilation
+
+`fpc -O2 -Mobjfpc src/fstats.pas` : exit=0
+
+```
+3577 lines compiled, 0.8 sec, 342128 bytes code, 19668 bytes data
+```
+
+### 2. Regression par defaut (test_fr.txt, inchange)
+
+`fstats --summary-json tests/fixtures/test_fr.txt` : 3/13/72/3, moy 4,
+min/max/moy 16/30/23, memes champs qu'en v2.3.0 sans les nouvelles options
+(seule la version change) :
+
+```
+{"file": "tests\/fixtures\/test_fr.txt", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+```
+
+### 3. N-grams (goldens)
+
+`fstats --json --ngrams=2 --word-mode=ascii tests/fixtures/corpus_en.txt` :
+exactement **9 bigrammes** (comptes = 1), dont `hello world` ; le bigramme
+traversant le saut de ligne `test one` est **absent** (les fenetres ne
+traversent pas les lignes).
+
+`fstats --json --ngrams=2 tests/fixtures/ngram_lines.txt` (fixture nouvelle
+`alpha beta` / `gamma delta`) : **2 bigrammes** (`alpha beta`, `gamma delta`),
+`beta gamma` **absent** — un bigramme n'apparaitrait que si les fenetres
+traversaient le saut de ligne.
+
+`fstats --json --ngrams=3 --top-ngrams=2 tests/fixtures/test_fr.txt` :
+exactement **2 entrees** (top-K). `--ngrams=0` et `--ngrams=6` : exit=1 +
+message stderr (`--ngrams attend un entier de 1 a 5`).
+
+### 4. Stopwords
+
+`fstats --json --ngrams=2 --top-ngrams=0 --stopwords=fr tests/fixtures/corpus_fr.txt` :
+`words=20` (statistiques de mots inchangees) et **14 bigrammes** : `et`, `le`
+et `Il` (casefold ascii -> `il`) sont retires du flux n-gram uniquement
+(sans stopwords le fichier donne 16 bigrammes). Verifications : absence de
+`et croissant,` et de `le garcon`, presence de `? est` (forme apres retrait
+de `il`).
+
+`--stopwords=fr` sans `--ngrams` : **ignore silencieusement** (exit=0, pas de
+cle `ngrams` dans le JSON) — decision documentee au README.
+
+### 5. Histogrammes (classes roadmap §6.6 + classes stables)
+
+`fstats --json --histogram=line_length tests/fixtures/test_fr.txt` : classes
+**identiques a l'exemple de la roadmap §6.6** `0-9, 10-19, 20-29, 30-39, 40+`,
+comptes `0/1/1/1/0`, somme = lignes (3).
+
+`--histogram=word_length` : classes stables `1-2, 3-4, 5-6, 7-8, 9-10, 11-12,
+13+` (largueur 2), comptes `3/3/4/3/0/0/0`, somme = mots (13).
+
+`--histogram=words_per_sentence` : classes stables `0-4, 5-9, 10-14, 15-19,
+20+` (largueur 5, base 0), comptes `2/1/0/0/0`, somme = phrases (3).
+Les formes a tirets de la roadmap (`--histogram=line-length`, `word-length`,
+`words-per-sentence`) sont acceptees.
+
+### 6. Char-classes (golden test_fr.txt)
+
+`fstats --json --char-classes tests/fixtures/test_fr.txt` :
+
+```
+"char_classes": {"letters": 57, "digits": 0, "whitespace": 12,
+                 "punctuation": 3, "control": 0, "other": 0}
+```
+
+Conservation : somme des six classes = 72 = `characters` (assertion de test).
+Plages exactes documentees au README (« Semantique des classes de
+caracteres »).
+
+### 7. Agregation (--json-mode=aggregate)
+
+`fstats tests\docs\**\*.md --json-mode=aggregate --char-classes --histogram=line_length` :
+`char_classes` et `histogram` sommes classe par classe dans `totals` :
+
+```
+totals.char_classes: {"letters": 93, "digits": 0, "whitespace": 24,
+                      "punctuation": 6, "control": 0, "other": 0}
+totals.histogram: line_length ["0-9:3", "10-19:4", "20-29:2", "30-39:0", "40+:0"]
+```
+
+Les n-grams ne sont **pas** agreges (limitation documentee) : pas de cle
+`ngrams` dans `totals`, ils restent par fichier dans `files`.
+
+### 8. Options invalides et --version
+
+`--ngrams=0` / `--ngrams=6` : exit=1 + message stderr. `--histogram=bogus` /
+`--stopwords=bogus` : exit=1 + message stderr. `fstats --version` :
+`fstats 2.4.0`.
+
+### 9. Suites automatisees
+
+`tests\run.bat` (CMD, exe racine via `-FE.`) : exit=0, **33/33 PASS**.
+`tests/run.sh` (Git Bash, exe dans `src/`) : exit=0, **33/33 PASS** — extraits :
+
+```
+PASS: --ngrams=2 --word-mode=ascii corpus_en.txt -> 9 bigrammes, pas de [test one]
+PASS: ngram_lines.txt -> 2 bigrammes, pas de [beta gamma]
+PASS: --ngrams=3 --top-ngrams=2 -> exactement 2 entrees
+PASS: --ngrams=0 / --ngrams=6 -> exit 1 + message stderr
+PASS: --stopwords=fr --ngrams=2 corpus_fr.txt -> 14 bigrammes, mots vides retires
+PASS: --histogram=line_length -> classes 0-9..40+, somme = lignes
+PASS: --histogram=word_length -> somme des classes = mots
+PASS: --histogram=words_per_sentence -> somme des classes = phrases
+PASS: --char-classes test_fr.txt -> 57/0/12/3/0/0, somme = 72 caracteres
+PASS: aggregate --char-classes --histogram -> totaux sommes classe par classe
+PASS: sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI
+
+RESULTAT : 33 reussi, 0 echec(s)
+```
+
+### Bilan
+
+C2-B satisfait les criteres de ROADMAP-CIBLE2.md : aucune regression en mode
+par defaut (les 22 cas v2.3.0 passent inchanges, version 2.4.0), n-grams
+(goldens, non-traversee des lignes, top-K borne, stopwords fr/en), histogrammes
+(classes roadmap §6.6 + classes stables documentees, somme = ligne/mots/phrases),
+char-classes (conservation = characters, golden), agregation classe par classe,
+exit codes 0/1, ASCII pur en pipe. C2-C (lisibilite, optionnel) reste a venir.

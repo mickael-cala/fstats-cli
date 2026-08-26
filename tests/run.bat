@@ -2,14 +2,15 @@
 setlocal EnableExtensions
 rem ============================================================================
 rem tests\run.bat - Journal de validation reproductible de fstats
-rem (increments A + C2-A "Lexique", v2.3.0)
+rem (increments A + C2-A "Lexique" + C2-B "Structure", v2.4.0)
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
 rem valide le JSON avec node (si disponible). Sortie : une ligne PASS/FAIL par
 rem cas, puis un bilan. Exit 0 si tout passe, 1 sinon. Pas de Pause : CI friendly.
 rem Note : les globs sont resolus en interne par fstats (CMD n'expand pas les
-rem motifs), les filtres node sont sans metacaracteres cmd.
+rem motifs), les filtres node sont sans metacaracteres cmd. Ce fichier reste en
+rem ASCII pur (aucun accent) pour un encodage deterministe en CI.
 rem ============================================================================
 
 cd /d "%~dp0.."
@@ -121,8 +122,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.3.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.3.0) else (set /a PASS+=1&echo PASS: --version affiche 2.3.0)
+"%FSTATS%" --version | findstr /C:"2.4.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.4.0) else (set /a PASS+=1&echo PASS: --version affiche 2.4.0)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -222,6 +223,119 @@ if not errorlevel 1 set BAD_OK=0
 findstr /C:"word-mode" "%TMPD%\bad.err" >nul 2>nul
 if errorlevel 1 set BAD_OK=0
 if "%BAD_OK%"=="1" (set /a PASS+=1&echo PASS: --word-mode=bogus -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --word-mode=bogus -^> exit 1 + message stderr)
+
+rem --- 23. ngrams=2 corpus_en (golden, fenetres par ligne) ---------------------
+"%FSTATS%" --json --ngrams=2 --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ng2.json" 2>nul
+if "%NODE_OK%"=="1" goto :node23
+echo SKIP: ng2.json (node indisponible)
+goto :after23
+:node23
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var n=o.ngrams;var has=function(a){return n.some(function(e){return e.words.length===2&&e.words[0]===a[0]&&e.words[1]===a[1];});};process.exit((n.length===9?0:1)+(n.every(function(e){return e.count===1;})?0:1)+(has(['hello','world'])?0:1)+(has(['test','one'])?1:0));" < "%TMPD%\ng2.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --ngrams=2 --word-mode=ascii corpus_en.txt -^> 9 bigrammes, pas de [test one]) else (set /a PASS+=1&echo PASS: --ngrams=2 --word-mode=ascii corpus_en.txt -^> 9 bigrammes, pas de [test one])
+:after23
+
+rem --- 24. ngram_lines.txt : pas de traversee des sauts de ligne ---------------
+"%FSTATS%" --json --ngrams=2 tests\fixtures\ngram_lines.txt > "%TMPD%\ngl.json" 2>nul
+if "%NODE_OK%"=="1" goto :node24
+echo SKIP: ngl.json (node indisponible)
+goto :after24
+:node24
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var n=o.ngrams;var has=function(a){return n.some(function(e){return e.words.length===2&&e.words[0]===a[0]&&e.words[1]===a[1];});};process.exit((n.length===2?0:1)+(has(['alpha','beta'])?0:1)+(has(['gamma','delta'])?0:1)+(has(['beta','gamma'])?1:0));" < "%TMPD%\ngl.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: ngram_lines.txt -^> 2 bigrammes, pas de [beta gamma]) else (set /a PASS+=1&echo PASS: ngram_lines.txt -^> 2 bigrammes, pas de [beta gamma])
+:after24
+
+rem --- 25. ngrams=3 top-ngrams=2 -^> exactement 2 entrees ----------------------
+"%FSTATS%" --json --ngrams=3 --top-ngrams=2 tests\fixtures\test_fr.txt > "%TMPD%\ng3.json" 2>nul
+if "%NODE_OK%"=="1" goto :node25
+echo SKIP: ng3.json (node indisponible)
+goto :after25
+:node25
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit(o.ngrams.length===2?0:1);" < "%TMPD%\ng3.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --ngrams=3 --top-ngrams=2 -^> exactement 2 entrees) else (set /a PASS+=1&echo PASS: --ngrams=3 --top-ngrams=2 -^> exactement 2 entrees)
+:after25
+
+rem --- 26. ngrams=0 et ngrams=6 -^> exit 1 --------------------------------------
+"%FSTATS%" --ngrams=0 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng0.err"
+set NG0_OK=1
+if not errorlevel 1 set NG0_OK=0
+findstr /C:"ngrams" "%TMPD%\ng0.err" >nul 2>nul
+if errorlevel 1 set NG0_OK=0
+"%FSTATS%" --ngrams=6 tests\fixtures\test_fr.txt >nul 2> "%TMPD%\ng6.err"
+if not errorlevel 1 set NG0_OK=0
+findstr /C:"ngrams" "%TMPD%\ng6.err" >nul 2>nul
+if errorlevel 1 set NG0_OK=0
+if "%NG0_OK%"=="1" (set /a PASS+=1&echo PASS: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr) else (set /a FAIL+=1&echo FAIL: --ngrams=0 / --ngrams=6 -^> exit 1 + message stderr)
+
+rem --- 27. stopwords=fr + ngrams=2 corpus_fr (golden) ---------------------------
+"%FSTATS%" --json --ngrams=2 --top-ngrams=0 --stopwords=fr tests\fixtures\corpus_fr.txt > "%TMPD%\swfr.json" 2>nul
+"%FSTATS%" --summary-json --stopwords=fr tests\fixtures\corpus_fr.txt > "%TMPD%\swno.json" 2>nul
+if "%NODE_OK%"=="1" goto :node27
+echo SKIP: swfr.json (node indisponible)
+goto :after27
+:node27
+node -e "var fs=require('fs');var o=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));var s=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));var n=o.ngrams;var has=function(a){return n.some(function(e){return e.words.length===2&&e.words[0]===a[0]&&e.words[1]===a[1];});};process.exit((o.statistics.words===20?0:1)+(n.length===14?0:1)+(has(['et','croissant,'])?1:0)+(has(['?','est'])?0:1)+(('ngrams' in s)?1:0));" "%TMPD%\swfr.json" "%TMPD%\swno.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --stopwords=fr --ngrams=2 corpus_fr.txt -^> 14 bigrammes, mots vides retires) else (set /a PASS+=1&echo PASS: --stopwords=fr --ngrams=2 corpus_fr.txt -^> 14 bigrammes, mots vides retires)
+:after27
+
+rem --- 28. histogram=line_length : classes roadmap + somme = lignes -------------
+"%FSTATS%" --json --histogram=line_length tests\fixtures\test_fr.txt > "%TMPD%\hll.json" 2>nul
+if "%NODE_OK%"=="1" goto :node28
+echo SKIP: hll.json (node indisponible)
+goto :after28
+:node28
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var h=o.histogram;var sum=h.classes.reduce(function(a,c){return a+c.count;},0);var r=h.classes.map(function(c){return c.range;});process.exit((h.metric==='line_length'&&r[0]==='0-9'&&r[1]==='10-19'&&r[2]==='20-29'&&r[3]==='30-39'&&r[4]==='40+'&&sum===o.statistics.lines)?0:1);" < "%TMPD%\hll.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --histogram=line_length -^> classes 0-9..40+, somme = lignes) else (set /a PASS+=1&echo PASS: --histogram=line_length -^> classes 0-9..40+, somme = lignes)
+:after28
+
+rem --- 29. histogram=word_length : somme = mots ---------------------------------
+"%FSTATS%" --json --histogram=word_length tests\fixtures\test_fr.txt > "%TMPD%\hwl.json" 2>nul
+if "%NODE_OK%"=="1" goto :node29
+echo SKIP: hwl.json (node indisponible)
+goto :after29
+:node29
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var h=o.histogram;var sum=h.classes.reduce(function(a,c){return a+c.count;},0);process.exit((h.metric==='word_length'&&sum===o.statistics.words)?0:1);" < "%TMPD%\hwl.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --histogram=word_length -^> somme des classes = mots) else (set /a PASS+=1&echo PASS: --histogram=word_length -^> somme des classes = mots)
+:after29
+
+rem --- 30. histogram=words_per_sentence : somme = phrases -----------------------
+"%FSTATS%" --json --histogram=words_per_sentence tests\fixtures\test_fr.txt > "%TMPD%\hwps.json" 2>nul
+if "%NODE_OK%"=="1" goto :node30
+echo SKIP: hwps.json (node indisponible)
+goto :after30
+:node30
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var h=o.histogram;var sum=h.classes.reduce(function(a,c){return a+c.count;},0);process.exit((h.metric==='words_per_sentence'&&sum===o.statistics.sentences)?0:1);" < "%TMPD%\hwps.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --histogram=words_per_sentence -^> somme des classes = phrases) else (set /a PASS+=1&echo PASS: --histogram=words_per_sentence -^> somme des classes = phrases)
+:after30
+
+rem --- 31. char-classes : golden test_fr + somme = caracteres -------------------
+"%FSTATS%" --json --char-classes tests\fixtures\test_fr.txt > "%TMPD%\cc.json" 2>nul
+if "%NODE_OK%"=="1" goto :node31
+echo SKIP: cc.json (node indisponible)
+goto :after31
+:node31
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var c=o.char_classes;var sum=c.letters+c.digits+c.whitespace+c.punctuation+c.control+c.other;process.exit((sum===o.statistics.characters&&c.letters===57&&c.digits===0&&c.whitespace===12&&c.punctuation===3&&c.control===0&&c.other===0)?0:1);" < "%TMPD%\cc.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --char-classes test_fr.txt -^> 57/0/12/3/0/0, somme = 72 caracteres) else (set /a PASS+=1&echo PASS: --char-classes test_fr.txt -^> 57/0/12/3/0/0, somme = 72 caracteres)
+:after31
+
+rem --- 32. aggregate + char-classes + histogram : totaux sommes -----------------
+"%FSTATS%" tests\docs\**\*.md --json-mode=aggregate --char-classes --histogram=line_length > "%TMPD%\aggs.json" 2>nul
+if "%NODE_OK%"=="1" goto :node32
+echo SKIP: aggs.json (node indisponible)
+goto :after32
+:node32
+node -e "var j=JSON.parse(require('fs').readFileSync(0,'utf8'));var t=j.totals;var cl={letters:0,digits:0,whitespace:0,punctuation:0,control:0,other:0};var hc={};for(var k=0;k<j.files.length;k++){var f=j.files[k];cl.letters+=f.char_classes.letters;cl.digits+=f.char_classes.digits;cl.whitespace+=f.char_classes.whitespace;cl.punctuation+=f.char_classes.punctuation;cl.control+=f.char_classes.control;cl.other+=f.char_classes.other;for(var m=0;m<f.histogram.classes.length;m++){hc[f.histogram.classes[m].range]=(hc[f.histogram.classes[m].range]||0)+f.histogram.classes[m].count;}}var okCC=cl.letters===t.char_classes.letters&&cl.digits===t.char_classes.digits&&cl.whitespace===t.char_classes.whitespace&&cl.punctuation===t.char_classes.punctuation&&cl.control===t.char_classes.control&&cl.other===t.char_classes.other;var okH=t.histogram.metric==='line_length'&&t.histogram.classes.every(function(c){return hc[c.range]===c.count;});var ngAbsent=('ngrams' in t)?0:1;process.exit((okCC&&okH&&ngAbsent)?0:1);" < "%TMPD%\aggs.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: aggregate --char-classes --histogram -^> totaux sommes classe par classe) else (set /a PASS+=1&echo PASS: aggregate --char-classes --histogram -^> totaux sommes classe par classe)
+:after32
+
+rem --- 33. Sortie pipee avec les nouvelles options : aucune sequence ANSI ------
+"%FSTATS%" --ngrams=2 --histogram=line_length --char-classes tests\fixtures\test_fr.txt > "%TMPD%\console2.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node33
+echo SKIP: controle ANSI C2-B (node indisponible)
+goto :after33
+:node33
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\console2.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI [ESC])
+:after33
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)

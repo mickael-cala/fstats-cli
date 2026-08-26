@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.3.0 (Sécurisée)
+  Version    : 2.4.0 (Sécurisée)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -15,6 +15,9 @@
   - Export JSON/CSV proprement échappé ; JSON multi-fichiers valide
     (NDJSON par défaut, --json-mode=array|aggregate), --summary-json plat
   - Sortie console compacte, alignée, ASCII pur (pipe/script friendly)
+  - Structure (C2-B) : n-grams sur les mots du mode courant (--ngrams,
+    --top-ngrams, --stopwords), histogrammes ASCII (--histogram), classes de
+    caractères (--char-classes)
   
   OPTIONS LIGNE DE COMMANDE :
   --char          : Afficher uniquement les stats de caractères
@@ -95,10 +98,20 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.3.0';
+  FSTATS_VERSION = '2.4.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
+
+  // Classes de caractères (--char-classes, C2-B) : l'ordre définit l'ordre
+  // d'affichage/export (lettres, chiffres, blancs, ponctuation, contrôles, autres).
+  CC_LETTERS = 0;
+  CC_DIGITS = 1;
+  CC_WHITESPACE = 2;
+  CC_PUNCTUATION = 3;
+  CC_CONTROL = 4;
+  CC_OTHER = 5;
+  CC_CLASS_COUNT = 6;
 
 {=============================================================================
   VARIABLES GLOBALES DE CONTRÔLE D'AFFICHAGE
@@ -112,11 +125,12 @@ var
   // Mémoire de l'état de la sortie standard au démarrage (console vs pipe/fichier)
   StdOutIsConsole: Boolean = False;
 
-  // Limites Top par section (--top-words=N / --top-chars=N, C2-A). Déclarées
-  // ici (avant les fonctions d'export) car utilisées par ExportCSV,
-  // ExportJSON et BuildJSONCompact ; 0 = tous (équivalent à --all).
+  // Limites Top par section (--top-words=N / --top-chars=N, C2-A ; --top-ngrams=K,
+  // C2-B). Déclarées ici (avant les fonctions d'export) car utilisées par
+  // ExportCSV, ExportJSON et BuildJSONCompact ; 0 = tous (équivalent à --all).
   TopWordsLimit: Integer = DEFAULT_TOP_LIMIT;
   TopCharsLimit: Integer = DEFAULT_TOP_LIMIT;
+  TopNgramsLimit: Integer = DEFAULT_TOP_LIMIT;
 
 {=============================================================================
   PROCÉDURE DE CONFIGURATION CONSOLE WINDOWS
@@ -165,6 +179,34 @@ type
   end;
   TWordFreqArray = array of TWordFreq;
 
+  // Tableau de chaînes (tokens d'une ligne, mots d'un n-gram, libellés de classes)
+  TStringArray = array of string;
+
+  // N-gram (incrément C2-B) : séquence de mots du mode courant + fréquence
+  TNGramFreq = record
+    Words: TStringArray;  // Mots (casefold appliqué, stopwords retirés)
+    Count: Int64;         // Nombre d'occurrences
+    Key: string;          // Clé interne (mots séparés par ' ') pour tri/égalité
+  end;
+  TNGramFreqArray = array of TNGramFreq;
+  TNGramDict = specialize TDictionary<string, Int64>;
+
+  // Langue des mots vides (--stopwords, C2-B) : listes courtes intégrées
+  TStopWord = (swNone, swFR, swEN);
+
+  // Type d'histogramme (--histogram, C2-B)
+  THistogramKind = (hkNone, hkLineLength, hkWordLength, hkWordsPerSentence);
+
+  // Options structure (C2-B) transmises à l'analyse : regroupées dans une
+  // structure pour garder des signatures de procédures lisibles.
+  TStructureOptions = record
+    NGramSize: Integer;          // --ngrams=N (1..5, 0 = désactivé)
+    TopNgramsLimit: Integer;     // --top-ngrams=K (0 = tous)
+    StopWordMode: TStopWord;     // --stopwords=fr|en|none
+    HistogramKind: THistogramKind; // --histogram=...
+    CharClasses: Boolean;        // --char-classes
+  end;
+
   // Enregistrement pour stocker une ligne et sa longueur
   TLineInfo = record
     Text: string;       // Contenu de la ligne (avec VisualChar appliqué)
@@ -190,6 +232,14 @@ type
     UniqueWords: Int64;              // Types de mots stockés (plafonné --max-unique)
     WordCharsTotal: Int64;           // Somme des longueurs (code points) de tous les tokens
     TopLines: TLineArray;            // Top N des lignes les plus longues
+    // Structure (incrément C2-B) — sections ajoutées quand activées
+    NGrams: TNGramFreqArray;         // Top-K n-grams (rempli si NGramSize > 0)
+    NGramSize: Integer;              // N des n-grams (0 = désactivé)
+    CharClasses: array[0..CC_CLASS_COUNT - 1] of Int64; // letters/digits/whitespace/punct/control/other
+    CharClassesEnabled: Boolean;     // --char-classes actif (export des sections)
+    HistogramKind: THistogramKind;   // hkNone = histogramme désactivé
+    HistRanges: TStringArray;        // Libellés des classes (ex. '0-9','10-19',...)
+    HistCounts: array of Int64;      // Comptes par classe (taille = nb de classes)
   end;
 
   // Mode d'export JSON multi-fichiers (--json-mode)
@@ -1111,6 +1161,328 @@ begin
 end;
 
 {=============================================================================
+  STRUCTURE (incrément C2-B) — n-grams, histogrammes, classes de caractères
+  =============================================================================
+  --ngrams=N      : fenêtres glissantes de N mots (1..5) sur les mots du mode
+                    courant (--word-mode + --casefold appliqués, cohérent avec
+                    --lexical-stats). Les fenêtres NE TRAVERSENT PAS les sauts
+                    de ligne : chaque ligne produit ses propres fenêtres.
+  --top-ngrams=K  : seuls les top-K sont conservés (défaut 10 ; 0 = tous).
+                    Mémoire bornée par un "top-K sketch" : quand le dictionnaire
+                    des n-grams dépasse un seuil, il est réduit au top-K (les
+                    n-grams rares écartés en cours de route sont perdus —
+                    approximation documentée, exacte sur les petits corpus).
+  --stopwords=L   : fr | en | none. Listes courtes intégrées (articles, pronoms,
+                    conjonctions courants). Les mots vides sont retirés du flux
+                    de tokens utilisé pour les n-grams UNIQUEMENT (les
+                    statistiques de mots existantes ne sont pas affectées).
+                    Matching sur le flux casefoldé (défaut --casefold=ascii).
+                    Sans --ngrams, l'option est ignorée silencieusement.
+  --histogram=M   : line_length | word_length | words_per_sentence. Classes
+                    identiques aux exemples de la roadmap (§6.6) pour
+                    line_length (0-9, 10-19, 20-29, 30-39, 40+) ; classes
+                    stables définies et documentées pour les deux autres.
+  --char-classes  : chaque code point classé UNE seule fois dans
+                    letters|digits|whitespace|punctuation|control|other ;
+                    la somme des six classes = characters (assertion de test).
+  =============================================================================}
+
+const
+  // Mots vides français (--stopwords=fr) — 20 entrées, documentées au README.
+  FR_STOPWORDS: array[0..19] of string = (
+    'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'ou',
+    'mais', 'que', 'qui', 'ce', 'il', 'elle', 'on', 'je', 'tu', 'ne');
+  // Mots vides anglais (--stopwords=en) — 20 entrées, documentées au README.
+  EN_STOPWORDS: array[0..19] of string = (
+    'the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on',
+    'for', 'with', 'is', 'are', 'was', 'it', 'this', 'that', 'not', 'as');
+
+{-----------------------------------------------------------------------------
+  MinInt64 : Minimum de deux entiers 64 bits (évite la dépendance à Math).
+  -----------------------------------------------------------------------------}
+function MinInt64(A, B: Int64): Int64;
+begin
+  if A < B then Result := A else Result := B;
+end;
+
+{-----------------------------------------------------------------------------
+  IsStopWord : Vrai si W appartient à la liste de mots vides de la langue Mode.
+  Matching exact sur le token casefoldé (les listes sont en minuscules).
+  -----------------------------------------------------------------------------}
+function IsStopWord(const W: string; Mode: TStopWord): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  case Mode of
+    swNone: Exit;
+    swFR: for i := 0 to High(FR_STOPWORDS) do
+            if W = FR_STOPWORDS[i] then Exit(True);
+    swEN: for i := 0 to High(EN_STOPWORDS) do
+            if W = EN_STOPWORDS[i] then Exit(True);
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  CharClassOf : Classe d'un code point (--char-classes), plages documentées au
+  README (« Sémantique des classes de caractères »). Chaque code point est
+  classé une seule fois :
+    - whitespace : TAB (U+0009), LF (U+000A), CR (U+000D), espace (U+0020) —
+      cohérent avec le compteur tabs (pas « non imprimable ») ;
+    - control : C0 hors TAB/LF/CR + DEL (U+007F) + C1 (U+0080..U+009F) ;
+    - digits : chiffres ASCII (U+0030..U+0039) ;
+    - letters : ASCII, Latin-1 (hors × ÷), Latin étendu A/B, grec (hors
+      point-virgule grec), cyrillique, latin étendu additionnel ;
+    - punctuation : plages ASCII de ponctuation + ponctuation/symboles Latin-1
+      (U+00A1..U+00BF) ;
+    - other : tout le reste (symboles, blancs Unicode non-ASCII, U+FFFD…).
+  -----------------------------------------------------------------------------}
+function CharClassOf(CP: UInt32): Integer;
+begin
+  // Blancs d'abord (TAB/LF/CR ne sont PAS des contrôles ici)
+  if (CP = 9) or (CP = 10) or (CP = 13) or (CP = 32) then Exit(CC_WHITESPACE);
+  // Contrôles : C0 hors TAB/LF/CR (déjà blancs), DEL et C1
+  if (CP <= $1F) or ((CP >= $7F) and (CP <= $9F)) then Exit(CC_CONTROL);
+  // Chiffres : ASCII uniquement
+  if (CP >= $30) and (CP <= $39) then Exit(CC_DIGITS);
+  // Lettres (plages alignées sur IsUnicodeWordChar, sans les chiffres ni les
+  // marques combinantes — celles-ci tombent dans `other`, périmètre documenté)
+  if ((CP >= $41) and (CP <= $5A)) or   // A-Z
+     ((CP >= $61) and (CP <= $7A)) or   // a-z
+     ((CP >= $C0) and (CP <= $D6)) or   // Latin-1 (hors ×)
+     ((CP >= $D8) and (CP <= $F6)) or   // Latin-1 (hors ÷)
+     ((CP >= $F8) and (CP <= $24F)) or  // Latin étendu A/B
+     ((CP >= $370) and (CP <= $3FF) and (CP <> $37E)) or  // Grec
+     ((CP >= $400) and (CP <= $4FF)) or // Cyrillique
+     ((CP >= $1E00) and (CP <= $1EFF)) then Exit(CC_LETTERS); // Latin étendu additionnel
+  // Ponctuation ASCII (U+0021..U+002F, U+003A..U+0040, U+005B..U+0060,
+  // U+007B..U+007E) + ponctuation/symboles Latin-1 (U+00A1..U+00BF)
+  if ((CP >= $21) and (CP <= $2F)) or
+     ((CP >= $3A) and (CP <= $40)) or
+     ((CP >= $5B) and (CP <= $60)) or
+     ((CP >= $7B) and (CP <= $7E)) or
+     ((CP >= $A1) and (CP <= $BF)) then Exit(CC_PUNCTUATION);
+  Result := CC_OTHER;
+end;
+
+{-----------------------------------------------------------------------------
+  HistClassCount : Nombre de classes d'un histogramme (5 pour line_length et
+  words_per_sentence, 7 pour word_length).
+  -----------------------------------------------------------------------------}
+function HistClassCount(Kind: THistogramKind): Integer;
+begin
+  case Kind of
+    hkLineLength:       Result := 5;
+    hkWordLength:       Result := 7;
+    hkWordsPerSentence: Result := 5;
+    else                Result := 0;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  HistogramIndex : Indice de classe d'une valeur V selon le type d'histogramme.
+  Classes (documentées au README) :
+    line_length       : 0-9, 10-19, 20-29, 30-39, 40+ (exemple roadmap §6.6)
+    word_length       : 1-2, 3-4, 5-6, 7-8, 9-10, 11-12, 13+
+    words_per_sentence: 0-4, 5-9, 10-14, 15-19, 20+
+  -----------------------------------------------------------------------------}
+function HistogramIndex(Kind: THistogramKind; V: Int64): Integer;
+begin
+  case Kind of
+    hkLineLength:       Result := MinInt64(V div 10, 4);
+    hkWordLength:       Result := MinInt64((V - 1) div 2, 6);
+    hkWordsPerSentence: Result := MinInt64(V div 5, 4);
+    else                Result := 0;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  HistogramRanges : Libellés « début-fin » ou « min+ » des classes d'un type
+  d'histogramme (ordre = ordre d'affichage/export).
+  -----------------------------------------------------------------------------}
+function HistogramRanges(Kind: THistogramKind): TStringArray;
+var
+  i: Integer;
+begin
+  Result := nil;  // hkNone : tableau vide (jamais exporté)
+  SetLength(Result, HistClassCount(Kind));
+  case Kind of
+    hkLineLength:
+      begin
+        for i := 0 to 3 do
+          Result[i] := IntToStr(10 * i) + '-' + IntToStr(10 * i + 9);
+        Result[4] := '40+';
+      end;
+    hkWordLength:
+      begin
+        for i := 0 to 5 do
+          Result[i] := IntToStr(2 * i + 1) + '-' + IntToStr(2 * i + 2);
+        Result[6] := '13+';
+      end;
+    hkWordsPerSentence:
+      begin
+        for i := 0 to 3 do
+          Result[i] := IntToStr(5 * i) + '-' + IntToStr(5 * i + 4);
+        Result[4] := '20+';
+      end;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  HistogramName : Nom JSON/console du type d'histogramme (soulignés).
+  -----------------------------------------------------------------------------}
+function HistogramName(Kind: THistogramKind): string;
+begin
+  case Kind of
+    hkLineLength:       Result := 'line_length';
+    hkWordLength:       Result := 'word_length';
+    hkWordsPerSentence: Result := 'words_per_sentence';
+    else                Result := '';
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  JoinNGramWords : Concatène les mots d'un n-gram avec un espace
+  (les tokens ne contiennent jamais d'espace : la jointure est sans ambiguïté).
+  -----------------------------------------------------------------------------}
+function JoinNGramWords(const Words: TStringArray): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(Words) do
+  begin
+    if i > 0 then Result := Result + ' ';
+    Result := Result + Words[i];
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  QuickSortNGrams : Tri décroissant par fréquence, puis croissant par clé
+  (déterminisme des égalités — ordre d'itération des dictionnaires exclu).
+  -----------------------------------------------------------------------------}
+procedure QuickSortNGrams(var A: TNGramFreqArray; L, R: Integer);
+var
+  I, J: Integer;
+  P, T: TNGramFreq;
+begin
+  if L >= R then Exit;  // Tableau vide ou 1 element : rien a trier
+  I := L; J := R;
+  P := A[(L + R) div 2];
+  repeat
+    while (A[I].Count > P.Count) or
+          ((A[I].Count = P.Count) and (CompareStr(A[I].Key, P.Key) < 0)) do Inc(I);
+    while (A[J].Count < P.Count) or
+          ((A[J].Count = P.Count) and (CompareStr(A[J].Key, P.Key) > 0)) do Dec(J);
+    if I <= J then
+    begin
+      T := A[I]; A[I] := A[J]; A[J] := T;
+      Inc(I); Dec(J);
+    end;
+  until I > J;
+  if L < J then QuickSortNGrams(A, L, J);
+  if I < R then QuickSortNGrams(A, I, R);
+end;
+
+{-----------------------------------------------------------------------------
+  PruneNGrams : Réduit le dictionnaire des n-grams à ses Keep entrées les plus
+  fréquentes (mémoire bornée ; les entrées écartées sont perdues — top-K
+  approximatif, documenté). Aucun effet si Keep <= 0 (0 = tous).
+  -----------------------------------------------------------------------------}
+procedure PruneNGrams(Dict: TNGramDict; Keep: Integer);
+var
+  Arr: TNGramFreqArray;
+  Pair: TWordPair;
+  i: Integer;
+begin
+  if Keep <= 0 then Exit;
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Key := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortNGrams(Arr, 0, High(Arr));
+  if Length(Arr) > Keep then SetLength(Arr, Keep);
+  Dict.Clear;
+  for i := 0 to High(Arr) do
+    Dict.Add(Arr[i].Key, Arr[i].Count);
+end;
+
+{-----------------------------------------------------------------------------
+  AddNGramWindows : Ajoute au dictionnaire toutes les fenêtres de N mots de la
+  ligne Tokens, puis applique la borne mémoire du top-K si nécessaire.
+  Les fenêtres sont construites par ligne : un saut de ligne « casse » le flux.
+  -----------------------------------------------------------------------------}
+procedure AddNGramWindows(Dict: TNGramDict; const Tokens: TStringArray;
+                          N: Integer; TopK: Integer);
+var
+  i, j: Integer;
+  Key: string;
+  C: Int64;
+begin
+  if Length(Tokens) < N then Exit;
+  for i := 0 to Length(Tokens) - N do
+  begin
+    Key := Tokens[i];
+    for j := i + 1 to i + N - 1 do
+      Key := Key + ' ' + Tokens[j];
+    if Dict.TryGetValue(Key, C) then
+      Dict[Key] := C + 1
+    else
+      Dict.Add(Key, 1);
+  end;
+  // Borne mémoire : seuil = max(8 × K, 64) entrées avant réduction au top-K.
+  // (K > 0 garanti ici : avec --top-ngrams=0 la mémoire est non bornée par
+  // choix explicite, comme --top-words=0 / --all.)
+  if (TopK > 0) and (Dict.Count > 64) and (Dict.Count > TopK * 8) then
+    PruneNGrams(Dict, TopK);
+end;
+
+{-----------------------------------------------------------------------------
+  BuildNGrams : Convertit le dictionnaire en tableau top-K trié (fréquence
+  décroissante, puis clé croissante). Chaque clé (mots séparés par ' ') est
+  découpée en tableau de mots pour l'export JSON.
+  -----------------------------------------------------------------------------}
+procedure BuildNGrams(Dict: TNGramDict; TopK: Integer; var OutArr: TNGramFreqArray);
+var
+  Arr: TNGramFreqArray;
+  i, Limit, p, q: Integer;
+  Pair: TWordPair;
+  W: string;
+begin
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Key := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortNGrams(Arr, 0, High(Arr));
+  Limit := Length(Arr);
+  if (TopK > 0) and (Limit > TopK) then Limit := TopK;
+  SetLength(OutArr, Limit);
+  for i := 0 to Limit - 1 do
+  begin
+    OutArr[i].Count := Arr[i].Count;
+    OutArr[i].Key := Arr[i].Key;
+    W := Arr[i].Key;
+    p := 1;
+    while p <= Length(W) do
+    begin
+      q := p;
+      while (q <= Length(W)) and (W[q] <> ' ') do Inc(q);
+      SetLength(OutArr[i].Words, Length(OutArr[i].Words) + 1);
+      OutArr[i].Words[High(OutArr[i].Words)] := Copy(W, p, q - p);
+      p := q + 1;
+    end;
+  end;
+end;
+
+{=============================================================================
   ANALYSE PRINCIPALE - CŒUR DU PROGRAMME
   =============================================================================
   Objectif : Analyser un fichier et remplir la structure TStats
@@ -1119,7 +1491,7 @@ end;
   =============================================================================}
 procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats;
                       OptAll: Boolean; WordMode: TWordMode; CaseFoldMode: TCaseFold;
-                      MaxUnique: Int64);
+                      MaxUnique: Int64; const SOpts: TStructureOptions);
 var
   Buffer: array[0..BUF_SIZE - 1] of Byte;
   ReadBytes, Pos, Used, i: Integer;
@@ -1135,6 +1507,9 @@ var
   // Dictionnaires hashés pour accumulation O(1) - CLÉ DE PERFORMANCE
   CharDict: TCharDict;
   WordDict: TWordDict;
+  NGramDict: TNGramDict;     // Comptes des n-grams (C2-B, alloué si NGramSize > 0)
+  LineTokens: TStringArray;  // Tokens de la ligne courante (flux n-gram, C2-B)
+  SentenceWords: Int64;      // Mots de la phrase courante (words_per_sentence, C2-B)
   PairC: TCharPair;
   PairW: TWordPair;
   Count: Int64;
@@ -1147,13 +1522,27 @@ var
   procedure FlushWord;
   var
     C: Int64;
+    WL: Integer;
   begin
     if WordDict.TryGetValue(CurrentWord, C) then
       WordDict[CurrentWord] := C + 1
     else if WordDict.Count < MaxUnique then
       WordDict.Add(CurrentWord, 1);
     Inc(Stats.WordCount);
-    Inc(Stats.WordCharsTotal, UTF8Length(CurrentWord));
+    WL := UTF8Length(CurrentWord);
+    Inc(Stats.WordCharsTotal, WL);
+    // C2-B : histogramme word_length (longueur en code points, cohérent avec
+    // average_word_length), mot de la phrase courante (words_per_sentence) et,
+    // sauf s'il s'agit d'un mot vide (--stopwords), flux n-gram de la ligne.
+    // Les statistiques de mots existantes ne sont pas affectées.
+    if SOpts.HistogramKind = hkWordLength then
+      Inc(Stats.HistCounts[HistogramIndex(hkWordLength, WL)]);
+    Inc(SentenceWords);
+    if (SOpts.NGramSize > 0) and (not IsStopWord(CurrentWord, SOpts.StopWordMode)) then
+    begin
+      SetLength(LineTokens, Length(LineTokens) + 1);
+      LineTokens[High(LineTokens)] := CurrentWord;
+    end;
     CurrentWord := '';
     InWord := False;
   end;
@@ -1165,10 +1554,14 @@ begin
   SetLength(Stats.Freq, 0);
   SetLength(Stats.Words, 0);
   SetLength(Stats.TopLines, 0);
+  SetLength(Stats.NGrams, 0);
 
   // Création des dictionnaires pour l'accumulation rapide
   CharDict := TCharDict.Create;
   WordDict := TWordDict.Create;
+  NGramDict := nil;
+  if SOpts.NGramSize > 0 then
+    NGramDict := TNGramDict.Create;
 
   // Initialisation des compteurs et états
   Stats.LineCount := 0;
@@ -1184,6 +1577,18 @@ begin
   Stats.NonPrintable := 0;
   Stats.UniqueWords := 0;      // Types de mots stockés (rempli en fin d'analyse)
   Stats.WordCharsTotal := 0;   // Somme des longueurs de tous les tokens
+  // Structure (incrément C2-B) : état des sections optionnelles
+  Stats.NGramSize := SOpts.NGramSize;
+  Stats.CharClassesEnabled := SOpts.CharClasses;
+  Stats.HistogramKind := SOpts.HistogramKind;
+  Stats.HistRanges := HistogramRanges(SOpts.HistogramKind);
+  SetLength(Stats.HistCounts, HistClassCount(SOpts.HistogramKind));
+  for i := 0 to High(Stats.HistCounts) do
+    Stats.HistCounts[i] := 0;
+  for i := 0 to CC_CLASS_COUNT - 1 do
+    Stats.CharClasses[i] := 0;
+  SentenceWords := 0;
+  SetLength(LineTokens, 0);
   FirstChar := True;
   InWord := False;
   CurrentWord := '';
@@ -1235,6 +1640,11 @@ begin
         if ((CP <= $1F) and (CP <> 9) and (CP <> 10) and (CP <> 13)) or (CP = $7F) then
           Inc(Stats.NonPrintable);
 
+        // Classes de caractères (--char-classes, C2-B) : chaque code point est
+        // classé exactement une fois ; la somme des classes = characters.
+        if SOpts.CharClasses then
+          Inc(Stats.CharClasses[CharClassOf(CP)]);
+
         // Accumulation dans le dictionnaire de caractères (O(1))
         if CharDict.TryGetValue(CP, Count) then
           CharDict[CP] := Count + 1
@@ -1246,9 +1656,15 @@ begin
         // clôt une phrase (le compteur s'incrémente ici). PendingSentence
         // mémorise les caractères non-blancs situés après le dernier
         // terminateur, pour compter l'éventuelle phrase finale en fin de fichier.
+        // C2-B : l'histogramme words_per_sentence reçoit le nombre de mots de
+        // la phrase qui se clôt (0 pour une phrase vide, ex. terminuteurs
+        // consécutifs : la somme des classes reste égale à sentences).
         if (CP = $2E) or (CP = $21) or (CP = $3F) or (CP = $2026) then
         begin
           Inc(Stats.SentenceCount);
+          if SOpts.HistogramKind = hkWordsPerSentence then
+            Inc(Stats.HistCounts[HistogramIndex(hkWordsPerSentence, SentenceWords)]);
+          SentenceWords := 0;
           PendingSentence := False;
         end
         else if (CP > $20) and (CP <> $FFFD) then
@@ -1276,6 +1692,10 @@ begin
             if LineLen < Stats.MinLen then Stats.MinLen := LineLen;
             if LineLen > Stats.MaxLen then Stats.MaxLen := LineLen;
           end;
+
+          // C2-B : histogramme line_length (toutes les lignes, vides comprises)
+          if SOpts.HistogramKind = hkLineLength then
+            Inc(Stats.HistCounts[HistogramIndex(hkLineLength, LineLen)]);
           
           // Réinitialisation pour la prochaine ligne
           CurrentLine := '';
@@ -1284,6 +1704,15 @@ begin
 
           // Fin de mot si on était dans un mot
           if InWord then FlushWord;
+
+          // C2-B : fenêtres n-gram de la ligne courante — un saut de ligne
+          // « casse » le flux : aucun n-gram ne traverse la fin de ligne.
+          if SOpts.NGramSize > 0 then
+          begin
+            AddNGramWindows(NGramDict, LineTokens, SOpts.NGramSize,
+                            SOpts.TopNgramsLimit);
+            SetLength(LineTokens, 0);
+          end;
         end
         else
         begin
@@ -1326,15 +1755,29 @@ begin
       Inc(TotalLen, LineLen);
       if LineLen < Stats.MinLen then Stats.MinLen := LineLen;
       if LineLen > Stats.MaxLen then Stats.MaxLen := LineLen;
+      if SOpts.HistogramKind = hkLineLength then
+        Inc(Stats.HistCounts[HistogramIndex(hkLineLength, LineLen)]);
     end;
 
     // Traitement du dernier mot si le fichier ne termine pas par un séparateur
     if InWord then FlushWord;
 
+    // C2-B : fenêtres n-gram de la dernière ligne (le dernier mot y est inclus)
+    if SOpts.NGramSize > 0 then
+    begin
+      AddNGramWindows(NGramDict, LineTokens, SOpts.NGramSize, SOpts.TopNgramsLimit);
+      SetLength(LineTokens, 0);
+    end;
+
     // Phrase finale : si le fichier se termine avec du contenu non-blanc
-    // après le dernier terminateur, on compte une phrase supplémentaire.
+    // après le dernier terminateur, on compte une phrase supplémentaire (et
+    // l'histogramme words_per_sentence reçoit les mots de cette phrase).
     if PendingSentence then
+    begin
       Inc(Stats.SentenceCount);
+      if SOpts.HistogramKind = hkWordsPerSentence then
+        Inc(Stats.HistCounts[HistogramIndex(hkWordsPerSentence, SentenceWords)]);
+    end;
 
     // Conversion des dictionnaires en tableaux pour le tri final
     SetLength(Stats.Freq, CharDict.Count);
@@ -1358,11 +1801,17 @@ begin
     // Nombre de types de mots stockés (plafonné par --max-unique le cas échéant)
     Stats.UniqueWords := WordDict.Count;
 
+    // C2-B : conversion du dictionnaire n-gram en tableau top-K (tri par
+    // fréquence décroissante, puis par clé pour des égalités déterministes)
+    if SOpts.NGramSize > 0 then
+      BuildNGrams(NGramDict, SOpts.TopNgramsLimit, Stats.NGrams);
+
   finally
     // Nettoyage obligatoire des ressources (mémoire ; le flux d'entrée est
     // fermé par l'appelant : AnalyzeFile/AnalyzeStdin)
     CharDict.Free;
     WordDict.Free;
+    if NGramDict <> nil then NGramDict.Free;
   end;
 
   // Calcul de la moyenne de longueur de ligne (protection division par zéro)
@@ -1397,13 +1846,14 @@ end;
              (interceptées par l'appelant pour un message clair).
   -----------------------------------------------------------------------------}
 procedure AnalyzeFile(const Path: string; out Stats: TStats; OptAll: Boolean;
-                      WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64);
+                      WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64;
+                      const SOpts: TStructureOptions);
 var
   FS: TFileStream;
 begin
   FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
   try
-    AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
+    AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
   finally
     FS.Free;
   end;
@@ -1415,13 +1865,14 @@ end;
   donc pas fermé ici.
   -----------------------------------------------------------------------------}
 procedure AnalyzeStdin(out Stats: TStats; OptAll: Boolean;
-                       WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64);
+                       WordMode: TWordMode; CaseFoldMode: TCaseFold; MaxUnique: Int64;
+                       const SOpts: TStructureOptions);
 var
   HS: THandleStream;
 begin
   HS := THandleStream.Create(StdInputHandle);
   try
-    AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
+    AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
   finally
     HS.Free;
   end;
@@ -1683,6 +2134,67 @@ begin
     WriteLn;
   end;
 
+  { Section N-grams (C2-B) — affichée uniquement avec --ngrams=N. Rang,
+    n-gram (mots séparés par un espace) et compte. Pas de suffixe "(N of K)" :
+    le dictionnaire est borné au top-K, le total réel n'est pas connu. }
+  if Stats.NGramSize > 0 then
+  begin
+    Total := Length(Stats.NGrams);
+    Limit := EffectiveLimit(Total, ShowAll, TopNgramsLimit);
+    RankW := Length(IntToStr(Limit));
+    if RankW < 2 then RankW := 2;
+
+    Title := 'N-grams (N=' + IntToStr(Stats.NGramSize) + ')';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn('  ', StringOfChar(' ', RankW - 1), '#', '  ',
+            UTF8PadRight('N-gram', 24), '  ',
+            StringOfChar(' ', 3), 'Count');
+
+    for i := 0 to Limit - 1 do
+    begin
+      Preview := JoinNGramWords(Stats.NGrams[i].Words);
+      if UTF8Length(Preview) > 40 then
+        Preview := UTF8SafeCopy(Preview, 37) + '...';
+      WriteLn('  ', i + 1:RankW, '  ',
+              UTF8PadRight(Preview, 24), '  ',
+              Format('%8d', [Stats.NGrams[i].Count]));
+    end;
+    WriteLn;
+  end;
+
+  { Section Histogram (C2-B) — affichée uniquement avec --histogram=...
+    Barres en ASCII pur (1 '#' par occurrence, plafonnées à 60) + compte
+    numérique. Classes identiques aux exemples de la roadmap §6.6 pour
+    line_length ; classes stables documentées pour les deux autres. }
+  if Stats.HistogramKind <> hkNone then
+  begin
+    Title := 'Histogram (' + HistogramName(Stats.HistogramKind) + ')';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    for i := 0 to High(Stats.HistCounts) do
+      WriteLn('  ', UTF8PadRight(Stats.HistRanges[i], 5), '  ',
+              RepeatString('#', Integer(MinInt64(Stats.HistCounts[i], 60))), ' ',
+              Stats.HistCounts[i]);
+    WriteLn;
+  end;
+
+  { Section Character Classes (C2-B) — affichée uniquement avec --char-classes.
+    La somme des six classes = characters (assertion de test). }
+  if Stats.CharClassesEnabled then
+  begin
+    Title := 'Character Classes';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn(SummaryLine('Letters:', Stats.CharClasses[CC_LETTERS]));
+    WriteLn(SummaryLine('Digits:', Stats.CharClasses[CC_DIGITS]));
+    WriteLn(SummaryLine('Whitespace:', Stats.CharClasses[CC_WHITESPACE]));
+    WriteLn(SummaryLine('Punctuation:', Stats.CharClasses[CC_PUNCTUATION]));
+    WriteLn(SummaryLine('Control:', Stats.CharClasses[CC_CONTROL]));
+    WriteLn(SummaryLine('Other:', Stats.CharClasses[CC_OTHER]));
+    WriteLn;
+  end;
+
   { Section Longest Lines }
   if ShowLines and (Length(Stats.TopLines) > 0) then
   begin
@@ -1763,7 +2275,7 @@ end;
 
 procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean);
 var
-  i, Limit: Integer;
+  i, j, Limit: Integer;
   Lx: TLexicalStats;
 begin
   WriteLn('{');
@@ -1794,6 +2306,57 @@ begin
   WriteLn('    "tabs": ', Stats.Tabs, ',');
   WriteLn('    "nonprintable": ', Stats.NonPrintable);
   WriteLn('  },');
+
+  // Structure (C2-B) : classes de caractères, histogramme et n-grams — clés
+  // additionnelles (ajout additif, les clés existantes sont inchangées)
+  if Stats.CharClassesEnabled then
+  begin
+    WriteLn('  "char_classes": {');
+    WriteLn('    "letters": ', Stats.CharClasses[CC_LETTERS], ',');
+    WriteLn('    "digits": ', Stats.CharClasses[CC_DIGITS], ',');
+    WriteLn('    "whitespace": ', Stats.CharClasses[CC_WHITESPACE], ',');
+    WriteLn('    "punctuation": ', Stats.CharClasses[CC_PUNCTUATION], ',');
+    WriteLn('    "control": ', Stats.CharClasses[CC_CONTROL], ',');
+    WriteLn('    "other": ', Stats.CharClasses[CC_OTHER]);
+    WriteLn('  },');
+  end;
+
+  if Stats.HistogramKind <> hkNone then
+  begin
+    WriteLn('  "histogram": {');
+    WriteLn('    "metric": "', HistogramName(Stats.HistogramKind), '",');
+    WriteLn('    "classes": [');
+    for i := 0 to High(Stats.HistCounts) do
+    begin
+      if i > 0 then WriteLn(',');
+      Write('      {"range": "', Stats.HistRanges[i], '", "count": ',
+            Stats.HistCounts[i], '}');
+    end;
+    WriteLn;
+    WriteLn('    ]');
+    WriteLn('  },');
+  end;
+
+  if Stats.NGramSize > 0 then
+  begin
+    Write('  "ngrams": [');
+    Limit := EffectiveLimit(Length(Stats.NGrams), ShowAll, TopNgramsLimit) - 1;
+    for i := 0 to Limit do
+    begin
+      if i > 0 then Write(',');
+      WriteLn;
+      Write('    {"rank": ', i + 1, ', ');
+      Write('"words": [');
+      for j := 0 to High(Stats.NGrams[i].Words) do
+      begin
+        if j > 0 then Write(', ');
+        Write('"', JsonEscape(Stats.NGrams[i].Words[j]), '"');
+      end;
+      Write('], "count": ', Stats.NGrams[i].Count, '}');
+    end;
+    WriteLn;
+    WriteLn('  ],');
+  end;
 
   // Statistiques lexicales (--lexical-stats) : clés additionnelles — ajout
   // additif, les clés existantes sont inchangées
@@ -1922,6 +2485,48 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
+  BuildHistogramJSON : Objet JSON compact de l'histogramme (--histogram, C2-B).
+  -----------------------------------------------------------------------------}
+function BuildHistogramJSON(const Stats: TStats): string;
+var
+  i: Integer;
+begin
+  Result := '{"metric": "' + HistogramName(Stats.HistogramKind) +
+            '", "classes": [';
+  for i := 0 to High(Stats.HistCounts) do
+  begin
+    if i > 0 then Result := Result + ', ';
+    Result := Result + '{"range": "' + Stats.HistRanges[i] + '", "count": ' +
+              IntToStr(Stats.HistCounts[i]) + '}';
+  end;
+  Result := Result + ']}';
+end;
+
+{-----------------------------------------------------------------------------
+  BuildNGramsJSON : Tableau JSON compact des n-grams (--ngrams, C2-B).
+  Chaque entrée expose : rank, words (tableau des mots), count.
+  -----------------------------------------------------------------------------}
+function BuildNGramsJSON(const Stats: TStats; ShowAll: Boolean; TopK: Integer): string;
+var
+  i, j, Limit: Integer;
+begin
+  Limit := EffectiveLimit(Length(Stats.NGrams), ShowAll, TopK) - 1;
+  Result := '[';
+  for i := 0 to Limit do
+  begin
+    if i > 0 then Result := Result + ',';
+    Result := Result + '{"rank": ' + IntToStr(i + 1) + ', "words": [';
+    for j := 0 to High(Stats.NGrams[i].Words) do
+    begin
+      if j > 0 then Result := Result + ', ';
+      Result := Result + '"' + JsonEscape(Stats.NGrams[i].Words[j]) + '"';
+    end;
+    Result := Result + '], "count": ' + IntToStr(Stats.NGrams[i].Count) + '}';
+  end;
+  Result := Result + ']';
+end;
+
+{-----------------------------------------------------------------------------
   BuildJSONCompact : Objet JSON complet sur UNE ligne (NDJSON, éléments des
   modes array/aggregate). Structure identique à ExportJSON (pretty).
   -----------------------------------------------------------------------------}
@@ -1960,6 +2565,18 @@ begin
     S := S + ', "average_word_length": ' + FormatFloatTrim(Lx.AverageWordLength, 6);
     S := S + ', "entropy_bits_per_word": ' + FormatFloatTrim(Lx.EntropyBitsPerWord, 6) + '}';
   end;
+  // Structure (C2-B) : sections additionnelles quand activées
+  if Stats.CharClassesEnabled then
+    S := S + ', "char_classes": {"letters": ' + IntToStr(Stats.CharClasses[CC_LETTERS]) +
+      ', "digits": ' + IntToStr(Stats.CharClasses[CC_DIGITS]) +
+      ', "whitespace": ' + IntToStr(Stats.CharClasses[CC_WHITESPACE]) +
+      ', "punctuation": ' + IntToStr(Stats.CharClasses[CC_PUNCTUATION]) +
+      ', "control": ' + IntToStr(Stats.CharClasses[CC_CONTROL]) +
+      ', "other": ' + IntToStr(Stats.CharClasses[CC_OTHER]) + '}';
+  if Stats.HistogramKind <> hkNone then
+    S := S + ', "histogram": ' + BuildHistogramJSON(Stats);
+  if Stats.NGramSize > 0 then
+    S := S + ', "ngrams": ' + BuildNGramsJSON(Stats, ShowAll, TopNgramsLimit);
   S := S + ', "top_characters": ' + BuildTopCharsJSON(Stats, ShowAll, TopCharsLimit);
   S := S + ', "top_words": ' + BuildTopWordsJSON(Stats, ShowAll, TopWordsLimit);
   S := S + ', "longest_lines": ' + BuildTopLinesJSON(Stats, ShowAll);
@@ -2002,6 +2619,20 @@ begin
     S := S + ', "average_word_length": ' + FormatFloatTrim(Lx.AverageWordLength, 6);
     S := S + ', "entropy_bits_per_word": ' + FormatFloatTrim(Lx.EntropyBitsPerWord, 6);
   end;
+  // Structure (C2-B) : valeurs JSON additionnelles en fin d'objet (l'objet
+  // reste sur une ligne, parseable ligne à ligne — les valeurs peuvent être
+  // des objets/tableaux JSON)
+  if Stats.CharClassesEnabled then
+    S := S + ', "char_classes": {"letters": ' + IntToStr(Stats.CharClasses[CC_LETTERS]) +
+      ', "digits": ' + IntToStr(Stats.CharClasses[CC_DIGITS]) +
+      ', "whitespace": ' + IntToStr(Stats.CharClasses[CC_WHITESPACE]) +
+      ', "punctuation": ' + IntToStr(Stats.CharClasses[CC_PUNCTUATION]) +
+      ', "control": ' + IntToStr(Stats.CharClasses[CC_CONTROL]) +
+      ', "other": ' + IntToStr(Stats.CharClasses[CC_OTHER]) + '}';
+  if Stats.HistogramKind <> hkNone then
+    S := S + ', "histogram": ' + BuildHistogramJSON(Stats);
+  if Stats.NGramSize > 0 then
+    S := S + ', "ngrams": ' + BuildNGramsJSON(Stats, True, TopNgramsLimit);
   S := S + '}';
   Result := S;
 end;
@@ -2156,6 +2787,16 @@ begin
   WriteLn(Out, '  --top-chars=N     Limite de la section caracteres (0 = tous)');
   WriteLn(Out, '  --max-unique=N    Borne memoire des types de mots (def. 100000)');
   WriteLn(Out);
+  WriteLn(Out, 'Structure (v2.4.0) :');
+  WriteLn(Out, '  --ngrams=N        N-grams sur les mots du mode courant (1..5)');
+  WriteLn(Out, '  --top-ngrams=K    Limite top-K des n-grams (def. 10, 0 = tous)');
+  WriteLn(Out, '  --stopwords=L     fr | en | none : retire les mots vides du');
+  WriteLn(Out, '                    flux n-gram uniquement (sans --ngrams, ignore)');
+  WriteLn(Out, '  --histogram=M     line_length | word_length | words_per_sentence');
+  WriteLn(Out, '                    (barres ASCII, classes documentees)');
+  WriteLn(Out, '  --char-classes    Classes de caracteres (6 classes, somme =');
+  WriteLn(Out, '                    characters)');
+  WriteLn(Out);
   WriteLn(Out, 'Formats d''export :');
   WriteLn(Out, '  --json            Export JSON : 1 fichier = objet unique,');
   WriteLn(Out, '                    plusieurs = NDJSON (1 objet par ligne)');
@@ -2207,6 +2848,19 @@ var
   CsvKind: TCsvKind;           // --csv=summary|words|chars
   OptLexicalStats: Boolean;    // --lexical-stats
   MaxUnique: Int64;            // --max-unique=N (borne mémoire des types)
+  // Options structure (incrément C2-B)
+  NGramSize: Integer;          // --ngrams=N (1..5, 0 = désactivé)
+  StopWordMode: TStopWord;     // --stopwords=fr|en|none
+  HistogramKindOpt: THistogramKind; // --histogram=...
+  OptCharClasses: Boolean;     // --char-classes
+  SOpts: TStructureOptions;    // Options structure transmises à l'analyse
+  // Totaux agrégés (--json-mode=aggregate, C2-B) : char_classes et histogramme
+  // sont sommés classe par classe ; les n-grams ne sont PAS agrégés (limitation
+  // documentée : présents par fichier uniquement).
+  TotalCharClasses: array[0..CC_CLASS_COUNT - 1] of Int64;
+  TotalHistCounts: array[0..6] of Int64;
+  HistRangesTotal: TStringArray;
+  k: Integer;
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -2260,6 +2914,12 @@ begin
   TopWordsLimit := DEFAULT_TOP_LIMIT;
   TopCharsLimit := DEFAULT_TOP_LIMIT;
   MaxUnique := DEFAULT_MAX_UNIQUE;
+  // Structure (C2-B) : défauts = sections désactivées
+  NGramSize := 0;
+  TopNgramsLimit := DEFAULT_TOP_LIMIT;
+  StopWordMode := swNone;
+  HistogramKindOpt := hkNone;
+  OptCharClasses := False;
 
   OutFileName := '';  // Pas de redirection de sortie par défaut
 
@@ -2509,6 +3169,78 @@ begin
         Halt(1);
       end
 
+      // Structure (incrément C2-B)
+      else if (Copy(Param, 1, 9) = '--ngrams=') or (Copy(Param, 1, 9) = '--ngrams:') then
+      begin
+        V := Copy(ParamOrig, 10, Length(ParamOrig));
+        Val(V, NGramSize, Code);
+        if (Code <> 0) or (NGramSize < 1) or (NGramSize > 5) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --ngrams attend un entier de 1 a 5 (recu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--ngrams' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --ngrams=N (entier de 1 a 5)');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 13) = '--top-ngrams=') or (Copy(Param, 1, 13) = '--top-ngrams:') then
+      begin
+        V := Copy(ParamOrig, 14, Length(ParamOrig));
+        Val(V, TopNgramsLimit, Code);
+        if (Code <> 0) or (TopNgramsLimit < 0) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --top-ngrams attend un entier >= 0 (recu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--top-ngrams' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --top-ngrams=N (0 = tous)');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 12) = '--stopwords=') or (Copy(Param, 1, 12) = '--stopwords:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 13, Length(ParamOrig)));
+        if V = 'fr' then StopWordMode := swFR
+        else if V = 'en' then StopWordMode := swEN
+        else if V = 'none' then StopWordMode := swNone
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --stopwords attend "fr", "en" ou "none" (recu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--stopwords' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --stopwords=fr|en|none');
+        Halt(1);
+      end
+      else if (Copy(Param, 1, 12) = '--histogram=') or (Copy(Param, 1, 12) = '--histogram:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 13, Length(ParamOrig)));
+        // Les exemples de la roadmap (§6.6) utilisent des tirets
+        // (line-length, word-length, words-per-sentence) ; la spec des
+        // tirets-bas : les deux formes sont acceptées et équivalentes.
+        V := StringReplace(V, '-', '_', [rfReplaceAll]);
+        if V = 'line_length' then HistogramKindOpt := hkLineLength
+        else if V = 'word_length' then HistogramKindOpt := hkWordLength
+        else if V = 'words_per_sentence' then HistogramKindOpt := hkWordsPerSentence
+        else
+        begin
+          WriteLn(ErrOutput, 'Erreur: --histogram attend "line_length", "word_length" ou "words_per_sentence" (recu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--histogram' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --histogram=line_length|word_length|words_per_sentence');
+        Halt(1);
+      end
+      else if Param = '--char-classes' then
+        OptCharClasses := True
+
       // Argument non reconnu : fichier littéral, pattern glob, ou stdin
       else
         RawFiles.Add(ParamOrig);
@@ -2661,14 +3393,25 @@ begin
     TotalFiles := 0; TotalLines := 0; TotalWords := 0;
     TotalChars := 0; TotalSentences := 0;
 
+    // Options structure (C2-B) regroupées pour l'analyse
+    SOpts.NGramSize := NGramSize;
+    SOpts.TopNgramsLimit := TopNgramsLimit;
+    SOpts.StopWordMode := StopWordMode;
+    SOpts.HistogramKind := HistogramKindOpt;
+    SOpts.CharClasses := OptCharClasses;
+
+    // Totaux agrégés des sections structure (C2-B) : remis à zéro
+    for k := 0 to CC_CLASS_COUNT - 1 do TotalCharClasses[k] := 0;
+    for k := 0 to 6 do TotalHistCounts[k] := 0;
+
     for i := 0 to Files.Count - 1 do
     begin
       try
         // Analyse du fichier courant (ou de l'entrée standard)
         if Files[i] = 'stdin' then
-          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, MaxUnique)
+          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts)
         else
-          AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, MaxUnique);
+          AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
 
         // Export selon le format demandé
         if OptSummaryJSON then
@@ -2688,6 +3431,14 @@ begin
                 Inc(TotalWords, Stats.WordCount);
                 Inc(TotalChars, Stats.CharCount);
                 Inc(TotalSentences, Stats.SentenceCount);
+                // C2-B : char_classes et histogramme sommés classe par classe.
+                // Les n-grams ne sont PAS agrégés (limitation documentée).
+                if Stats.CharClassesEnabled then
+                  for k := 0 to CC_CLASS_COUNT - 1 do
+                    Inc(TotalCharClasses[k], Stats.CharClasses[k]);
+                if Stats.HistogramKind <> hkNone then
+                  for k := 0 to High(Stats.HistCounts) do
+                    Inc(TotalHistCounts[k], Stats.HistCounts[k]);
               end;
           end;
         end
@@ -2767,6 +3518,38 @@ begin
         WriteLn('    "words": ', TotalWords, ',');
         WriteLn('    "characters": ', TotalChars, ',');
         WriteLn('    "sentences": ', TotalSentences);
+        // C2-B : totaux agrégés de char_classes et histogramme (sommés classe
+        // par classe). Les n-grams n'apparaissent pas dans totals (limitation
+        // documentée : présents par fichier uniquement).
+        if OptCharClasses then
+        begin
+          WriteLn(',');
+          WriteLn('    "char_classes": {');
+          WriteLn('      "letters": ', TotalCharClasses[CC_LETTERS], ',');
+          WriteLn('      "digits": ', TotalCharClasses[CC_DIGITS], ',');
+          WriteLn('      "whitespace": ', TotalCharClasses[CC_WHITESPACE], ',');
+          WriteLn('      "punctuation": ', TotalCharClasses[CC_PUNCTUATION], ',');
+          WriteLn('      "control": ', TotalCharClasses[CC_CONTROL], ',');
+          WriteLn('      "other": ', TotalCharClasses[CC_OTHER]);
+          WriteLn('    }');
+        end;
+        if HistogramKindOpt <> hkNone then
+        begin
+          WriteLn(',');
+          WriteLn('    "histogram": {');
+          WriteLn('      "metric": "', HistogramName(HistogramKindOpt), '",');
+          WriteLn('      "classes": [');
+          HistRangesTotal := HistogramRanges(HistogramKindOpt);
+          for k := 0 to HistClassCount(HistogramKindOpt) - 1 do
+          begin
+            if k > 0 then WriteLn(',');
+            Write('        {"range": "', HistRangesTotal[k],
+                  '", "count": ', TotalHistCounts[k], '}');
+          end;
+          WriteLn;
+          WriteLn('      ]');
+          WriteLn('    }');
+        end;
         WriteLn('  }');
         WriteLn('}');
       end;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # tests/run.sh — Journal de validation reproductible de fstats
-# (incréments A + C2-A "Lexique", v2.3.0)
+# (incréments A + C2-A "Lexique" + C2-B "Structure", v2.4.0)
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -118,8 +118,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.3.0"
-report "--version affiche 2.3.0" $?
+"$FSTATS" --version | grep -q "2.4.0"
+report "--version affiche 2.4.0" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -199,6 +199,143 @@ report "--word-mode=unicode corpus_fr.txt -> words=19 [golden]" $?
 "$FSTATS" --word-mode=bogus tests/fixtures/test_fr.txt > "$TMPDIR/bad.out" 2> "$TMPDIR/bad.err"
 if [ $? -eq 1 ] && grep -q "word-mode" "$TMPDIR/bad.err"; then OK=0; else OK=1; fi
 report "--word-mode=bogus -> exit 1 + message stderr" $OK
+
+# --- 23. ngrams=2 corpus_en (golden, fenêtres par ligne) ----------------------
+"$FSTATS" --json --ngrams=2 --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ng2.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var n = o.ngrams;
+var has = function (a) {
+  return n.some(function (e) {
+    return e.words.length === 2 && e.words[0] === a[0] && e.words[1] === a[1];
+  });
+};
+var ok = n.length === 9 && n.every(function (e) { return e.count === 1; }) &&
+  has(["hello", "world"]) && !has(["test", "one"]);
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/ng2.json"
+report "--ngrams=2 --word-mode=ascii corpus_en.txt -> 9 bigrammes, pas de [test one]" $?
+
+# --- 24. ngram_lines.txt : pas de traversée des sauts de ligne -----------------
+"$FSTATS" --json --ngrams=2 tests/fixtures/ngram_lines.txt > "$TMPDIR/ngl.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var n = o.ngrams;
+var has = function (a) {
+  return n.some(function (e) {
+    return e.words.length === 2 && e.words[0] === a[0] && e.words[1] === a[1];
+  });
+};
+process.exit((n.length === 2 && has(["alpha", "beta"]) && has(["gamma", "delta"]) &&
+  !has(["beta", "gamma"])) ? 0 : 1);
+' "$TMPDIR/ngl.json"
+report "ngram_lines.txt -> 2 bigrammes, pas de [beta gamma]" $?
+
+# --- 25. ngrams=3 top-ngrams=2 -> exactement 2 entrées ------------------------
+"$FSTATS" --json --ngrams=3 --top-ngrams=2 tests/fixtures/test_fr.txt > "$TMPDIR/ng3.json" 2>/dev/null
+node -e 'var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit(o.ngrams.length === 2 ? 0 : 1);' "$TMPDIR/ng3.json"
+report "--ngrams=3 --top-ngrams=2 -> exactement 2 entrées" $?
+
+# --- 26. ngrams=0 et ngrams=6 -> exit 1 ----------------------------------------
+"$FSTATS" --ngrams=0 tests/fixtures/test_fr.txt > "$TMPDIR/ng0.out" 2> "$TMPDIR/ng0.err"
+if [ $? -eq 1 ] && grep -q "ngrams" "$TMPDIR/ng0.err"; then OK=0; else OK=1; fi
+"$FSTATS" --ngrams=6 tests/fixtures/test_fr.txt > "$TMPDIR/ng6.out" 2> "$TMPDIR/ng6.err"
+if [ $? -eq 1 ] && grep -q "ngrams" "$TMPDIR/ng6.err"; then OK=0; else OK=1; fi
+report "--ngrams=0 / --ngrams=6 -> exit 1 + message stderr" $OK
+
+# --- 27. stopwords=fr + ngrams=2 corpus_fr (golden) ----------------------------
+"$FSTATS" --json --ngrams=2 --top-ngrams=0 --stopwords=fr tests/fixtures/corpus_fr.txt > "$TMPDIR/swfr.json" 2>/dev/null
+"$FSTATS" --summary-json --stopwords=fr tests/fixtures/corpus_fr.txt > "$TMPDIR/swno.json" 2>/dev/null
+node -e '
+var fs = require("fs");
+var o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+var s = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+var n = o.ngrams;
+var has = function (a) {
+  return n.some(function (e) {
+    return e.words.length === 2 && e.words[0] === a[0] && e.words[1] === a[1];
+  });
+};
+var ok = o.statistics.words === 20 && n.length === 14 &&
+  !has(["et", "croissant,"]) && has(["?", "est"]) && !("ngrams" in s);
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/swfr.json" "$TMPDIR/swno.json"
+report "--stopwords=fr --ngrams=2 corpus_fr.txt -> 14 bigrammes, mots vides retirés" $?
+
+# --- 28. histogram=line_length : classes roadmap + somme = lignes --------------
+"$FSTATS" --json --histogram=line_length tests/fixtures/test_fr.txt > "$TMPDIR/hll.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var h = o.histogram;
+var sum = h.classes.reduce(function (a, c) { return a + c.count; }, 0);
+var r = h.classes.map(function (c) { return c.range; });
+var ok = h.metric === "line_length" && r[0] === "0-9" && r[1] === "10-19" &&
+  r[2] === "20-29" && r[3] === "30-39" && r[4] === "40+" && sum === o.statistics.lines;
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/hll.json"
+report "--histogram=line_length -> classes 0-9..40+, somme = lignes" $?
+
+# --- 29. histogram=word_length : somme = mots ----------------------------------
+"$FSTATS" --json --histogram=word_length tests/fixtures/test_fr.txt > "$TMPDIR/hwl.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var h = o.histogram;
+var sum = h.classes.reduce(function (a, c) { return a + c.count; }, 0);
+process.exit((h.metric === "word_length" && sum === o.statistics.words) ? 0 : 1);
+' "$TMPDIR/hwl.json"
+report "--histogram=word_length -> somme des classes = mots" $?
+
+# --- 30. histogram=words_per_sentence : somme = phrases ------------------------
+"$FSTATS" --json --histogram=words_per_sentence tests/fixtures/test_fr.txt > "$TMPDIR/hwps.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var h = o.histogram;
+var sum = h.classes.reduce(function (a, c) { return a + c.count; }, 0);
+process.exit((h.metric === "words_per_sentence" && sum === o.statistics.sentences) ? 0 : 1);
+' "$TMPDIR/hwps.json"
+report "--histogram=words_per_sentence -> somme des classes = phrases" $?
+
+# --- 31. char-classes : golden test_fr + somme = caracteres --------------------
+"$FSTATS" --json --char-classes tests/fixtures/test_fr.txt > "$TMPDIR/cc.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.char_classes;
+var sum = c.letters + c.digits + c.whitespace + c.punctuation + c.control + c.other;
+process.exit((sum === o.statistics.characters && c.letters === 57 && c.digits === 0 &&
+  c.whitespace === 12 && c.punctuation === 3 && c.control === 0 && c.other === 0) ? 0 : 1);
+' "$TMPDIR/cc.json"
+report "--char-classes test_fr.txt -> 57/0/12/3/0/0, somme = 72 caracteres" $?
+
+# --- 32. aggregate + char-classes + histogram : totaux sommes ------------------
+"$FSTATS" 'tests/docs/**/*.md' --json-mode=aggregate --char-classes --histogram=line_length > "$TMPDIR/aggs.json" 2>/dev/null
+node -e '
+var j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var t = j.totals;
+var cl = { letters: 0, digits: 0, whitespace: 0, punctuation: 0, control: 0, other: 0 };
+var hc = {};
+for (var k = 0; k < j.files.length; k++) {
+  var f = j.files[k];
+  cl.letters += f.char_classes.letters; cl.digits += f.char_classes.digits;
+  cl.whitespace += f.char_classes.whitespace; cl.punctuation += f.char_classes.punctuation;
+  cl.control += f.char_classes.control; cl.other += f.char_classes.other;
+  f.histogram.classes.forEach(function (c) {
+    hc[c.range] = (hc[c.range] || 0) + c.count;
+  });
+}
+var okCC = cl.letters === t.char_classes.letters && cl.digits === t.char_classes.digits &&
+  cl.whitespace === t.char_classes.whitespace && cl.punctuation === t.char_classes.punctuation &&
+  cl.control === t.char_classes.control && cl.other === t.char_classes.other;
+var okH = t.histogram.metric === "line_length" &&
+  t.histogram.classes.every(function (c) { return hc[c.range] === c.count; });
+process.exit((okCC && okH && !("ngrams" in t)) ? 0 : 1);
+' "$TMPDIR/aggs.json"
+report "aggregate --char-classes --histogram -> totaux sommés classe par classe" $?
+
+# --- 33. Sortie pipee avec les nouvelles options : aucune sequence ANSI --------
+"$FSTATS" --ngrams=2 --histogram=line_length --char-classes tests/fixtures/test_fr.txt > "$TMPDIR/console2.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/console2.txt"; then OK=1; else OK=0; fi
+report "sortie pipee ngrams+histogram+char-classes : aucune sequence ANSI" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

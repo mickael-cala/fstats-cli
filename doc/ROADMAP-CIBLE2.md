@@ -1,6 +1,7 @@
 # Roadmap Cible 2 — Corpus Profiler
 
-Statut : **C2-A livré** — incrément A « Lexique » livré (v2.3.0, 22/22 tests OK, 2026-08-26). B et C à venir.
+Statut : **C2-A et C2-B livrés** (v2.4.0, tests OK, 2026-08-26). C2-C
+(lisibilité, optionnel) à venir.
 
 Positionnement : `fstats` explore un corpus texte : vocabulaire, n-grammes,
 distributions, export pour pandas/R/Excel.
