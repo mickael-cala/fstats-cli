@@ -42,6 +42,9 @@ jobs:
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
+      - name: Dogfood - checks sur le depot
+        shell: cmd
+        run: fstats.exe --check --fail-if non_utf8^>0 --fail-if bom^>0 --fail-if nonprintable^>0 README.md doc\*.md src\fstats.pas
 
   test-linux:
     runs-on: ubuntu-latest
@@ -51,3 +54,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fp-compiler
       - name: Lancer la suite de tests
         run: bash tests/run.sh
+      - name: Dogfood - checks sur le depot
+        run: src/fstats --check --fail-if non_utf8\>0 --fail-if bom\>0 --fail-if nonprintable\>0 README.md doc/*.md src/fstats.pas

@@ -2,8 +2,8 @@
 setlocal EnableExtensions
 rem ============================================================================
 rem tests\run.bat - Journal de validation reproductible de fstats
-rem (increments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilite",
-rem v2.5.0)
+rem (increments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilite"
+rem + Cible 1 B "Checks" + Cible 1 C "Baseline", v2.6.0)
 rem Usage : tests\run.bat   (double-clic ou invite de commandes)
 rem Prerequis : fpc et (optionnellement) node sur le PATH.
 rem Compile fstats, execute les cas d'acceptation, verifie les exit codes et
@@ -127,8 +127,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.5.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.5.0) else (set /a PASS+=1&echo PASS: --version affiche 2.5.0)
+"%FSTATS%" --version | findstr /C:"2.6.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.6.0) else (set /a PASS+=1&echo PASS: --version affiche 2.6.0)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -396,6 +396,186 @@ goto :after39
 node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\rdconsole.txt"
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --readability : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --readability : aucune sequence ANSI [ESC])
 :after39
+
+rem --- 40. --check : exit 0 + JSON checks[0] ok [actual 3] -----------------------
+if "%NODE_OK%"=="1" goto :node40
+set C40_OK=1
+goto :after40
+:node40
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>5','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);if(r.status===0&&o.checks.length===1&&o.checks[0].id==='lines'&&o.checks[0].metric==='lines'&&o.checks[0].actual===3&&o.checks[0].op==='>'&&o.checks[0].threshold===5&&o.checks[0].status==='ok'){process.exit(0);}console.error('[cas40] exit='+r.status+' checks='+JSON.stringify(o.checks));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C40_OK=0) else (set C40_OK=1)
+:after40
+if "%C40_OK%"=="1" (set /a PASS+=1&echo PASS: --check --fail-if lines^>5 test_fr.txt -^> exit 0, checks[0] ok [entree complete]) else (set /a FAIL+=1&echo FAIL: --check --fail-if lines^>5 test_fr.txt -^> exit 0, checks[0] ok [entree complete])
+
+rem --- 41. --check : exit 2 + JSON checks[0] fail [entree complete] --------------
+if "%NODE_OK%"=="1" goto :node41
+set C41_OK=1
+goto :after41
+:node41
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>2','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);if(r.status===2&&o.checks.length===1&&o.checks[0].id==='lines'&&o.checks[0].metric==='lines'&&o.checks[0].actual===3&&o.checks[0].op==='>'&&o.checks[0].threshold===2&&o.checks[0].status==='fail'){process.exit(0);}console.error('[cas41] exit='+r.status+' checks='+JSON.stringify(o.checks));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C41_OK=0) else (set C41_OK=1)
+:after41
+if "%C41_OK%"=="1" (set /a PASS+=1&echo PASS: --check --fail-if lines^>2 test_fr.txt -^> exit 2, checks[0] fail) else (set /a FAIL+=1&echo FAIL: --check --fail-if lines^>2 test_fr.txt -^> exit 2, checks[0] fail)
+
+rem --- 42. --check --warn-if : exit 3 + status warn ------------------------------
+if "%NODE_OK%"=="1" goto :node42
+set C42_OK=1
+goto :after42
+:node42
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--warn-if','lines>2','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);if(r.status===3&&o.checks.length===1&&o.checks[0].status==='warn'){process.exit(0);}console.error('[cas42] exit='+r.status+' checks='+JSON.stringify(o.checks));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C42_OK=0) else (set C42_OK=1)
+:after42
+if "%C42_OK%"=="1" (set /a PASS+=1&echo PASS: --check --warn-if lines^>2 -^> exit 3, status warn) else (set /a FAIL+=1&echo FAIL: --check --warn-if lines^>2 -^> exit 3, status warn)
+
+rem --- 43. --check --fail-if max_line_length^>25 (max 30) : exit 2 ---------------
+if "%NODE_OK%"=="1" goto :node43
+set C43_OK=1
+goto :after43
+:node43
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--fail-if','max_line_length>25','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===2){process.exit(0);}console.error('[cas43] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C43_OK=0) else (set C43_OK=1)
+:after43
+if "%C43_OK%"=="1" (set /a PASS+=1&echo PASS: --check --fail-if max_line_length^>25 test_fr.txt -^> exit 2 [max 30]) else (set /a FAIL+=1&echo FAIL: --check --fail-if max_line_length^>25 test_fr.txt -^> exit 2 [max 30])
+
+rem --- 44. Mode check implicite (sans --check) : exit 2 --------------------------
+if "%NODE_OK%"=="1" goto :node44
+set C44_OK=1
+goto :after44
+:node44
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--fail-if','lines>2','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===2){process.exit(0);}console.error('[cas44] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C44_OK=0) else (set C44_OK=1)
+:after44
+if "%C44_OK%"=="1" (set /a PASS+=1&echo PASS: mode implicite : --fail-if lines^>2 sans --check -^> exit 2) else (set /a FAIL+=1&echo FAIL: mode implicite : --fail-if lines^>2 sans --check -^> exit 2)
+
+rem --- 45. Syntaxe invalide --fail-if : exit 1 + stderr --------------------------
+if "%NODE_OK%"=="1" goto :node45
+set C45_OK=1
+goto :after45
+:node45
+node -e "var cp=require('child_process');function chk(a){var r=cp.spawnSync(process.argv[1],a,{encoding:'utf8'});if(r.status===1&&r.stderr.length>0&&/fail-if/.test(r.stderr)){return true;}console.error('[cas45] '+a.join(' ')+' exit='+r.status+' stderr='+JSON.stringify(r.stderr));return false;}if(chk(['--fail-if','lines','tests/fixtures/test_fr.txt'])&&chk(['--fail-if','nope>1','tests/fixtures/test_fr.txt'])){process.exit(0);}process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C45_OK=0) else (set C45_OK=1)
+:after45
+if "%C45_OK%"=="1" (set /a PASS+=1&echo PASS: --fail-if sans op / metrique inconnue -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --fail-if sans op / metrique inconnue -^> exit 1 + stderr)
+
+rem --- 46. Fichier vide : lines^>=0 -^> exit 2 ; lines^>0 -^> exit 0 --------------
+if "%NODE_OK%"=="1" goto :node46
+set C46_OK=1
+goto :after46
+:node46
+node -e "var cp=require('child_process');var a=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>=0','tests/fixtures/empty.txt'],{encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>0','tests/fixtures/empty.txt'],{encoding:'utf8'});if(a.status===2&&b.status===0){process.exit(0);}console.error('[cas46] lines>=0 exit='+a.status+' lines>0 exit='+b.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C46_OK=0) else (set C46_OK=1)
+:after46
+if "%C46_OK%"=="1" (set /a PASS+=1&echo PASS: empty.txt : lines^>=0 -^> exit 2, lines^>0 -^> exit 0) else (set /a FAIL+=1&echo FAIL: empty.txt : lines^>=0 -^> exit 2, lines^>0 -^> exit 0)
+
+rem --- 47. Multi-fichiers : pire statut cumule (fail ^> warn ^> ok) --------------
+if "%NODE_OK%"=="1" goto :node47
+set C47_OK=1
+goto :after47
+:node47
+node -e "var cp=require('child_process');var a=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>3','tests/fixtures/test_fr.txt','tests/fixtures/bom.txt'],{encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>1','tests/fixtures/test_fr.txt','tests/fixtures/bom.txt'],{encoding:'utf8'});if(a.status===0&&b.status===2){process.exit(0);}console.error('[cas47] lines>3 exit='+a.status+' lines>1 exit='+b.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C47_OK=0) else (set C47_OK=1)
+:after47
+if "%C47_OK%"=="1" (set /a PASS+=1&echo PASS: multi-fichiers : lines^>3 -^> exit 0, lines^>1 -^> exit 2 [pire statut]) else (set /a FAIL+=1&echo FAIL: multi-fichiers : lines^>3 -^> exit 0, lines^>1 -^> exit 2 [pire statut])
+
+rem --- 48. Baseline --compare + --fail-on-delta ----------------------------------
+"%FSTATS%" --summary-json tests/fixtures/test_fr.txt > "%TMPD%\base.json" 2>nul
+if "%NODE_OK%"=="1" goto :node48b
+set C48_OK=1
+goto :after48
+:node48b
+node -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8');fs.writeFileSync(process.argv[2],s.replace('\"lines\": 3','\"lines\": 1'));" "%TMPD%\base.json" "%TMPD%\base2.json"
+:node48
+node -e "var cp=require('child_process');function run(a){var r=cp.spawnSync(process.argv[1],a,{encoding:'utf8'});return {st:r.status,out:r.stdout};}var a=run(['--compare',process.argv[2],'--fail-on-delta','lines>10','tests/fixtures/test_fr.txt']);var b=run(['--compare',process.argv[3],'--fail-on-delta','lines>10','tests/fixtures/test_fr.txt']);if(a.st===0&&b.st===2&&b.out.indexOf('FAIL (delta 200%%)')>=0){process.exit(0);}console.error('[cas48] base exit='+a.st+' modif exit='+b.st+' delta='+b.out.indexOf('FAIL (delta 200%%)'));process.exit(1);" "%FSTATS%" "%TMPD%\base.json" "%TMPD%\base2.json"
+if errorlevel 1 (set C48_OK=0) else (set C48_OK=1)
+:after48
+if "%C48_OK%"=="1" (set /a PASS+=1&echo PASS: --compare --fail-on-delta lines^>10 -^> exit 0 ; baseline lines:1 -^> exit 2 [delta 200%%]) else (set /a FAIL+=1&echo FAIL: --compare --fail-on-delta lines^>10 -^> exit 0 ; baseline lines:1 -^> exit 2 [delta 200%%])
+
+rem --- 49. --fail-on-delta sans --compare : exit 1 -------------------------------
+if "%NODE_OK%"=="1" goto :node49
+set C49_OK=1
+goto :after49
+:node49
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--fail-on-delta','lines>10','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===1&&/compare/.test(r.stderr)){process.exit(0);}console.error('[cas49] exit='+r.status+' stderr='+JSON.stringify(r.stderr));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C49_OK=0) else (set C49_OK=1)
+:after49
+if "%C49_OK%"=="1" (set /a PASS+=1&echo PASS: --fail-on-delta sans --compare -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --fail-on-delta sans --compare -^> exit 1 + stderr)
+
+rem --- 50. Fichier manquant avec --check : exit 1 (fatal prime) ------------------
+if "%NODE_OK%"=="1" goto :node50
+set C50_OK=1
+goto :after50
+:node50
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>1','absent.txt'],{encoding:'utf8'});if(r.status===1){process.exit(0);}console.error('[cas50] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C50_OK=0) else (set C50_OK=1)
+:after50
+if "%C50_OK%"=="1" (set /a PASS+=1&echo PASS: --check --fail-if lines^>1 absent.txt -^> exit 1 [fatal prime]) else (set /a FAIL+=1&echo FAIL: --check --fail-if lines^>1 absent.txt -^> exit 1 [fatal prime])
+
+rem --- 51. Mode analyse sans --check : exit 0 inchange ---------------------------
+if "%NODE_OK%"=="1" goto :node51
+set C51_OK=1
+goto :after51
+:node51
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(r.status===0&&r.stdout.length>0&&r.stdout.indexOf('\x1b')<0){process.exit(0);}console.error('[cas51] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C51_OK=0) else (set C51_OK=1)
+:after51
+if "%C51_OK%"=="1" (set /a PASS+=1&echo PASS: mode analyse test_fr.txt -^> exit 0, sortie console sans ANSI) else (set /a FAIL+=1&echo FAIL: mode analyse test_fr.txt -^> exit 0, sortie console sans ANSI)
+
+rem --- 52. Delta infini (base 0 -^> actual ^> 0) : exit 2 ; 0 -^> 0 : exit 0 ------
+"%FSTATS%" --summary-json tests/fixtures/test_fr.txt > "%TMPD%\baseinf.json" 2>nul
+"%FSTATS%" --summary-json tests/fixtures/empty.txt > "%TMPD%\baseemp.json" 2>nul
+if "%NODE_OK%"=="1" goto :node52b
+set C52_OK=1
+goto :after52
+:node52b
+node -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8');fs.writeFileSync(process.argv[2],s.replace('\"words\": 13','\"words\": 0'));" "%TMPD%\baseinf.json" "%TMPD%\baseinf2.json"
+:node52
+node -e "var cp=require('child_process');var a=cp.spawnSync(process.argv[1],['--compare',process.argv[2],'--fail-on-delta','words>0','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['--compare',process.argv[3],'--fail-on-delta','words>0','tests/fixtures/empty.txt'],{encoding:'utf8'});if(a.status===2&&a.stdout.indexOf('delta inf%%')>=0&&b.status===0){process.exit(0);}console.error('[cas52] inf exit='+a.status+' inf='+a.stdout.indexOf('delta inf%%')+' zero exit='+b.status);process.exit(1);" "%FSTATS%" "%TMPD%\baseinf2.json" "%TMPD%\baseemp.json"
+if errorlevel 1 (set C52_OK=0) else (set C52_OK=1)
+:after52
+if "%C52_OK%"=="1" (set /a PASS+=1&echo PASS: delta infini : base 0 -^> 13 exit 2 [delta inf%%] ; 0 -^> 0 exit 0) else (set /a FAIL+=1&echo FAIL: delta infini : base 0 -^> 13 exit 2 [delta inf%%] ; 0 -^> 0 exit 0)
+
+rem --- 53. Sortie pipee --check : aucune sequence ANSI ---------------------------
+"%FSTATS%" --check --fail-if lines>2 tests\fixtures\test_fr.txt > "%TMPD%\chkconsole.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node53
+echo SKIP: controle ANSI checks (node indisponible)
+goto :after53
+:node53
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\chkconsole.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --check : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --check : aucune sequence ANSI [ESC])
+:after53
+
+rem --- 54. --summary-json + checks : pas de section, exit 2 applique -------------
+if "%NODE_OK%"=="1" goto :node54
+set C54_OK=1
+goto :after54
+:node54
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>2','--summary-json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o=JSON.parse(r.stdout);if(r.status===2&&!('checks' in o)){process.exit(0);}console.error('[cas54] exit='+r.status+' checks in o: '+('checks' in o));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C54_OK=0) else (set C54_OK=1)
+:after54
+if "%C54_OK%"=="1" (set /a PASS+=1&echo PASS: --summary-json + checks -^> pas de section checks, exit 2 applique) else (set /a FAIL+=1&echo FAIL: --summary-json + checks -^> pas de section checks, exit 2 applique)
+
+rem --- 55. Grammaire : espaces autour de l'operateur + seuil decimal ------------
+if "%NODE_OK%"=="1" goto :node55
+set C55_OK=1
+goto :after55
+:node55
+node -e "var cp=require('child_process');var a=cp.spawnSync(process.argv[1],['--check','--fail-if','lines > 2.5','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var b=cp.spawnSync(process.argv[1],['--check','--fail-if','lines','>','2','tests/fixtures/test_fr.txt'],{encoding:'utf8'});if(a.status===2&&b.status===2){process.exit(0);}console.error('[cas55] espace exit='+a.status+' 3args exit='+b.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C55_OK=0) else (set C55_OK=1)
+:after55
+if "%C55_OK%"=="1" (set /a PASS+=1&echo PASS: '--fail-if lines ^> 2.5' et 3 arguments separes -^> exit 2) else (set /a FAIL+=1&echo FAIL: '--fail-if lines ^> 2.5' et 3 arguments separes -^> exit 2)
+
+rem --- 56. Ids de repetition + aggregate (checks par fichier, pas dans totals) --
+"%FSTATS%" --summary-json tests/fixtures/test_fr.txt > "%TMPD%\base56.json" 2>nul
+if "%NODE_OK%"=="1" goto :node56b
+set C56_OK=1
+goto :after56
+:node56b
+node -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8');fs.writeFileSync(process.argv[2],s.replace('\"lines\": 3','\"lines\": 1'));" "%TMPD%\base56.json" "%TMPD%\base56b.json"
+:node56
+node -e "var cp=require('child_process');var r1=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>1','--fail-if','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o1=JSON.parse(r1.stdout);var ids1=o1.checks.map(function(c){return c.id;});var st1=o1.checks.map(function(c){return c.status;});var r2=cp.spawnSync(process.argv[1],['--compare',process.argv[3],'--fail-on-delta','lines>10','--fail-on-delta','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o2=JSON.parse(r2.stdout);var ids2=o2.checks.map(function(c){return c.id;});var r3=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>2','--json-mode=aggregate','tests/fixtures/test_fr.txt','tests/fixtures/bom.txt'],{encoding:'utf8'});var o3=JSON.parse(r3.stdout);var ok1=r1.status===2&&ids1.join(',')==='lines,lines#2'&&st1.join(',')==='fail,ok';var ok2=r2.status===2&&ids2.join(',')==='delta:lines,delta:lines#2';var ok3=r3.status===2&&o3.files[0].checks&&o3.files[1].checks&&!('checks' in o3.totals);if(ok1&&ok2&&ok3){process.exit(0);}console.error('[cas56] ids1='+ids1+' st1='+st1+' r1='+r1.status+' ids2='+ids2+' r2='+r2.status+' r3='+r3.status);process.exit(1);" "%FSTATS%" "%TMPD%\base56.json" "%TMPD%\base56b.json"
+if errorlevel 1 (set C56_OK=0) else (set C56_OK=1)
+:after56
+if "%C56_OK%"=="1" (set /a PASS+=1&echo PASS: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals) else (set /a FAIL+=1&echo FAIL: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals)
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)

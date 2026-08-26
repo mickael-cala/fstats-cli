@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
 # tests/run.sh — Journal de validation reproductible de fstats
-# (incréments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilité",
-# v2.5.0)
+# (incréments A + C2-A "Lexique" + C2-B "Structure" + C2-C "Lisibilité"
+# + Cible 1 B "Checks" + Cible 1 C "Baseline", v2.6.0)
 # Usage : bash tests/run.sh   (depuis n'importe où)
 # Prérequis : fpc et node sur le PATH.
 # Compile fstats, exécute les cas d'acceptation, vérifie les exit codes et
@@ -131,8 +131,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.5.0"
-report "--version affiche 2.5.0" $?
+"$FSTATS" --version | grep -q "2.6.0"
+report "--version affiche 2.6.0" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -396,6 +396,176 @@ report "fichier vide --readability --summary-json -> valeurs 0, score 0" $?
 "$FSTATS" --readability tests/fixtures/test_fr.txt > "$TMPDIR/rdconsole.txt" 2>/dev/null
 if grep -q $'\x1b' "$TMPDIR/rdconsole.txt"; then OK=1; else OK=0; fi
 report "sortie pipee --readability : aucune sequence ANSI" $OK
+
+# --- 40. --check : exit 0 + JSON checks[0] ok [actual 3] ------------------------
+"$FSTATS" --check --fail-if 'lines>5' --json tests/fixtures/test_fr.txt > "$TMPDIR/chk40.json" 2>/dev/null
+ST40=$?
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.checks[0];
+process.exit((o.checks.length === 1 && c.id === "lines" && c.metric === "lines" &&
+  c.actual === 3 && c.op === ">" && c.threshold === 5 && c.status === "ok") ? 0 : 1);
+' "$TMPDIR/chk40.json"
+OK40=$?
+if [ $ST40 -eq 0 ] && [ $OK40 -eq 0 ]; then OK=0; else OK=1; fi
+report "--check --fail-if lines>5 test_fr.txt -> exit 0, checks[0] ok [entrée complète]" $OK
+
+# --- 41. --check : exit 2 + JSON checks[0] fail [entrée complète] ---------------
+"$FSTATS" --check --fail-if 'lines>2' --json tests/fixtures/test_fr.txt > "$TMPDIR/chk41.json" 2>/dev/null
+ST41=$?
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.checks[0];
+process.exit((o.checks.length === 1 && c.id === "lines" && c.metric === "lines" &&
+  c.actual === 3 && c.op === ">" && c.threshold === 2 && c.status === "fail") ? 0 : 1);
+' "$TMPDIR/chk41.json"
+OK41=$?
+if [ $ST41 -eq 2 ] && [ $OK41 -eq 0 ]; then OK=0; else OK=1; fi
+report "--check --fail-if lines>2 test_fr.txt -> exit 2, checks[0] fail" $OK
+
+# --- 42. --check --warn-if : exit 3 + status warn -------------------------------
+"$FSTATS" --check --warn-if 'lines>2' --json tests/fixtures/test_fr.txt > "$TMPDIR/chk42.json" 2>/dev/null
+ST42=$?
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.checks.length === 1 && o.checks[0].status === "warn") ? 0 : 1);
+' "$TMPDIR/chk42.json"
+OK42=$?
+if [ $ST42 -eq 3 ] && [ $OK42 -eq 0 ]; then OK=0; else OK=1; fi
+report "--check --warn-if lines>2 -> exit 3, status warn" $OK
+
+# --- 43. --check --fail-if max_line_length>25 (max 30) : exit 2 -----------------
+"$FSTATS" --check --fail-if 'max_line_length>25' tests/fixtures/test_fr.txt > /dev/null 2>&1
+if [ $? -eq 2 ]; then OK=0; else OK=1; fi
+report "--check --fail-if max_line_length>25 test_fr.txt -> exit 2 [max 30]" $OK
+
+# --- 44. Mode check implicite (sans --check) : exit 2 ---------------------------
+"$FSTATS" --fail-if 'lines>2' tests/fixtures/test_fr.txt > /dev/null 2>&1
+if [ $? -eq 2 ]; then OK=0; else OK=1; fi
+report "mode implicite : --fail-if lines>2 sans --check -> exit 2" $OK
+
+# --- 45. Syntaxe invalide --fail-if : exit 1 + stderr ---------------------------
+"$FSTATS" --fail-if lines tests/fixtures/test_fr.txt > /dev/null 2> "$TMPDIR/syn1.err"
+ST_A=$?
+"$FSTATS" --fail-if 'nope>1' tests/fixtures/test_fr.txt > /dev/null 2> "$TMPDIR/syn2.err"
+ST_B=$?
+if [ $ST_A -eq 1 ] && grep -q "fail-if" "$TMPDIR/syn1.err" && \
+   [ $ST_B -eq 1 ] && grep -q "fail-if" "$TMPDIR/syn2.err"; then OK=0; else OK=1; fi
+report "--fail-if sans op / métrique inconnue -> exit 1 + stderr" $OK
+
+# --- 46. Fichier vide : lines>=0 -> exit 2 ; lines>0 -> exit 0 ------------------
+"$FSTATS" --check --fail-if 'lines>=0' tests/fixtures/empty.txt > /dev/null 2>&1
+ST_A=$?
+"$FSTATS" --check --fail-if 'lines>0' tests/fixtures/empty.txt > /dev/null 2>&1
+ST_B=$?
+if [ $ST_A -eq 2 ] && [ $ST_B -eq 0 ]; then OK=0; else OK=1; fi
+report "empty.txt : lines>=0 -> exit 2, lines>0 -> exit 0" $OK
+
+# --- 47. Multi-fichiers : pire statut cumulé (fail > warn > ok) -----------------
+"$FSTATS" --check --fail-if 'lines>3' tests/fixtures/test_fr.txt tests/fixtures/bom.txt > /dev/null 2>&1
+ST_A=$?
+"$FSTATS" --check --fail-if 'lines>1' tests/fixtures/test_fr.txt tests/fixtures/bom.txt > /dev/null 2>&1
+ST_B=$?
+if [ $ST_A -eq 0 ] && [ $ST_B -eq 2 ]; then OK=0; else OK=1; fi
+report "multi-fichiers : lines>3 -> exit 0, lines>1 -> exit 2 [pire statut]" $OK
+
+# --- 48. Baseline --compare + --fail-on-delta -----------------------------------
+"$FSTATS" --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/base.json" 2>/dev/null
+node -e '
+var fs = require("fs");
+var s = fs.readFileSync(process.argv[1], "utf8");
+fs.writeFileSync(process.argv[2], s.replace("\"lines\": 3", "\"lines\": 1"));
+' "$TMPDIR/base.json" "$TMPDIR/base2.json"
+"$FSTATS" --compare "$TMPDIR/base.json" --fail-on-delta 'lines>10' tests/fixtures/test_fr.txt > "$TMPDIR/d0.out" 2>/dev/null
+ST_A=$?
+"$FSTATS" --compare "$TMPDIR/base2.json" --fail-on-delta 'lines>10' tests/fixtures/test_fr.txt > "$TMPDIR/d200.out" 2>/dev/null
+ST_B=$?
+if [ $ST_A -eq 0 ] && [ $ST_B -eq 2 ] && grep -q "FAIL (delta 200%)" "$TMPDIR/d200.out"; then OK=0; else OK=1; fi
+report "baseline : --compare + --fail-on-delta lines>10 -> exit 0 ; baseline lines:1 -> exit 2 [delta 200%]" $OK
+
+# --- 49. --fail-on-delta sans --compare : exit 1 --------------------------------
+"$FSTATS" --fail-on-delta 'lines>10' tests/fixtures/test_fr.txt > /dev/null 2> "$TMPDIR/delta.err"
+if [ $? -eq 1 ] && grep -q "compare" "$TMPDIR/delta.err"; then OK=0; else OK=1; fi
+report "--fail-on-delta sans --compare -> exit 1 + stderr" $OK
+
+# --- 50. Fichier manquant avec --check : exit 1 (fatal prime) -------------------
+"$FSTATS" --check --fail-if 'lines>1' absent.txt > /dev/null 2>&1
+if [ $? -eq 1 ]; then OK=0; else OK=1; fi
+report "--check --fail-if lines>1 absent.txt -> exit 1 [fatal prime]" $OK
+
+# --- 51. Mode analyse sans --check : exit 0 inchangé ----------------------------
+"$FSTATS" tests/fixtures/test_fr.txt > "$TMPDIR/ana.out" 2>/dev/null
+if [ $? -eq 0 ] && [ -s "$TMPDIR/ana.out" ] && ! grep -q $'\x1b' "$TMPDIR/ana.out"; then OK=0; else OK=1; fi
+report "mode analyse test_fr.txt -> exit 0, sortie console sans ANSI" $OK
+
+# --- 52. Delta infini (base 0 -> actual > 0) : exit 2 ; 0 -> 0 : exit 0 ---------
+"$FSTATS" --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/baseinf.json" 2>/dev/null
+"$FSTATS" --summary-json tests/fixtures/empty.txt > "$TMPDIR/baseemp.json" 2>/dev/null
+node -e '
+var fs = require("fs");
+var s = fs.readFileSync(process.argv[1], "utf8");
+fs.writeFileSync(process.argv[2], s.replace("\"words\": 13", "\"words\": 0"));
+' "$TMPDIR/baseinf.json" "$TMPDIR/baseinf2.json"
+"$FSTATS" --compare "$TMPDIR/baseinf2.json" --fail-on-delta 'words>0' tests/fixtures/test_fr.txt > "$TMPDIR/inf.out" 2>/dev/null
+ST_A=$?
+"$FSTATS" --compare "$TMPDIR/baseemp.json" --fail-on-delta 'words>0' tests/fixtures/empty.txt > /dev/null 2>&1
+ST_B=$?
+if [ $ST_A -eq 2 ] && grep -q "delta inf%" "$TMPDIR/inf.out" && [ $ST_B -eq 0 ]; then OK=0; else OK=1; fi
+report "delta infini : base 0 -> 13 exit 2 [delta inf%] ; 0 -> 0 exit 0" $OK
+
+# --- 53. Sortie pipee --check : aucune sequence ANSI ----------------------------
+"$FSTATS" --check --fail-if 'lines>2' tests/fixtures/test_fr.txt > "$TMPDIR/chkc.out" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/chkc.out"; then OK=1; else OK=0; fi
+report "sortie pipee --check : aucune sequence ANSI" $OK
+
+# --- 54. --summary-json + checks : pas de section, exit 2 appliqué --------------
+"$FSTATS" --check --fail-if 'lines>2' --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/sumchk.json" 2>/dev/null
+ST54=$?
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit(("checks" in o) ? 1 : 0);
+' "$TMPDIR/sumchk.json"
+OK54=$?
+if [ $ST54 -eq 2 ] && [ $OK54 -eq 0 ]; then OK=0; else OK=1; fi
+report "--summary-json + checks -> pas de section checks, exit 2 appliqué" $OK
+
+# --- 55. Grammaire : espaces autour de l'opérateur + seuil décimal --------------
+"$FSTATS" --check --fail-if 'lines > 2.5' tests/fixtures/test_fr.txt > /dev/null 2>&1
+ST_A=$?
+"$FSTATS" --check --fail-if lines '>' 2 tests/fixtures/test_fr.txt > /dev/null 2>&1
+ST_B=$?
+if [ $ST_A -eq 2 ] && [ $ST_B -eq 2 ]; then OK=0; else OK=1; fi
+report "'--fail-if lines > 2.5' et 3 arguments séparés -> exit 2" $OK
+
+# --- 56. Ids de répétition + aggregate (checks par fichier, pas dans totals) ----
+"$FSTATS" --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/base56.json" 2>/dev/null
+node -e '
+var fs = require("fs");
+var s = fs.readFileSync(process.argv[1], "utf8");
+fs.writeFileSync(process.argv[2], s.replace("\"lines\": 3", "\"lines\": 1"));
+' "$TMPDIR/base56.json" "$TMPDIR/base56b.json"
+"$FSTATS" --check --fail-if 'lines>1' --fail-if 'lines>100' --json tests/fixtures/test_fr.txt > "$TMPDIR/ids1.json" 2>/dev/null
+ST_A=$?
+"$FSTATS" --compare "$TMPDIR/base56b.json" --fail-on-delta 'lines>10' --fail-on-delta 'lines>100' --json tests/fixtures/test_fr.txt > "$TMPDIR/ids2.json" 2>/dev/null
+ST_B=$?
+"$FSTATS" --check --fail-if 'lines>2' --json-mode=aggregate tests/fixtures/test_fr.txt tests/fixtures/bom.txt > "$TMPDIR/aggrchk.json" 2>/dev/null
+ST_C=$?
+node -e '
+var fs = require("fs");
+var o1 = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+var o2 = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+var o3 = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+var ids1 = o1.checks.map(function (c) { return c.id; }).join(",");
+var st1 = o1.checks.map(function (c) { return c.status; }).join(",");
+var ids2 = o2.checks.map(function (c) { return c.id; }).join(",");
+var ok1 = ids1 === "lines,lines#2" && st1 === "fail,ok";
+var ok2 = ids2 === "delta:lines,delta:lines#2";
+var ok3 = o3.files[0].checks && o3.files[1].checks && !("checks" in o3.totals);
+process.exit((ok1 && ok2 && ok3) ? 0 : 1);
+' "$TMPDIR/ids1.json" "$TMPDIR/ids2.json" "$TMPDIR/aggrchk.json"
+OK56=$?
+if [ $ST_A -eq 2 ] && [ $ST_B -eq 2 ] && [ $ST_C -eq 2 ] && [ $OK56 -eq 0 ]; then OK=0; else OK=1; fi
+report "ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

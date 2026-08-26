@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.5.0 (Sécurisée)
+  Version    : 2.6.0 (Sécurisée)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -20,6 +20,10 @@
     caractères (--char-classes)
   - Lisibilité (C2-C) : --readability, 4 métriques + score 0-100 sans
     syllabes (inspiré de Flesch, documenté)
+  - Checks / gate CI (Cible 1, B) : --check, --fail-if/--warn-if (10 métriques),
+    exit codes 0/2/3/1 en mode check, section Checks console + JSON
+  - Comparaison baseline (Cible 1, C) : --compare (NDJSON --summary-json) et
+    --fail-on-delta METRIQUE>X pour détecter la dérive des métriques en %
   
   OPTIONS LIGNE DE COMMANDE :
   --char          : Afficher uniquement les stats de caractères
@@ -40,6 +44,12 @@
   --no-color      : Désactiver les couleurs ANSI (utile pour fichiers/logs)
   --color         : Forcer les couleurs même dans un fichier
   --quiet         : Supprimer l'affichage console quand --out est utilisé
+  --check         : Mode check (gate CI) — implicite avec --fail-if/--warn-if/
+                    --compare/--fail-on-delta ; exit 2 (fail) ou 3 (warn)
+  --fail-if=SPEC  : Check bloquant : METRIQUE OPERATEUR SEUIL (répétable)
+  --warn-if=SPEC  : Check non bloquant (même grammaire, répétable)
+  --compare=F     : Baseline NDJSON (sortie --summary-json) pour --fail-on-delta
+  --fail-on-delta=SPEC : Check de dérive METRIQUE>X (X en %, répétable)
   --help, -h      : Afficher l'aide et quitter
   --version       : Afficher la version et quitter
   
@@ -100,7 +110,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.5.0';
+  FSTATS_VERSION = '2.6.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
@@ -108,6 +118,12 @@ const
   // Seuil de « mot long » (--readability, C2-C) : longueur en code points à
   // partir de laquelle un token compte dans pct_long_words (>= 7).
   LONG_WORD_MIN_LEN = 7;
+
+  // Delta de dérive « infini » (--fail-on-delta, Cible 1-C) : quand la base
+  // de la baseline est 0 et que la valeur courante est > 0, le delta est
+  // mathématiquement +Infini — le check échoue quel que soit le seuil.
+  // 1e300 sert de représentation finie pour l'export JSON.
+  INF_DELTA = 1e300;
 
   // Classes de caractères (--char-classes, C2-B) : l'ordre définit l'ordre
   // d'affichage/export (lettres, chiffres, blancs, ponctuation, contrôles, autres).
@@ -282,6 +298,45 @@ type
     PctLongWords: Double;        // 100 * LongWordCount / WordCount (0 si aucun mot)
     Score: Double;               // Score 0-100 (formule documentée, 0 si aucun mot)
   end;
+
+  // Opérateur de comparaison d'un check (grammaire figée du moteur, Cible 1-B)
+  TCheckOp = (opGt, opGe, opLt, opLe, opEq, opNe);
+
+  // Statut d'un check : ok | warn | fail (JSON en minuscules, console en
+  // majuscules). Multi-fichiers : le pire statut gagne (fail > warn > ok).
+  TCheckStatus = (csOk, csWarn, csFail);
+
+  // Check défini sur la ligne de commande (--fail-if, --warn-if, --fail-on-delta)
+  TCheck = record
+    Metric: string;       // Nom canonique (ex. 'lines', 'non_utf8', 'invalid_utf8')
+    Op: TCheckOp;         // Opérateur (toujours opGt pour les checks de dérive)
+    Threshold: Double;    // Seuil (pour un delta : le seuil en %)
+    IsWarn: Boolean;      // true = --warn-if (non bloquant), false = --fail-if
+    IsDelta: Boolean;     // true = check de dérive (--fail-on-delta)
+  end;
+  TCheckArray = array of TCheck;
+
+  // Résultat de l'évaluation d'un check sur un fichier (console + JSON)
+  TCheckResult = record
+    Id: string;           // 'lines', 'lines#2', 'delta:lines', 'delta:lines#2'...
+    Metric: string;       // Nom canonique de la métrique
+    Actual: Double;       // Valeur comparée (pour un delta : le delta en %)
+    Op: TCheckOp;         // Opérateur
+    Threshold: Double;    // Seuil (pour un delta : le seuil en %)
+    Status: TCheckStatus; // ok | warn | fail
+    IsDelta: Boolean;     // check de dérive (affichage 'delta <metric>')
+    DeltaInf: Boolean;    // delta infini (base 0, actual > 0) : toujours fail
+  end;
+  TCheckResultArray = array of TCheckResult;
+
+  // Entrée d'une baseline --summary-json (--compare, Cible 1-C) : chemin
+  // "file" + paires clé/valeur de premier niveau (chaînes déséchappées).
+  TBaselineEntry = record
+    FilePath: string;     // Valeur "file" déséchappée (comparaison exacte)
+    Keys: TStringArray;   // Clés JSON de premier niveau
+    Values: TStringArray; // Valeurs brutes (déséchappées pour les chaînes)
+  end;
+  TBaselineArray = array of TBaselineEntry;
 
   // Dictionnaires hashés pour une insertion/recherche en O(1) - PERFORMANCE CRITIQUE
   // Sans cela, l'analyse de gros fichiers serait exponentiellement lente
@@ -2044,6 +2099,790 @@ begin
   end;
 end;
 
+{=============================================================================
+  MOTEUR DE CHECKS ET COMPARAISON BASELINE (Cible 1, incréments B et C,
+  v2.6.0) — « le juge » et « la mémoire »
+  =============================================================================
+  --check            : active le mode check. Mode check IMPLICITE : --fail-if,
+                       --warn-if, --compare ou --fail-on-delta l'activent aussi.
+  --fail-if SPEC     : check bloquant (statut fail -> exit 2).
+  --warn-if SPEC     : check non bloquant (statut warn -> exit 3 si aucun fail).
+  Grammaire FIGÉE d'une SPEC (--fail-if et --warn-if), documentée ici :
+      SPEC        := METRIQUE [espaces] OPERATEUR [espaces] SEUIL
+      METRIQUE    := [a-z0-9_]+            (liste figée ci-dessous)
+      OPERATEUR   := '>' | '>=' | '<' | '<=' | '=' | '!='
+      SEUIL       := [0-9]+ ('.' [0-9]+)?   (entier ou décimal, '.' séparateur,
+                     sans signe ni exposant, indépendant de la locale)
+    La SPEC est acceptée en un seul argument (--fail-if lines>5,
+    --fail-if "lines > 5") ou en arguments séparés (--fail-if lines > 5).
+  Métriques du gate (valeurs depuis TStats, toutes entières) :
+      lines, words, sentences, max_line_length (Stats.MaxLen),
+      avg_words_per_sentence (Stats.AvgWordsPerSentence — division entière,
+      sémantique figée du Summary ; alias accepté : avg_sentence_words),
+      non_utf8 (Stats.InvalidUTF8), bom (0/1), crlf, tabs, nonprintable.
+    Toute autre métrique -> erreur fatale exit 1 (message stderr français).
+  Statut d'un check : ok | warn | fail — comparaison numérique stricte
+  (actual OPERATEUR SEUIL). Multi-fichiers : le pire statut gagne
+  (fail > warn > ok). Exit codes (mode check uniquement ; le mode analyse
+  garde 0/1) : 0 = tout ok (ou aucun check défini), 2 = au moins un fail,
+  3 = aucun fail mais au moins un warn, 1 = erreur fatale (prime sur tout).
+
+  --compare BASELINE : lit une baseline NDJSON produite par --summary-json
+    (une ligne JSON par fichier, clé "file" ; un objet unique est accepté).
+    Chaque ligne doit être un objet JSON avec la clé "file", sinon erreur
+    fatale exit 1. Correspondance par comparaison EXACTE de la chaîne
+    "file" avec le chemin affiché par fstats ('stdin' fonctionne aussi).
+    Fichier analysé sans baseline -> les checks delta sont IGNORÉS pour ce
+    fichier (pas d'erreur, documenté) ; lignes baseline sans fichier
+    analysé -> ignorées.
+  --fail-on-delta SPEC : check de dérive, opérateur '>' IMPOSÉ, seuil en %
+    décimal. SPEC := METRIQUE '>' SEUIL (espaces acceptés autour).
+    delta = (actual - base) / base * 100, actual = valeur courante,
+    base = valeur de la baseline. base = 0 : actual = 0 -> delta 0 (ok),
+    actual > 0 -> dérive INFINIE -> le check échoue (documenté).
+    Métriques delta autorisées : clés numériques du summary-json — lines,
+    words, characters, sentences, avg_words_per_sentence (alias
+    avg_sentence_words), line_min, line_max, line_avg, invalid_utf8 (alias
+    non_utf8), bom, crlf, tabs, nonprintable. Toute autre -> exit 1.
+    --fail-on-delta sans --compare -> erreur fatale exit 1.
+  Sorties : section "Checks" console insérée après la section Summary ;
+    JSON pretty/compact : bloc additif "checks" après "quality", avant les
+    blocs additifs. --summary-json et --csv : INCHANGÉS (pas de section
+    checks — les exit codes s'appliquent quand même). --json-mode=aggregate :
+    checks dans les objets par fichier, jamais dans "totals".
+  =============================================================================}
+
+{-----------------------------------------------------------------------------
+  OpToStr : Représentation texte d'un opérateur de check ('>', '>=', ...).
+  -----------------------------------------------------------------------------}
+function OpToStr(Op: TCheckOp): string;
+begin
+  case Op of
+    opGt: Result := '>';
+    opGe: Result := '>=';
+    opLt: Result := '<';
+    opLe: Result := '<=';
+    opEq: Result := '=';
+    opNe: Result := '!=';
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  CheckStatusStr : Statut d'un check en texte — minuscules pour le JSON
+  ('ok'|'warn'|'fail'), majuscules pour la console ('OK'|'WARN'|'FAIL').
+  -----------------------------------------------------------------------------}
+function CheckStatusStr(St: TCheckStatus; Upper: Boolean): string;
+begin
+  case St of
+    csOk:   if Upper then Result := 'OK'   else Result := 'ok';
+    csWarn: if Upper then Result := 'WARN' else Result := 'warn';
+    csFail: if Upper then Result := 'FAIL' else Result := 'fail';
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  IsValidMetricName : Vrai si M est un nom de métrique syntaxiquement valide,
+  c'est-à-dire uniquement [a-z0-9_] (grammaire figée).
+  -----------------------------------------------------------------------------}
+function IsValidMetricName(const M: string): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  if M = '' then Exit;
+  for i := 1 to Length(M) do
+    if not (((M[i] >= 'a') and (M[i] <= 'z')) or
+            ((M[i] >= '0') and (M[i] <= '9')) or (M[i] = '_')) then Exit;
+  Result := True;
+end;
+
+{-----------------------------------------------------------------------------
+  ContainsCheckOp : Vrai si S contient un des caractères d'opérateur
+  (>, <, =, !). Distingue "metric>seuil" de "metric" seul (opérateur passé
+  en argument séparé de --fail-if/--warn-if/--fail-on-delta).
+  -----------------------------------------------------------------------------}
+function ContainsCheckOp(const S: string): Boolean;
+var
+  i: Integer;
+begin
+  for i := 1 to Length(S) do
+    if (S[i] = '>') or (S[i] = '<') or (S[i] = '=') or (S[i] = '!') then
+      Exit(True);
+  Result := False;
+end;
+
+{-----------------------------------------------------------------------------
+  IsOpToken : Vrai si S est exactement un opérateur de la grammaire.
+  -----------------------------------------------------------------------------}
+function IsOpToken(const S: string): Boolean;
+begin
+  Result := (S = '>') or (S = '>=') or (S = '<') or (S = '<=') or
+            (S = '=') or (S = '!=');
+end;
+
+{-----------------------------------------------------------------------------
+  ParseNumber : Parse un seuil numérique — grammaire figée
+  [0-9]+ ('.' [0-9]+)? : entier ou décimal, '.' séparateur, sans signe ni
+  exposant, indépendant de la locale (aucune dépendance à DecimalSeparator).
+  -----------------------------------------------------------------------------}
+function ParseNumber(const S: string; out V: Double): Boolean;
+var
+  i: Integer;
+  Scale: Double;
+  SeenDot, SeenDigit: Boolean;
+begin
+  Result := False;
+  V := 0;
+  if S = '' then Exit;
+  Scale := 10;
+  SeenDot := False;
+  SeenDigit := False;
+  for i := 1 to Length(S) do
+  begin
+    case S[i] of
+      '0'..'9':
+        begin
+          SeenDigit := True;
+          if not SeenDot then
+            V := V * 10 + (Ord(S[i]) - 48)
+          else
+          begin
+            V := V + (Ord(S[i]) - 48) / Scale;
+            Scale := Scale * 10;
+          end;
+        end;
+      '.':
+        if SeenDot then Exit   // deux points décimaux : invalide
+        else SeenDot := True;
+      else Exit;               // caractère non numérique : invalide
+    end;
+  end;
+  Result := SeenDigit;
+end;
+
+{-----------------------------------------------------------------------------
+  CanonMetricFailIf : Normalise une métrique du gate (--fail-if/--warn-if).
+  Alias acceptés : avg_sentence_words -> avg_words_per_sentence ;
+  invalid_utf8 -> non_utf8 (nom JSON du summary). Retourne ''
+  si la métrique est inconnue (erreur fatale chez l'appelant).
+  -----------------------------------------------------------------------------}
+function CanonMetricFailIf(const M: string): string;
+begin
+  if (M = 'lines') or (M = 'words') or (M = 'sentences') or
+     (M = 'max_line_length') or (M = 'non_utf8') or (M = 'invalid_utf8') or
+     (M = 'bom') or (M = 'crlf') or (M = 'tabs') or (M = 'nonprintable') then
+    Result := M
+  else if (M = 'avg_words_per_sentence') or (M = 'avg_sentence_words') then
+    Result := 'avg_words_per_sentence'
+  else
+    Result := '';
+end;
+
+{-----------------------------------------------------------------------------
+  CanonMetricDelta : Normalise une métrique de dérive (--fail-on-delta).
+  Les noms canoniques sont les clés numériques du summary-json :
+  avg_words_per_sentence (alias avg_sentence_words), invalid_utf8 (alias
+  non_utf8). Retourne '' si inconnue.
+  -----------------------------------------------------------------------------}
+function CanonMetricDelta(const M: string): string;
+begin
+  if (M = 'lines') or (M = 'words') or (M = 'characters') or
+     (M = 'sentences') or (M = 'line_min') or (M = 'line_max') or
+     (M = 'line_avg') or (M = 'bom') or (M = 'crlf') or (M = 'tabs') or
+     (M = 'nonprintable') then
+    Result := M
+  else if (M = 'avg_words_per_sentence') or (M = 'avg_sentence_words') then
+    Result := 'avg_words_per_sentence'
+  else if (M = 'invalid_utf8') or (M = 'non_utf8') then
+    Result := 'invalid_utf8'
+  else
+    Result := '';
+end;
+
+{-----------------------------------------------------------------------------
+  CheckMetricValue : Valeur courante d'une métrique depuis TStats (entiers
+  convertis en Double ; bom booléen -> 1/0). Retourne False si inconnue.
+  Couvre l'union des métriques du gate (--fail-if) et du summary (delta).
+  -----------------------------------------------------------------------------}
+function CheckMetricValue(const Stats: TStats; const Metric: string;
+                          out V: Double): Boolean;
+begin
+  Result := True;
+  if Metric = 'lines' then V := Stats.LineCount
+  else if Metric = 'words' then V := Stats.WordCount
+  else if Metric = 'characters' then V := Stats.CharCount
+  else if Metric = 'sentences' then V := Stats.SentenceCount
+  else if Metric = 'avg_words_per_sentence' then V := Stats.AvgWordsPerSentence
+  else if Metric = 'max_line_length' then V := Stats.MaxLen
+  else if Metric = 'line_min' then V := Stats.MinLen
+  else if Metric = 'line_max' then V := Stats.MaxLen
+  else if Metric = 'line_avg' then V := Stats.AvgLen
+  else if (Metric = 'non_utf8') or (Metric = 'invalid_utf8') then
+    V := Stats.InvalidUTF8
+  else if Metric = 'bom' then
+  begin
+    if Stats.BOM then V := 1 else V := 0;
+  end
+  else if Metric = 'crlf' then V := Stats.CRLF
+  else if Metric = 'tabs' then V := Stats.Tabs
+  else if Metric = 'nonprintable' then V := Stats.NonPrintable
+  else Result := False;
+end;
+
+{-----------------------------------------------------------------------------
+  EvalCompare : Comparaison numérique stricte actual OPERATEUR seuil.
+  -----------------------------------------------------------------------------}
+function EvalCompare(Actual: Double; Op: TCheckOp; Threshold: Double): Boolean;
+begin
+  case Op of
+    opGt: Result := Actual > Threshold;
+    opGe: Result := Actual >= Threshold;
+    opLt: Result := Actual < Threshold;
+    opLe: Result := Actual <= Threshold;
+    opEq: Result := Actual = Threshold;
+    opNe: Result := Actual <> Threshold;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  FormatFloatTrimSigned : FormatFloatTrim en conservant le signe (les deltas
+  de dérive peuvent être négatifs ; FormatFloatTrim prend la valeur absolue).
+  -----------------------------------------------------------------------------}
+function FormatFloatTrimSigned(V: Double; Decimals: Integer): string;
+begin
+  if V < 0 then
+    Result := '-' + FormatFloatTrim(-V, Decimals)
+  else
+    Result := FormatFloatTrim(V, Decimals);
+end;
+
+{-----------------------------------------------------------------------------
+  ParseCheckSpec : Parse une SPEC de check (--fail-if / --warn-if).
+  Grammaire figée (voir l'en-tête du moteur) : METRIQUE [espaces] OPERATEUR
+  [espaces] SEUIL. Retour : 0 = OK ; 1 = métrique manquante/invalide ;
+  2 = opérateur absent ; 3 = opérateur inconnu ; 4 = seuil non numérique ;
+  5 = métrique inconnue (Metric contient alors le nom reçu).
+  -----------------------------------------------------------------------------}
+function ParseCheckSpec(const Arg: string; out Metric: string; out Op: TCheckOp;
+                        out Threshold: Double): Integer;
+var
+  M, OpS, ThrS: string;
+  p, i: Integer;
+begin
+  Result := 0;
+  M := Trim(Arg);
+  // Localiser le premier caractère d'opérateur (>, <, =, !). La métrique
+  // étant [a-z0-9_]+, le premier caractère d'opérateur rencontré EST l'op.
+  p := 0;
+  for i := 1 to Length(M) do
+    if (M[i] = '>') or (M[i] = '<') or (M[i] = '=') or (M[i] = '!') then
+    begin
+      p := i;
+      Break;
+    end;
+  if p = 0 then Exit(2);  // pas d'opérateur
+  Metric := LowerCase(Trim(Copy(M, 1, p - 1)));
+  if (Metric = '') or (not IsValidMetricName(Metric)) then Exit(1);
+  // Opérateur : 1 ou 2 caractères (>= <= !=)
+  OpS := M[p];
+  if (p < Length(M)) and (M[p + 1] = '=') then
+  begin
+    OpS := OpS + '=';
+    Inc(p);
+  end;
+  case OpS of
+    '>':  Op := opGt;
+    '>=': Op := opGe;
+    '<':  Op := opLt;
+    '<=': Op := opLe;
+    '=':  Op := opEq;
+    '!=': Op := opNe;
+    else Exit(3);  // '!' seul, '==' : opérateur inconnu
+  end;
+  ThrS := Trim(Copy(M, p + 1, Length(M)));
+  if not ParseNumber(ThrS, Threshold) then Exit(4);
+  // Normalisation : métrique canonique du gate + alias accepté. Le test
+  // préalable conserve le nom reçu dans Metric pour le message d'erreur.
+  if CanonMetricFailIf(Metric) = '' then Exit(5);
+  Metric := CanonMetricFailIf(Metric);
+end;
+
+{-----------------------------------------------------------------------------
+  ParseDeltaSpec : Parse une SPEC de dérive (--fail-on-delta).
+  Grammaire figée : METRIQUE '>' SEUIL — opérateur '>' IMPOSÉ, seuil en %
+  décimal. Retour : 0 = OK ; 1 = opérateur '>' manquant ; 2 = métrique
+  inconnue (Metric = nom reçu) ; 3 = seuil non numérique ; 4 = métrique
+  manquante ; 5 = opérateur '>=' (interdit, '>' seul imposé).
+  -----------------------------------------------------------------------------}
+function ParseDeltaSpec(const Arg: string; out Metric: string;
+                        out Threshold: Double): Integer;
+var
+  M, ThrS: string;
+  p: Integer;
+begin
+  Result := 0;
+  M := Trim(Arg);
+  p := Pos('>', M);
+  if p = 0 then Exit(1);
+  Metric := LowerCase(Trim(Copy(M, 1, p - 1)));
+  if Metric = '' then Exit(4);
+  if (p < Length(M)) and (M[p + 1] = '=') then Exit(5);  // '>=' : syntaxe imposée '>'
+  ThrS := Trim(Copy(M, p + 1, Length(M)));
+  if not ParseNumber(ThrS, Threshold) then Exit(3);
+  // Normalisation : métrique canonique (clé du summary-json) + alias. Le
+  // test préalable conserve le nom reçu dans Metric pour le message d'erreur.
+  if CanonMetricDelta(Metric) = '' then Exit(2);
+  Metric := CanonMetricDelta(Metric);
+end;
+
+{-----------------------------------------------------------------------------
+  AppendUTF8 : Ajoute un code point Unicode encodé en UTF-8 à une chaîne
+  (déséchappement \uXXXX des chaînes JSON de la baseline).
+  -----------------------------------------------------------------------------}
+procedure AppendUTF8(var R: string; CP: UInt32);
+begin
+  if CP < $80 then
+    R := R + Chr(CP)
+  else if CP < $800 then
+    R := R + Chr($C0 or (CP shr 6)) + Chr($80 or (CP and $3F))
+  else if CP < $10000 then
+    R := R + Chr($E0 or (CP shr 12)) +
+             Chr($80 or ((CP shr 6) and $3F)) +
+             Chr($80 or (CP and $3F))
+  else
+    R := R + Chr($F0 or (CP shr 18)) +
+             Chr($80 or ((CP shr 12) and $3F)) +
+             Chr($80 or ((CP shr 6) and $3F)) +
+             Chr($80 or (CP and $3F));
+end;
+
+{-----------------------------------------------------------------------------
+  JSONUnescape : Déséchappe une chaîne JSON (guillemets retirés par
+  l'appelant) : \" \\ \/ \b \f \n \r \t et \uXXXX (encodé en UTF-8).
+  -----------------------------------------------------------------------------}
+function JSONUnescape(const S: string): string;
+var
+  i, L, k: Integer;
+  CP: UInt32;
+begin
+  Result := '';
+  i := 1;
+  L := Length(S);
+  while i <= L do
+  begin
+    if S[i] <> '\' then
+    begin
+      Result := Result + S[i];
+      Inc(i);
+    end
+    else
+    begin
+      Inc(i);
+      if i > L then Break;
+      case S[i] of
+        '"': Result := Result + '"';
+        '\': Result := Result + '\';
+        '/': Result := Result + '/';
+        'b': Result := Result + #8;
+        'f': Result := Result + #12;
+        'n': Result := Result + #10;
+        'r': Result := Result + #13;
+        't': Result := Result + #9;
+        'u':
+          begin
+            CP := 0;
+            for k := 1 to 4 do
+            begin
+              CP := CP * 16;
+              if i + k <= L then
+              begin
+                case S[i + k] of
+                  '0'..'9': CP := CP + (Ord(S[i + k]) - 48);
+                  'a'..'f': CP := CP + (Ord(S[i + k]) - 87);
+                  'A'..'F': CP := CP + (Ord(S[i + k]) - 55);
+                end;
+              end;
+            end;
+            AppendUTF8(Result, CP);
+            Inc(i, 4);
+          end;
+        else Result := Result + S[i];  // échappement inconnu : conservé tel quel
+      end;
+      Inc(i);
+    end;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  ParseJSONObject : Parse un objet JSON en paires clé/valeur de premier
+  niveau (les objets/tableaux imbriqués sont sautés de manière équilibrée et
+  ignorés). Les chaînes sont déséchappées (JSONUnescape). Structure minimale
+  "clé" : valeur, ... ; en cas de malformation, l'objet partiel est renvoyé
+  (l'appelant vérifie la clé "file").
+  -----------------------------------------------------------------------------}
+procedure ParseJSONObject(const S: string; var Keys, Values: TStringArray);
+var
+  i, L: Integer;
+  K, V: string;
+
+  procedure SkipWS;
+  begin
+    while (i <= L) and (S[i] in [#9, #10, #13, #32]) do Inc(i);
+  end;
+
+  // Lit la chaîne brute entre guillemets (échappements inclus), puis la
+  // déséchappe (JSONUnescape) — les octets UTF-8 passent tels quels.
+  function ReadString: string;
+  begin
+    Result := '';
+    Inc(i);  // guillemet ouvrant
+    while i <= L do
+    begin
+      if S[i] = '"' then
+      begin
+        Inc(i);
+        Result := JSONUnescape(Result);
+        Exit;
+      end;
+      Result := Result + S[i];
+      Inc(i);
+    end;
+    Result := JSONUnescape(Result);
+  end;
+
+  // Saute une valeur imbriquée (objet/tableau) en respectant les chaînes
+  procedure SkipNested(OpenC, CloseC: Char);
+  var
+    D: Integer;
+    InS: Boolean;
+  begin
+    D := 1;
+    InS := False;
+    Inc(i);  // caractère ouvrant
+    while (i <= L) and (D > 0) do
+    begin
+      if InS then
+      begin
+        if S[i] = '\' then Inc(i)
+        else if S[i] = '"' then InS := False;
+      end
+      else
+      begin
+        if S[i] = '"' then InS := True
+        else if S[i] = OpenC then Inc(D)
+        else if S[i] = CloseC then Dec(D);
+      end;
+      Inc(i);
+    end;
+  end;
+
+  // Lit une valeur scalaire (nombre, true/false/null) : s'arrête sur , } ]
+  function ReadScalar: string;
+  begin
+    Result := '';
+    while (i <= L) and (S[i] <> ',') and (S[i] <> '}') and (S[i] <> ']') do
+    begin
+      if not (S[i] in [#9, #10, #13, #32]) then Result := Result + S[i];
+      Inc(i);
+    end;
+  end;
+
+begin
+  SetLength(Keys, 0);
+  SetLength(Values, 0);
+  i := 1;
+  L := Length(S);
+  SkipWS;
+  if (i > L) or (S[i] <> '{') then Exit;
+  Inc(i);
+  while True do
+  begin
+    SkipWS;
+    if i > L then Break;
+    if S[i] = '}' then
+    begin
+      Inc(i);
+      Break;
+    end;
+    if S[i] <> '"' then Break;  // clé non-chaîne : objet malformé, on s'arrête
+    K := ReadString;
+    SkipWS;
+    if (i > L) or (S[i] <> ':') then Break;
+    Inc(i);
+    SkipWS;
+    if i > L then Break;
+    if S[i] = '"' then V := ReadString
+    else if S[i] = '{' then
+    begin
+      SkipNested('{', '}');
+      V := '';
+    end
+    else if S[i] = '[' then
+    begin
+      SkipNested('[', ']');
+      V := '';
+    end
+    else
+      V := ReadScalar;
+    SetLength(Keys, Length(Keys) + 1);
+    Keys[High(Keys)] := K;
+    SetLength(Values, Length(Values) + 1);
+    Values[High(Values)] := V;
+    SkipWS;
+    if (i <= L) and (S[i] = ',') then
+    begin
+      Inc(i);
+      Continue;
+    end;
+    if (i <= L) and (S[i] = '}') then
+    begin
+      Inc(i);
+      Break;
+    end;
+    Break;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  SplitJSONObjects : Découpe un flux JSON en objets de premier niveau
+  (NDJSON : un objet par ligne, ou un objet unique multi-lignes). Les blancs
+  entre les objets sont ignorés ; tout autre contenu hors objet -> False
+  (baseline invalide). Retourne False aussi si une accolade n'est pas fermée.
+  -----------------------------------------------------------------------------}
+function SplitJSONObjects(const S: string; var Objs: TStringArray): Boolean;
+var
+  i, L, Depth, Start: Integer;
+  InStr: Boolean;
+begin
+  Result := True;
+  SetLength(Objs, 0);
+  i := 1;
+  L := Length(S);
+  Depth := 0;
+  Start := 0;
+  InStr := False;
+  while i <= L do
+  begin
+    if InStr then
+    begin
+      if S[i] = '\' then Inc(i)   // échappement : saute le caractère suivant
+      else if S[i] = '"' then InStr := False;
+    end
+    else
+    begin
+      case S[i] of
+        '"': InStr := True;
+        '{':
+          begin
+            if Depth = 0 then Start := i;
+            Inc(Depth);
+          end;
+        '}':
+          begin
+            Dec(Depth);
+            if Depth = 0 then
+            begin
+              SetLength(Objs, Length(Objs) + 1);
+              Objs[High(Objs)] := Copy(S, Start, i - Start + 1);
+            end;
+          end;
+        #9, #10, #13, #32: ;  // blancs entre objets : ignorés
+        else
+          if Depth = 0 then Exit(False);  // contenu non JSON hors objet
+      end;
+    end;
+    Inc(i);
+  end;
+  if Depth <> 0 then Exit(False);  // accolade non fermée
+end;
+
+{-----------------------------------------------------------------------------
+  BaselineValue : Valeur numérique d'une clé d'entrée baseline (true/false
+  pour bom -> 1/0). Retourne False si la clé est absente ou non numérique.
+  -----------------------------------------------------------------------------}
+function BaselineValue(const E: TBaselineEntry; const Key: string;
+                       out V: Double): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to High(E.Keys) do
+    if E.Keys[i] = Key then
+    begin
+      if E.Values[i] = 'true' then
+      begin
+        V := 1;
+        Result := True;
+      end
+      else if E.Values[i] = 'false' then
+      begin
+        V := 0;
+        Result := True;
+      end
+      else
+        Result := ParseNumber(E.Values[i], V);
+      Exit;
+    end;
+end;
+
+{-----------------------------------------------------------------------------
+  LoadBaseline : Lit et parse un fichier baseline (NDJSON produit par
+  --summary-json ; un objet unique est accepté). Chaque objet doit avoir la
+  clé "file", sinon erreur fatale exit 1 (message stderr français).
+  -----------------------------------------------------------------------------}
+procedure LoadBaseline(const Path: string; var Baseline: TBaselineArray);
+var
+  FS: TFileStream;
+  S: string;
+  Objs: TStringArray;
+  i, j: Integer;
+  Keys, Values: TStringArray;
+begin
+  SetLength(Baseline, 0);
+  try
+    FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+  except
+    on E: Exception do
+    begin
+      WriteLn(ErrOutput, 'Erreur: baseline introuvable ou illisible - ', Path);
+      Halt(1);
+    end;
+  end;
+  try
+    SetLength(S, LongInt(FS.Size));
+    if FS.Size > 0 then
+      FS.Read(S[1], LongInt(FS.Size));
+  finally
+    FS.Free;
+  end;
+  if not SplitJSONObjects(S, Objs) then
+  begin
+    WriteLn(ErrOutput, 'Erreur: baseline invalide - ', Path,
+            ' (contenu non JSON ou accolades non fermées)');
+    Halt(1);
+  end;
+  if Length(Objs) = 0 then
+  begin
+    WriteLn(ErrOutput, 'Erreur: baseline invalide - ', Path,
+            ' (aucun objet JSON trouvé)');
+    Halt(1);
+  end;
+  SetLength(Baseline, Length(Objs));
+  for i := 0 to High(Objs) do
+  begin
+    ParseJSONObject(Objs[i], Keys, Values);
+    j := 0;
+    while (j < Length(Keys)) and (Keys[j] <> 'file') do Inc(j);
+    if j >= Length(Keys) then
+    begin
+      WriteLn(ErrOutput, 'Erreur: baseline invalide - ', Path,
+              ' (objet ', i + 1, ' : clé "file" manquante)');
+      Halt(1);
+    end;
+    Baseline[i].FilePath := Values[j];
+    Baseline[i].Keys := Keys;
+    Baseline[i].Values := Values;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  EvaluateChecks : Évalue tous les checks définis sur un fichier (après
+  l'analyse, sur les compteurs TStats — le streaming et la mémoire bornée ne
+  sont pas affectés). Les checks delta sont ignorés si le fichier n'a pas
+  d'entrée baseline correspondante (comparaison exacte de "file", documenté)
+  ou si la clé de la métrique est absente de l'entrée. Ids : 'metric',
+  'metric#2', ... pour les répétitions ; 'delta:metric', 'delta:metric#2', ...
+  pour les checks de dérive.
+  -----------------------------------------------------------------------------}
+procedure EvaluateChecks(const Stats: TStats; const Checks: TCheckArray;
+                         const Baseline: TBaselineArray;
+                         out Results: TCheckResultArray);
+var
+  i, j, Entry, Ordinal: Integer;
+  V, Base, Delta: Double;
+  Key: string;
+  R: TCheckResult;
+begin
+  SetLength(Results, 0);
+  // Entrée baseline de ce fichier : comparaison EXACTE de la chaîne "file"
+  Entry := -1;
+  for j := 0 to High(Baseline) do
+    if Baseline[j].FilePath = Stats.Path then
+    begin
+      Entry := j;
+      Break;
+    end;
+  for i := 0 to High(Checks) do
+  begin
+    if Checks[i].IsDelta then
+    begin
+      // Check de dérive : sans baseline (fichier ou clé absente), il est
+      // ignoré pour ce fichier (pas d'erreur — comportement documenté).
+      if Entry < 0 then Continue;
+      if not BaselineValue(Baseline[Entry], Checks[i].Metric, Base) then Continue;
+      if not CheckMetricValue(Stats, Checks[i].Metric, V) then Continue;
+      if Base = 0 then
+      begin
+        if V = 0 then
+        begin
+          Delta := 0;
+          R.DeltaInf := False;
+        end
+        else
+        begin
+          // Documenté : une métrique qui passe de 0 à >0 est une dérive
+          // infinie — le check échoue quel que soit le seuil.
+          Delta := 0;
+          R.DeltaInf := True;
+        end;
+      end
+      else
+      begin
+        Delta := (V - Base) / Base * 100;
+        R.DeltaInf := False;
+      end;
+      R.Actual := Delta;   // pour un delta, la valeur comparée EST le delta %
+      R.Metric := Checks[i].Metric;
+      R.Op := opGt;
+      R.Threshold := Checks[i].Threshold;
+      R.IsDelta := True;
+      if R.DeltaInf or (Delta > Checks[i].Threshold) then
+        R.Status := csFail
+      else
+        R.Status := csOk;
+    end
+    else
+    begin
+      if not CheckMetricValue(Stats, Checks[i].Metric, V) then Continue;
+      R.Actual := V;
+      R.Metric := Checks[i].Metric;
+      R.Op := Checks[i].Op;
+      R.Threshold := Checks[i].Threshold;
+      R.IsDelta := False;
+      R.DeltaInf := False;
+      // --warn-if : condition vraie -> warn (non bloquant) ; --fail-if -> fail
+      if EvalCompare(V, Checks[i].Op, Checks[i].Threshold) then
+      begin
+        if Checks[i].IsWarn then R.Status := csWarn
+        else R.Status := csFail;
+      end
+      else
+        R.Status := csOk;
+    end;
+    // Id : 'metric' (ou 'delta:metric'), puis '#2', '#3'... pour les répétitions
+    if R.IsDelta then Key := 'delta:' + R.Metric
+    else Key := R.Metric;
+    Ordinal := 1;
+    for j := 0 to High(Results) do
+      if (Results[j].IsDelta = R.IsDelta) and (Results[j].Metric = R.Metric) then
+        Inc(Ordinal);
+    if Ordinal = 1 then R.Id := Key
+    else R.Id := Key + '#' + IntToStr(Ordinal);
+    SetLength(Results, Length(Results) + 1);
+    Results[High(Results)] := R;
+  end;
+end;
+
 {-----------------------------------------------------------------------------
   Affichage console — style CLI épuré (ASCII pur, sans bordures Unicode)
   -----------------------------------------------------------------------------
@@ -2101,7 +2940,8 @@ end;
 
 procedure PrintStats(const Stats: TStats; ShowChars, ShowWords, ShowLines, ShowAll: Boolean;
                      LexicalStats: Boolean; Readability: Boolean;
-                     TopWordsLimit, TopCharsLimit: Integer);
+                     TopWordsLimit, TopCharsLimit: Integer;
+                     const CheckResults: TCheckResultArray);
 var
   i, Limit, Total, RankW: Integer;
   Title, Preview: string;
@@ -2125,6 +2965,39 @@ begin
   WriteLn(Format('  Line length:  min %d, max %d, avg %d',
         [Stats.MinLen, Stats.MaxLen, Stats.AvgLen]));
   WriteLn;
+
+  { Section Checks (Cible 1, v2.6.0) — affichée uniquement en mode check avec
+    au moins un check évalué sur ce fichier. Insérée après Summary : le
+    résultat du gate d'abord visible. Format (ASCII pur) :
+      <metric> <op> <seuil> : <STATUS> (actual <valeur>)
+      delta <metric> > <seuil>% : <STATUS> (delta <delta>%) }
+  if Length(CheckResults) > 0 then
+  begin
+    Title := 'Checks';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    for i := 0 to High(CheckResults) do
+    begin
+      if CheckResults[i].IsDelta then
+      begin
+        if CheckResults[i].DeltaInf then
+          WriteLn('  delta ', CheckResults[i].Metric, ' ', OpToStr(CheckResults[i].Op), ' ',
+                  FormatFloatTrim(CheckResults[i].Threshold, 4), '% : ',
+                  CheckStatusStr(CheckResults[i].Status, True), ' (delta inf%)')
+        else
+          WriteLn('  delta ', CheckResults[i].Metric, ' ', OpToStr(CheckResults[i].Op), ' ',
+                  FormatFloatTrim(CheckResults[i].Threshold, 4), '% : ',
+                  CheckStatusStr(CheckResults[i].Status, True), ' (delta ',
+                  FormatFloatTrimSigned(CheckResults[i].Actual, 4), '%)')
+      end
+      else
+        WriteLn('  ', CheckResults[i].Metric, ' ', OpToStr(CheckResults[i].Op), ' ',
+                FormatFloatTrim(CheckResults[i].Threshold, 4), ' : ',
+                CheckStatusStr(CheckResults[i].Status, True), ' (actual ',
+                FormatFloatTrim(CheckResults[i].Actual, 4), ')');
+    end;
+    WriteLn;
+  end;
 
   { Section Lexical — affichée uniquement avec --lexical-stats (C2-A).
     Métriques calculées à la volée depuis les fréquences du mode courant. }
@@ -2370,7 +3243,7 @@ begin
 end;
 
 procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
-                    Readability: Boolean);
+                    Readability: Boolean; const CheckResults: TCheckResultArray);
 var
   i, j, Limit: Integer;
   Lx: TLexicalStats;
@@ -2404,6 +3277,31 @@ begin
   WriteLn('    "tabs": ', Stats.Tabs, ',');
   WriteLn('    "nonprintable": ', Stats.NonPrintable);
   WriteLn('  },');
+
+  // Checks (Cible 1, v2.6.0) : bloc additif inséré après "quality", avant
+  // les blocs additifs (char_classes, histogram, ngrams, lexical, readability).
+  // Absent avec --summary-json et --csv (documenté) ; présent par fichier
+  // dans --json-mode=aggregate (jamais dans "totals").
+  if Length(CheckResults) > 0 then
+  begin
+    WriteLn('  "checks": [');
+    for i := 0 to High(CheckResults) do
+    begin
+      if i > 0 then WriteLn(',');
+      if CheckResults[i].DeltaInf then
+        Write('    {"id": "', JsonEscape(CheckResults[i].Id), '", "metric": "',
+              JsonEscape(CheckResults[i].Metric), '", "actual": 1e300')
+      else
+        Write('    {"id": "', JsonEscape(CheckResults[i].Id), '", "metric": "',
+              JsonEscape(CheckResults[i].Metric), '", "actual": ',
+              FormatFloatTrimSigned(CheckResults[i].Actual, 4));
+      Write(', "op": "', OpToStr(CheckResults[i].Op), '"');
+      Write(', "threshold": ', FormatFloatTrim(CheckResults[i].Threshold, 4));
+      Write(', "status": "', CheckStatusStr(CheckResults[i].Status, False), '"}');
+    end;
+    WriteLn;
+    WriteLn('  ],');
+  end;
 
   // Structure (C2-B) : classes de caractères, histogramme et n-grams — clés
   // additionnelles (ajout additif, les clés existantes sont inchangées)
@@ -2643,9 +3541,11 @@ end;
   modes array/aggregate). Structure identique à ExportJSON (pretty).
   -----------------------------------------------------------------------------}
 function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
-                          Readability: Boolean): string;
+                          Readability: Boolean;
+                          const CheckResults: TCheckResultArray): string;
 var
   S: string;
+  i: Integer;
   Lx: TLexicalStats;
   Rd: TReadabilityStats;
 begin
@@ -2670,6 +3570,27 @@ begin
   S := S + ', "crlf": ' + IntToStr(Stats.CRLF);
   S := S + ', "tabs": ' + IntToStr(Stats.Tabs);
   S := S + ', "nonprintable": ' + IntToStr(Stats.NonPrintable) + '}';
+  // Checks (Cible 1, v2.6.0) : même position que dans ExportJSON (après
+  // "quality"). Absent avec --summary-json et --csv (documenté).
+  if Length(CheckResults) > 0 then
+  begin
+    S := S + ', "checks": [';
+    for i := 0 to High(CheckResults) do
+    begin
+      if i > 0 then S := S + ',';
+      if CheckResults[i].DeltaInf then
+        S := S + '{"id": "' + JsonEscape(CheckResults[i].Id) +
+          '", "metric": "' + JsonEscape(CheckResults[i].Metric) + '", "actual": 1e300'
+      else
+        S := S + '{"id": "' + JsonEscape(CheckResults[i].Id) +
+          '", "metric": "' + JsonEscape(CheckResults[i].Metric) + '", "actual": ' +
+          FormatFloatTrimSigned(CheckResults[i].Actual, 4);
+      S := S + ', "op": "' + OpToStr(CheckResults[i].Op) + '"' +
+        ', "threshold": ' + FormatFloatTrim(CheckResults[i].Threshold, 4) +
+        ', "status": "' + CheckStatusStr(CheckResults[i].Status, False) + '"}';
+    end;
+    S := S + ']';
+  end;
   if LexicalStats then
   begin
     Lx := ComputeLexical(Stats);
@@ -2948,6 +3869,16 @@ begin
   WriteLn(Out, '  --readability     Metriques de lisibilite + score 0-100');
   WriteLn(Out, '                    (sans syllabes, inspire de Flesch)');
   WriteLn(Out);
+  WriteLn(Out, 'Checks et comparaison (v2.6.0) :');
+  WriteLn(Out, '  --check           Mode check : gate CI (exit 2/3)');
+  WriteLn(Out, '  --fail-if=SPEC    Check bloquant : METRIQUE OPERATEUR SEUIL');
+  WriteLn(Out, '                    (ex. --fail-if lines>100, --fail-if');
+  WriteLn(Out, '                    max_line_length<=120) ; repetable');
+  WriteLn(Out, '  --warn-if=SPEC    Check non bloquant (meme grammaire)');
+  WriteLn(Out, '  --compare=F       Baseline NDJSON (sortie --summary-json)');
+  WriteLn(Out, '  --fail-on-delta=S Check de derive : METRIQUE>X (X = pourcent,');
+  WriteLn(Out, '                    ex. --fail-on-delta lines>10) ; repetable');
+  WriteLn(Out);
   WriteLn(Out, 'Formats d''export :');
   WriteLn(Out, '  --json            Export JSON : 1 fichier = objet unique,');
   WriteLn(Out, '                    plusieurs = NDJSON (1 objet par ligne)');
@@ -2966,6 +3897,8 @@ begin
   WriteLn(Out, 'Codes de retour : 0 si succes, 1 en cas d''erreur (fichier');
   WriteLn(Out, 'introuvable, glob sans correspondance, option invalide,');
   WriteLn(Out, 'sortie inecrivable, stdin melange avec des fichiers, etc.).');
+  WriteLn(Out, 'En mode check : 2 si au moins un check echoue, 3 si warnings');
+  WriteLn(Out, 'seulement (le mode analyse garde 0/1).');
 end;
 
 {=============================================================================
@@ -3013,6 +3946,22 @@ var
   TotalHistCounts: array[0..6] of Int64;
   HistRangesTotal: TStringArray;
   k: Integer;
+  // C2 (v2.6.0) : moteur de checks et comparaison baseline (Cible 1, B et C)
+  OptCheck: Boolean;               // --check (mode check explicite)
+  CheckMode: Boolean;              // mode check actif (explicite ou implicite)
+  CompareFile: string;             // --compare BASELINE (fichier baseline NDJSON)
+  Checks: TCheckArray;             // checks définis (--fail-if/--warn-if/--fail-on-delta)
+  Baseline: TBaselineArray;        // entrées baseline lues (--compare)
+  CheckResults: TCheckResultArray; // résultats du fichier courant
+  HasFail, HasWarn: Boolean;       // pire statut multi-fichiers (fail > warn > ok)
+  FailOnDeltaCount: Integer;       // nombre de --fail-on-delta (validation)
+  CheckMetric: string;             // valeurs temporaires de parsing des checks
+  CheckOp: TCheckOp;
+  CheckThr: Double;
+  DeltaMetric: string;
+  DeltaThr: Double;
+  IsWarnCheck: Boolean;
+  OpToken: string;
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -3073,6 +4022,15 @@ begin
   StopWordMode := swNone;
   HistogramKindOpt := hkNone;
   OptCharClasses := False;
+  // C2 (v2.6.0) : défauts du moteur de checks
+  OptCheck := False;
+  CheckMode := False;
+  CompareFile := '';
+  SetLength(Checks, 0);
+  SetLength(Baseline, 0);
+  HasFail := False;
+  HasWarn := False;
+  FailOnDeltaCount := 0;
 
   OutFileName := '';  // Pas de redirection de sortie par défaut
 
@@ -3088,7 +4046,8 @@ begin
     {=========================================================================
     PARSING DES ARGUMENTS - CASE-INSENSITIVE ET SÉCURISÉ
     =========================================================================}
-    for i := 1 to ParamCount do
+    i := 1;
+    while i <= ParamCount do
     begin
       ParamOrig := ParamStr(i);
       Param := LowerCase(ParamOrig);  // Normalisation pour comparaison insensible à la casse
@@ -3396,9 +4355,182 @@ begin
       else if Param = '--char-classes' then
         OptCharClasses := True
 
+      // C2 (v2.6.0) : moteur de checks — --check, --fail-if, --warn-if,
+      // --compare et --fail-on-delta. --fail-if/--warn-if/--compare/
+      // --fail-on-delta activent aussi le mode check (mode implicite).
+      else if Param = '--check' then
+        OptCheck := True
+      else if (Param = '--compare') or (Copy(Param, 1, 10) = '--compare=') or
+              (Copy(Param, 1, 10) = '--compare:') then
+      begin
+        if Param = '--compare' then
+        begin
+          if i >= ParamCount then
+          begin
+            WriteLn(ErrOutput, 'Erreur: nom de fichier baseline manquant après --compare');
+            Halt(1);
+          end;
+          Inc(i);
+          CompareFile := ParamStr(i);
+        end
+        else
+          CompareFile := Copy(ParamOrig, 11, Length(ParamOrig));
+        if CompareFile = '' then
+        begin
+          WriteLn(ErrOutput, 'Erreur: nom de fichier baseline manquant après --compare');
+          Halt(1);
+        end;
+      end
+      else if (Param = '--fail-if') or (Param = '--warn-if') or
+              (Copy(Param, 1, 10) = '--fail-if=') or (Copy(Param, 1, 10) = '--fail-if:') or
+              (Copy(Param, 1, 10) = '--warn-if=') or (Copy(Param, 1, 10) = '--warn-if:') then
+      begin
+        IsWarnCheck := (Param = '--warn-if') or
+                       (Copy(Param, 1, 10) = '--warn-if=') or
+                       (Copy(Param, 1, 10) = '--warn-if:');
+        // Valeur : en ligne (--fail-if=SPEC) ou argument(s) suivant(s)
+        if (Copy(Param, 1, 10) = '--fail-if=') or (Copy(Param, 1, 10) = '--fail-if:') or
+           (Copy(Param, 1, 10) = '--warn-if=') or (Copy(Param, 1, 10) = '--warn-if:') then
+          V := Copy(ParamOrig, 11, Length(ParamOrig))
+        else
+        begin
+          if i >= ParamCount then
+          begin
+            WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : valeur manquante (METRIQUE OPERATEUR SEUIL)');
+            Halt(1);
+          end;
+          Inc(i);
+          V := ParamStr(i);
+        end;
+        // Grammaire : METRIQUE [espaces] OPERATEUR [espaces] SEUIL — si la
+        // valeur ne contient pas d'opérateur, l'opérateur (et le seuil)
+        // peuvent être passés en argument(s) séparé(s) : --fail-if lines > 2
+        if not ContainsCheckOp(V) then
+        begin
+          if (i < ParamCount) and IsOpToken(ParamStr(i + 1)) then
+          begin
+            Inc(i);
+            OpToken := ParamStr(i);
+            if i >= ParamCount then
+            begin
+              WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : seuil manquant après l''opérateur "', OpToken, '"');
+              Halt(1);
+            end;
+            Inc(i);
+            V := V + OpToken + ParamStr(i);
+          end;
+        end;
+        Code := ParseCheckSpec(V, CheckMetric, CheckOp, CheckThr);
+        case Code of
+          0: ;
+          1: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : métrique manquante ou invalide dans "', V, '"');
+               Halt(1);
+             end;
+          2: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : opérateur manquant dans "', V, '" (attendu > >= < <= = !=)');
+               Halt(1);
+             end;
+          3: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : opérateur inconnu dans "', V, '"');
+               Halt(1);
+             end;
+          4: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : seuil non numérique dans "', V, '"');
+               Halt(1);
+             end;
+          5: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-if/--warn-if : métrique inconnue "', CheckMetric, '"');
+               Halt(1);
+             end;
+        end;
+        SetLength(Checks, Length(Checks) + 1);
+        with Checks[High(Checks)] do
+        begin
+          Metric := CheckMetric;      // nom canonique du gate
+          Op := CheckOp;
+          Threshold := CheckThr;
+          IsWarn := IsWarnCheck;
+          IsDelta := False;
+        end;
+      end
+      else if (Param = '--fail-on-delta') or (Copy(Param, 1, 15) = '--fail-on-delta=') or
+              (Copy(Param, 1, 15) = '--fail-on-delta:') then
+      begin
+        if (Copy(Param, 1, 15) = '--fail-on-delta=') or (Copy(Param, 1, 15) = '--fail-on-delta:') then
+          V := Copy(ParamOrig, 16, Length(ParamOrig))
+        else
+        begin
+          if i >= ParamCount then
+          begin
+            WriteLn(ErrOutput, 'Erreur: --fail-on-delta : valeur manquante (METRIQUE>X, X en %)');
+            Halt(1);
+          end;
+          Inc(i);
+          V := ParamStr(i);
+        end;
+        // Opérateur '>' imposé : accepté aussi en argument séparé
+        // (--fail-on-delta lines > 10)
+        if not ContainsCheckOp(V) then
+        begin
+          if (i < ParamCount) and IsOpToken(ParamStr(i + 1)) then
+          begin
+            Inc(i);
+            OpToken := ParamStr(i);
+            if OpToken <> '>' then
+            begin
+              WriteLn(ErrOutput, 'Erreur: --fail-on-delta : l''opérateur doit être ">" seul (reçu "', OpToken, '")');
+              Halt(1);
+            end;
+            if i >= ParamCount then
+            begin
+              WriteLn(ErrOutput, 'Erreur: --fail-on-delta : seuil manquant après ">"');
+              Halt(1);
+            end;
+            Inc(i);
+            V := V + OpToken + ParamStr(i);
+          end;
+        end;
+        Code := ParseDeltaSpec(V, DeltaMetric, DeltaThr);
+        case Code of
+          0: ;
+          1: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-on-delta : opérateur ">" manquant dans "', V, '"');
+               Halt(1);
+             end;
+          2: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-on-delta : métrique inconnue "', DeltaMetric, '"');
+               Halt(1);
+             end;
+          3: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-on-delta : seuil non numérique dans "', V, '"');
+               Halt(1);
+             end;
+          4: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-on-delta : métrique manquante dans "', V, '"');
+               Halt(1);
+             end;
+          5: begin
+               WriteLn(ErrOutput, 'Erreur: --fail-on-delta : l''opérateur doit être ">" seul (">=" interdit)');
+               Halt(1);
+             end;
+        end;
+        Inc(FailOnDeltaCount);
+        SetLength(Checks, Length(Checks) + 1);
+        with Checks[High(Checks)] do
+        begin
+          Metric := DeltaMetric;   // nom canonique (clé du summary-json)
+          Op := opGt;
+          Threshold := DeltaThr;   // seuil en %
+          IsWarn := False;
+          IsDelta := True;
+        end;
+      end
+
       // Argument non reconnu : fichier littéral, pattern glob, ou stdin
       else
         RawFiles.Add(ParamOrig);
+      Inc(i);
     end;
 
     {=========================================================================
@@ -3474,6 +4606,23 @@ begin
       QuickSortStrList(Files, 0, Files.Count - 1);
       DedupeSorted(Files);
     end;
+
+    // C2 (v2.6.0) : mode check implicite — --fail-if, --warn-if, --compare et
+    // --fail-on-delta activent le mode check sans --check explicite.
+    CheckMode := OptCheck or (Length(Checks) > 0) or (CompareFile <> '');
+
+    // --fail-on-delta sans --compare : erreur fatale — un check de dérive
+    // n'a pas de base de comparaison sans baseline.
+    if (FailOnDeltaCount > 0) and (CompareFile = '') then
+    begin
+      WriteLn(ErrOutput, 'Erreur: --fail-on-delta exige --compare BASELINE (fichier baseline NDJSON)');
+      Halt(1);
+    end;
+
+    // Lecture de la baseline (--compare) : validée AVANT l'analyse — une
+    // baseline illisible ou malformée est une erreur fatale (exit 1).
+    if CompareFile <> '' then
+      LoadBaseline(CompareFile, Baseline);
 
     {=========================================================================
     CONFIGURATION DE LA SORTIE (CONSOLE OU FICHIER)
@@ -3568,18 +4717,28 @@ begin
         else
           AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, MaxUnique, SOpts);
 
+        // C2 (v2.6.0) : évaluation des checks APRÈS l'analyse, sur les
+        // compteurs TStats — le streaming et la mémoire bornée ne sont pas
+        // affectés. Le pire statut multi-fichiers est cumulé (fail > warn > ok)
+        // quel que soit le format de sortie (les exit codes s'appliquent aussi
+        // avec --summary-json et --csv, qui n'ont pas de section checks).
+        EvaluateChecks(Stats, Checks, Baseline, CheckResults);
+        for k := 0 to High(CheckResults) do
+          if CheckResults[k].Status = csFail then HasFail := True
+          else if CheckResults[k].Status = csWarn then HasWarn := True;
+
         // Export selon le format demandé
         if OptSummaryJSON then
           WriteLn(BuildSummaryJSON(Stats, OptLexicalStats, OptReadability))
         else if OptJSON then
         begin
           case JsonMode of
-            jmAuto:      ExportJSON(Stats, OptAll, OptLexicalStats, OptReadability);
-            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
-            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
+            jmAuto:      ExportJSON(Stats, OptAll, OptLexicalStats, OptReadability, CheckResults);
+            jmNDJSON:    WriteLn(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability, CheckResults));
+            jmArray:     JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability, CheckResults));
             jmAggregate:
               begin
-                JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability));
+                JsonParts.Add(BuildJSONCompact(Stats, OptAll, OptLexicalStats, OptReadability, CheckResults));
                 // Totaux cumulés pour l'objet aggregate
                 Inc(TotalFiles);
                 Inc(TotalLines, Stats.LineCount);
@@ -3604,7 +4763,8 @@ begin
           ExportCSV(Stats, OptAll, OptLexicalStats, OptReadability, CsvKind)
         else
           PrintStats(Stats, OptChar, OptWord, OptLine, OptAll,
-                     OptLexicalStats, OptReadability, TopWordsLimit, TopCharsLimit);
+                     OptLexicalStats, OptReadability, TopWordsLimit, TopCharsLimit,
+                     CheckResults);
 
         // Confirmation console de l'écriture, uniquement avec --out et sans
         // --quiet. Écrite sur ErrOutput pour ne jamais polluer le fichier de
@@ -3723,6 +4883,17 @@ begin
     // Code de retour : 1 si au moins un fichier a échoué, 0 sinon
     if HadError then
       Halt(1);
+
+    // C2 (v2.6.0) : exit codes du mode check — uniquement en mode check avec
+    // au moins un check défini (--check seul : analyse normale, exit 0). Le
+    // mode analyse garde 0/1 (aucune rupture pour les scripts existants).
+    if CheckMode and (Length(Checks) > 0) then
+    begin
+      if HasFail then
+        Halt(2);   // au moins un check échoué (prioritaire)
+      if HasWarn then
+        Halt(3);   // aucun échec mais au moins un warning
+    end;
 
   finally
     // Libération des ressources (garantie même en cas d'exception)
