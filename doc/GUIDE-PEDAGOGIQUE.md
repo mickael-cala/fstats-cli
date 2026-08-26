@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.5.0`.
+Doit afficher quelque chose comme `fstats 2.6.0`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -202,6 +202,48 @@ ou plus), et un score de 0 à 100 (plus c'est haut, plus c'est facile à lire).
 C'est une approximation **sans syllabes** — pas un Flesch-Kincaid exact — mais
 suffisante pour comparer deux versions d'un texte entre elles.
 
+### Vérifier la qualité automatiquement (pour la CI)
+
+`fstats` peut jouer le rôle de **garde-fou** : des checks sur des seuils, avec
+des codes de sortie que les scripts peuvent tester.
+
+```
+fstats --check --fail-if max_line_length>25 test.txt
+```
+
+```
+Summary
+-------
+  Lines:               3
+  Words:              13
+  Characters:         72
+  Sentences:           3
+  Avg words/sentence:  4
+  Line length:  min 16, max 30, avg 23
+
+Checks
+------
+  max_line_length > 25 : FAIL (actual 30)
+```
+
+Ici, la plus longue ligne fait 30 caractères : le check `max_line_length > 25`
+échoue et la commande se termine avec le code 2 (au lieu de 0). Codes de
+sortie en mode check : **0** = tout va bien, **2** = au moins un check échoué,
+**3** = seulement des avertissements (`--warn-if`), **1** = erreur (fichier
+introuvable, option invalide).
+
+Pour surveiller la **dérive** d'un corpus dans le temps, on capture un état de
+référence puis on compare :
+
+```
+fstats --summary-json docs/*.md > baseline.ndjson
+fstats docs/*.md --compare baseline.ndjson --fail-on-delta lines>10
+```
+
+Cette deuxième commande échoue (code 2) si un fichier gagne ou perd plus de
+10 % de lignes par rapport à la baseline. C'est ce que la CI du dépôt fait
+déjà sur ses propres documents (dogfood).
+
 ---
 
 ## 5. Comment fstats compte les choses
@@ -272,7 +314,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -285,7 +327,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -383,7 +425,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.5.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "tool": "fstats", "version": "2.6.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient

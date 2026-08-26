@@ -3,11 +3,13 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.5.0 · Free Pascal (mode objfpc) · MIT
+Version 2.6.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
-phrases, mots les plus fréquents, n-grammes, histogrammes…
+phrases, mots les plus fréquents, n-grammes, histogrammes… Il peut aussi
+**servir de garde-fou en CI** : checks sur des seuils (`--fail-if`),
+comparaison à une baseline (`--compare`) et exit codes dédiés (0/1/2/3).
 
 Il tourne sur **Windows et Linux**, seul, sans environnement lourd : il suffit
 du compilateur Free Pascal pour le construire.
@@ -41,6 +43,7 @@ fstats --json mon-fichier.txt   # export JSON
 |---|---|
 | **Comptage** | caractères, mots, lignes, phrases, longueur des lignes (min/max/moyenne) |
 | **Diagnostic** | UTF-8 invalide, BOM, fins de ligne CRLF, tabulations, caractères de contrôle |
+| **Quality Gate** | checks sur seuils (`--fail-if`/`--warn-if`), baseline (`--compare`/`--fail-on-delta`), exit codes 0/1/2/3 pour la CI |
 | **Vocabulaire** | mots uniques, hapax, type-token ratio, longueur moyenne des mots, entropie |
 | **Répétitions** | n-grammes (1 à 5 mots), avec filtrage des mots vides (français/anglais) |
 | **Distribution** | histogrammes (longueur de ligne, de mot, mots par phrase), classes de caractères |
@@ -78,6 +81,22 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 | `--histogram=M` | `line_length` \| `word_length` \| `words_per_sentence` (barres ASCII) |
 | `--char-classes` | Classe chaque caractère : lettres, chiffres, blancs, ponctuation, contrôle, autre |
 
+### Checks et comparaison (CI)
+
+| Option | Effet |
+|---|---|
+| `--check` | Mode check : gate CI avec exit codes 2/3 (implicite avec les options ci-dessous) |
+| `--fail-if=METRIQUE OPERATEUR SEUIL` | Check bloquant, répétable (ex. `--fail-if max_line_length>120`) |
+| `--warn-if=METRIQUE OPERATEUR SEUIL` | Check non bloquant (exit 3 si seulement des warnings) |
+| `--compare=BASELINE` | Compare aux valeurs d'une baseline NDJSON (sortie `--summary-json`) |
+| `--fail-on-delta=METRIQUE>X` | Check de dérive : échoue si la métrique varie de plus de X % vs baseline |
+
+Métriques du gate : `lines`, `words`, `sentences`, `max_line_length`,
+`avg_words_per_sentence` (alias `avg_sentence_words`), `non_utf8` (alias
+`invalid_utf8`), `bom`, `crlf`, `tabs`, `nonprintable`. Opérateurs :
+`>`, `>=`, `<`, `<=`, `=`, `!=`. (Sous CMD, échapper `>` : `--fail-if lines^>5`
+ou `--fail-if "lines>5"`.)
+
 ### Affichage et export
 
 | Option | Effet |
@@ -110,17 +129,21 @@ fstats --histogram=line_length --histogram=word_length rapport.txt
 fstats --char-classes --json corpus.txt
 fstats --readability rapport.txt
 fstats --readability --word-mode=ascii --summary-json corpus.txt
+fstats docs/**/*.md --check --fail-if max_line_length>120 --fail-if non_utf8>0
+fstats app.log - --check --fail-if max_line_length>500       # via stdin
+fstats --summary-json docs/*.md > baseline.ndjson            # capture
+fstats docs/*.md --compare baseline.ndjson --fail-on-delta lines>10
 fstats --help
 ```
 
 ## Formats de sortie
 
-- **Console** : sections alignées en ASCII pur (`Summary`, `Quality`, `Lexical`,
+- **Console** : sections alignées en ASCII pur (`Summary`, `Checks`, `Quality`, `Lexical`,
   `Readability`, `Top Characters/Words`, `Longest Lines`, `N-grams`,
   `Histogram`, `Character Classes`), sans séquence ANSI — sûre pour les
   scripts et pipes.
 - **JSON** : champs de traçabilité (`tool`, `version`, `schema_version`,
-  `generated`) + `statistics`, `quality`, et blocs additifs (`lexical`,
+  `generated`) + `statistics`, `quality`, et blocs additifs (`checks`, `lexical`,
   `readability`, `ngrams`, `histogram`, `char_classes`) selon les options.
 - **CSV v2** : en-tête fixe `file,type,rank,value,code_point,count,length`,
   trois sous-formats (`summary`, `words`, `chars`).
@@ -132,8 +155,10 @@ dans la [spécification technique](doc/SEMANTIQUE.md).
 
 | Code | Signification |
 |---|---|
-| 0 | Succès (au moins un fichier analysé sans erreur) |
-| 1 | Erreur : fichier introuvable, glob sans correspondance, option invalide, sortie inécrivable, stdin mélangé avec des fichiers… |
+| 0 | Succès — analyse OK, ou tous les checks passent |
+| 1 | Erreur fatale : fichier introuvable, glob sans correspondance, option invalide, sortie inécrivable, stdin mélangé avec des fichiers… |
+| 2 | Mode check : au moins un check `--fail-if`/`--fail-on-delta` échoué |
+| 3 | Mode check : aucun échec mais au moins un `--warn-if` déclenché |
 
 Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 `--out` vont sur **stderr**.
@@ -145,7 +170,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
-| [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée en v2.2.0) |
+| [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée : A v2.2.0, B+C v2.6.0) |
 | [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » |
 | [doc/ROADMAPFULL.md](doc/ROADMAPFULL.md) | Vision d'ensemble et roadmaps complètes |
@@ -154,7 +179,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 ## Tests automatisés
 
 - `tests\run.bat` (Windows / CMD) et `tests\run.sh` (Linux / Git Bash) :
-  compilation + 39 cas d'acceptation (incréments A, C2-A, C2-B, C2-C) avec
+  compilation + 56 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C) avec
   validation JSON via node et vérification des codes de retour.
 - Prérequis : `fpc` et `node` sur le PATH.
 - La CI GitHub Actions exécute les deux suites sur `windows-latest` et

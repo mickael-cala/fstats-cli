@@ -1,6 +1,8 @@
 # Roadmap Cible 1 — CI / Text Quality Gate pour docs & logs
 
-Statut : **validée** — incrément A livré (v2.2.0, 12/12 tests OK, 2026-08-26). B et C à venir.
+Statut : **validée** — incrément A livré (v2.2.0, 12/12 tests OK), B et C
+livrés (v2.6.0, 56/56 tests OK sur les deux suites, 2026-08-26). Cible 1
+complète.
 Base : ROADMAPFULL.md (sections 3, 5, 10, 13) — positionnement « fstats = text profiler & quality gate »
 
 ## Verdict
@@ -33,16 +35,27 @@ Positionnement livrable :
 - `--summary-json` (objet plat, pratique pour `jq`)
 - Compteurs qualité : `invalid_utf8`, `bom`, `crlf`, `tabs`, `nonprintable`
 
-### Incrément B — « le juge » (le cœur de la niche)
+### Incrément B — « le juge » (le cœur de la niche) — LIVRÉ (v2.6.0)
 - Moteur de checks : `--fail-if METRIQUE OPERATEUR SEUIL`, répétable
 - **Exit codes : 0 = OK, 2 = check échoué, 3 = warnings seulement, 1 = erreur fatale** — uniquement en mode check ;
   le mode analyse garde 0/1 (pas de rupture pour les scripts existants)
 - Sortie JSON enrichie : section `checks: [{id, metric, actual, op, threshold, status}]` + `schema_version`
 - Checks d'emblée : `lines`, `words`, `sentences`, `max_line_length`, `avg_sentence_words`,
   `non_utf8`, `bom`, `crlf`, `tabs`, `nonprintable`
+- Livré : `--check` (mode check, implicite avec les options de check), `--warn-if`
+  (même grammaire, non bloquant, exit 3), opérateurs `> >= < <= = !=`, seuils
+  décimaux, section `Checks` console après Summary, bloc `checks` JSON
+  pretty/NDJSON (id `metric`/`delta:metric`, `#2`… pour les répétitions).
+  Sémantique figée dans doc/SEMANTIQUE.md. 17 nouveaux cas de tests (56 au
+  total sur les deux suites).
 
-### Incrément C — « la mémoire » (la dérive)
+### Incrément C — « la mémoire » (la dérive) — LIVRÉ (v2.6.0)
 - `--compare baseline.json` + `--fail-on-delta metric>X%` — transforme le gate en outil de QA docs/logs
+- Livré : baseline NDJSON (sortie `--summary-json`, une ligne par fichier,
+  clé `file`, objet unique accepté), `delta = (actual-base)/base*100`,
+  `base=0` → dérive infinie si actual > 0 (documenté), fichier sans baseline
+  → checks de dérive ignorés, métriques delta = clés numériques du
+  summary-json, checks `delta:<metric>` en console/JSON.
 
 Les exemples CI (GitHub Actions + GitLab) et les tests golden s'ajoutent tout au long.
 

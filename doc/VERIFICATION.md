@@ -449,3 +449,56 @@ courant, formule exacte documentee et fgee, pas de Flesch-Kincaid exact
 (mentionne au README), score borne [0,100], aucun NaN sur fichier vide,
 additif en JSON/CSV, ASCII pur, 39/39 sur les deux suites. Cible 2
 **complete**.
+
+---
+
+## 11. Cible 1 B+C — moteur de checks et baseline (v2.6.0)
+
+Date : 2026-08-26. Ajout de `--check`, `--fail-if`, `--warn-if`, `--compare`,
+`--fail-on-delta` (mode check, exit 0/1/2/3), bump `FSTATS_VERSION` 2.5.0 →
+2.6.0. Alias `invalid_utf8` accepte en plus de `non_utf8` (nom JSON du
+summary). Correction d'encodage de doc/ROADMAPFULL.md (mojibake -> UTF-8).
+
+### 11.1 Compilation
+
+`fpc -O2 -Mobjfpc -FE. src\fstats.pas` : exit=0 (4906 lignes compilees,
+362592 octets code). Warnings : uniquement generics.dictionaries (RTL, preexistants).
+
+### 11.2 Exit codes (verifies par node spawnSync, exit reels)
+
+| Commande | Exit | Statut |
+|---|---|---|
+| `--check --fail-if lines>2 test_fr.txt` (3 lignes) | 2 | FAIL (actual 3) |
+| `--check --fail-if lines>5 test_fr.txt` | 0 | OK (actual 3) |
+| `--check --warn-if lines>2 test_fr.txt` | 3 | WARN (actual 3) |
+| `--check --fail-if lines>1 absent.txt` | 1 | erreur fatale (prime) |
+| `--fail-if lines>5 test_fr.txt` (sans --check) | 0 | mode check implicite |
+| `--check --fail-if lines>2 --json test_fr.txt` | 2 | `{"id":"lines","metric":"lines","actual":3,"op":">","threshold":2,"status":"fail"}` |
+
+### 11.3 Baseline / derive
+
+`--summary-json` capturee dans bl_test.json, puis `--compare bl_test.json
+--fail-on-delta lines>10 test_fr.txt` : exit 0 (`delta lines > 10% : OK (delta
+0%)`). Baseline modifie (`"lines": 3` -> `"lines": 1`) : exit 2 (`FAIL (delta
+200%)`). `--fail-on-delta` sans `--compare` : exit 1 + stderr (`--fail-on-delta
+exige --compare BASELINE`).
+
+### 11.4 Dogfood CI (etape ajoutee a ci.yml, validee localement)
+
+`fstats --check --fail-if non_utf8>0 --fail-if bom>0 --fail-if nonprintable>0
+README.md doc\*.md src\fstats.pas` : exit 0, 10 fichiers analyses (commande
+exacte du workflow, glob `doc\*.md` sous cmd).
+
+### 11.5 Suites automatisees
+
+`tests\run.bat` : exit=0, **56/56 PASS**. `tests/run.sh` : exit=0, **56/56
+PASS**. Les 39 cas precedents passent inchanges (aucune regression du mode
+par defaut : test_fr.txt 3/13/72/3).
+
+### Bilan
+
+Cible 1 **complete** (A v2.2.0, B+C v2.6.0) : moteur de checks (grammaire
+figee, 10 metriques + alias, statuts ok/warn/fail, exit 0/1/2/3, mode analyse
+non rompu), baseline NDJSON + derive en % (base=0 documentee), section
+Checks console + bloc checks JSON (id stables), dogfood CI, 56/56 sur les
+deux suites.

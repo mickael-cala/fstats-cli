@@ -442,6 +442,61 @@ structures que par fichier). Les **n-grams ne sont pas agrégés** (limitation
 documentée) : `totals` ne contient pas de clé `ngrams` ; les n-grams restent
 présents dans chaque objet de `files`.
 
+## Sémantique du moteur de checks (v2.6.0)
+
+Cible 1 B+C : `fstats` devient un garde-fou de qualité textuelle pour la CI.
+Mode check activé par `--check` **ou implicitement** par `--fail-if`,
+`--warn-if`, `--compare` ou `--fail-on-delta`. En mode check, les exit codes
+2/3 s'appliquent ; le mode analyse garde 0/1 (aucune rupture).
+
+### Grammaire figée
+
+- `--fail-if=<metric><op><seuil>` (ou arguments séparés : `--fail-if <metric>
+  <op> <seuil>`) — check bloquant, répétable. `--warn-if` : même grammaire,
+  non bloquant.
+- Métrique : `[a-z0-9_]+`. Opérateurs : `>`, `>=`, `<`, `<=`, `=`, `!=`.
+  Seuil : `[0-9]+(".[0-9]+")?` ('.' séparateur, sans signe ni exposant,
+  indépendant de la locale).
+- Métriques du gate : `lines`, `words`, `sentences`, `max_line_length`
+  (= `line_max`), `avg_words_per_sentence` (division entière, comme le
+  Summary ; alias `avg_sentence_words`), `non_utf8` (alias `invalid_utf8`),
+  `bom` (0/1), `crlf`, `tabs`, `nonprintable`. Métrique inconnue ou syntaxe
+  invalide → erreur fatale (exit 1, stderr).
+
+### Statuts et exit codes
+
+- Statut d'un check : `ok` | `warn` | `fail` (comparaison numérique stricte).
+- Multi-fichiers : le pire statut cumulé gagne (fail > warn > ok).
+- Exit : 0 = tous ok (ou aucun check défini) ; 1 = erreur fatale (prime) ;
+  2 = au moins un fail ; 3 = aucun fail mais au moins un warn.
+
+### Baseline et dérive (`--compare`, `--fail-on-delta`)
+
+- Baseline : NDJSON produit par `--summary-json` (une ligne JSON par fichier,
+  clé `file`) ; un objet unique est accepté. Ligne illisible → exit 1.
+- Correspondance par la chaîne `file` telle que fstats l'affiche. Fichier
+  sans baseline → checks de dérive ignorés pour ce fichier (documenté).
+- `--fail-on-delta=<metric>>X` (répétable, `>` imposé) :
+  `delta = (actual - base) / base * 100` ; échec si `delta > X`.
+  `base = 0` : delta 0 si actual = 0, sinon dérive infinie (échec — une
+  métrique qui passe de 0 à >0 est une dérive infinie, documenté).
+- Métriques delta : clés numériques du summary-json (`lines`, `words`,
+  `characters`, `sentences`, `avg_words_per_sentence` (alias
+  `avg_sentence_words`), `line_min`, `line_max`, `line_avg`, `invalid_utf8`
+  (alias `non_utf8`), `bom`, `crlf`, `tabs`, `nonprintable`).
+
+### Sorties
+
+- Console : section `Checks` après Summary (métrique, op, seuil, statut,
+  valeur réelle ; pour les deltas, le delta %). ASCII pur.
+- JSON pretty/NDJSON : bloc additif `checks` (après `quality`) :
+  `{"id": …, "metric": …, "actual": …, "op": …, "threshold": …,
+  "status": …}`. `id` = métrique (ou `delta:<metric>`), puis `#2`, `#3`… en
+  cas de répétition. Pour un delta, `actual` = delta % et `op` = `>`.
+- `--summary-json` et `--csv` : **pas** de section checks (les exit codes
+  s'appliquent quand même). `--json-mode=aggregate` : checks par fichier,
+  jamais dans `totals`.
+
 ## Sémantique de la lisibilité (v2.5.0)
 
 `--readability` ajoute 4 métriques calculées sur **le mode courant** (mêmes

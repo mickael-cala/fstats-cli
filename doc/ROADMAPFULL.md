@@ -1,44 +1,44 @@
 ## Verdict rapide et pourquoi cette roadmap !
 
-`fstats` est déjà un **bon outil CLI** : propre, portable, simple, JSON/CSV, sortie ASCII sûre pour redirection.
-Mais aujourd’hui, ce n’est pas encore une *killer app* : c’est un **analyseur descriptif**. Il dit : “voilà combien de lignes, mots, caractères, phrases”.
+`fstats` est dÃ©jÃ  un **bon outil CLI** : propre, portable, simple, JSON/CSV, sortie ASCII sÃ»re pour redirection.
+Mais aujourdâ€™hui, ce nâ€™est pas encore une *killer app* : câ€™est un **analyseur descriptif**. Il dit : â€œvoilÃ  combien de lignes, mots, caractÃ¨res, phrasesâ€.
 
 Pour devenir une killer app, il doit passer de :
 
-> “je compte des statistiques”
+> â€œje compte des statistiquesâ€
 
-à :
+Ã  :
 
-> “je détecte, compare, contrôle et bloque des problèmes sur du texte/logs/corpus”.
+> â€œje dÃ©tecte, compare, contrÃ´le et bloque des problÃ¨mes sur du texte/logs/corpusâ€.
 
 Le positionnement gagnant :
 
-> **fstats — text profiler & quality gate for files, logs and corpus.**
+> **fstats â€” text profiler & quality gate for files, logs and corpus.**
 
-En clair : un outil capable d’analyser du texte, mais surtout de servir dans des scripts, CI, audits de logs, QA documentaire, analyse de corpus, éventuellement logs SCADA/PLC.
+En clair : un outil capable dâ€™analyser du texte, mais surtout de servir dans des scripts, CI, audits de logs, QA documentaire, analyse de corpus, Ã©ventuellement logs SCADA/PLC.
 
 ---
 
-# 1. Qui va l’employer ?
+# 1. Qui va lâ€™employer ?
 
-Voici les utilisateurs les plus réalistes.
+Voici les utilisateurs les plus rÃ©alistes.
 
-| Persona | Ce qui t’intéresse | Ce que `fstats` doit t'apporter |
+| Persona | Ce qui tâ€™intÃ©resse | Ce que `fstats` doit t'apporter |
 |---|---|---|
-| **DevOps / SRE / admin système** | Analyser des logs, détecter anomalies, intégrer dans CI/monitoring | stdin, NDJSON, seuils, diff, watch, exit codes |
-| **Développeurs CLI / scripting** | Outil rapide, portable, sans dépendance, sortie JSON exploitable | binaire statique, `--json`, `--csv`, exit codes stables |
-| **Technical writers / localization** | Qualité de documentation, longueur de phrases, volume de mots | lisibilité, stats par fichier, comparaison avant/après |
-| **Data scientists / NLP débutant** | Explorer rapidement un corpus texte | top words, n-grams, vocabulaire, entropy, export CSV/JSON |
-| **Enseignants / étudiants** | Montrer Unicode, parsing, stats texte, CLI | aide claire, exemples, tests, comportement prévisible |
-| **Ingénierie industrielle / SCADA / PLC** | Analyser alarmes, journaux, tags, récurrences | mode logs, regex, top patterns, export CSV/JSON |
-| **Utilisateurs Termux / Linux ARM64** | Petit outil texte puissant sans dépendances | binaire statique, cross-compilable, faible empreinte |
+| **DevOps / SRE / admin systÃ¨me** | Analyser des logs, dÃ©tecter anomalies, intÃ©grer dans CI/monitoring | stdin, NDJSON, seuils, diff, watch, exit codes |
+| **DÃ©veloppeurs CLI / scripting** | Outil rapide, portable, sans dÃ©pendance, sortie JSON exploitable | binaire statique, `--json`, `--csv`, exit codes stables |
+| **Technical writers / localization** | QualitÃ© de documentation, longueur de phrases, volume de mots | lisibilitÃ©, stats par fichier, comparaison avant/aprÃ¨s |
+| **Data scientists / NLP dÃ©butant** | Explorer rapidement un corpus texte | top words, n-grams, vocabulaire, entropy, export CSV/JSON |
+| **Enseignants / Ã©tudiants** | Montrer Unicode, parsing, stats texte, CLI | aide claire, exemples, tests, comportement prÃ©visible |
+| **IngÃ©nierie industrielle / SCADA / PLC** | Analyser alarmes, journaux, tags, rÃ©currences | mode logs, regex, top patterns, export CSV/JSON |
+| **Utilisateurs Termux / Linux ARM64** | Petit outil texte puissant sans dÃ©pendances | binaire statique, cross-compilable, faible empreinte |
 
-Le plus gros potentiel n’est pas “remplacer `wc`”.
-Le plus gros potentiel est : **audit textuel automatisé**.
+Le plus gros potentiel nâ€™est pas â€œremplacer `wc`â€.
+Le plus gros potentiel est : **audit textuel automatisÃ©**.
 
 ---
 
-# 2. Ce qui est déjà fort dans fstats (selon moi)
+# 2. Ce qui est dÃ©jÃ  fort dans fstats (selon moi)
 
 Il faut garder ces points.
 
@@ -46,38 +46,38 @@ Il faut garder ces points.
 
 1. **Sortie console ASCII pure**
    - Excellent pour logs, redirection, CI, terminals anciens, SCADA.
-   - Ne pas sacrifier ça.
+   - Ne pas sacrifier Ã§a.
 
 2. **JSON / CSV**
-   - Très bon choix pour intégration avec `jq`, pandas, PowerShell, Grafana, scripts.
+   - TrÃ¨s bon choix pour intÃ©gration avec `jq`, pandas, PowerShell, Grafana, scripts.
 
 3. **Multiplateforme Free Pascal**
-   - Un seul binaire, peu de dépendances, portable Windows/Linux/ARM/Termux.
+   - Un seul binaire, peu de dÃ©pendances, portable Windows/Linux/ARM/Termux.
 
-4. **Sémantique documentée**
-   - Très important. Tu expliques comment mots/phrases sont comptés.
-   - C’est rare et précieux pour un outil de mesure.
+4. **SÃ©mantique documentÃ©e**
+   - TrÃ¨s important. Tu expliques comment mots/phrases sont comptÃ©s.
+   - Câ€™est rare et prÃ©cieux pour un outil de mesure.
 
 5. **Codes de retour**
-   - Indispensable pour scripts. À enrichir proprement.
+   - Indispensable pour scripts. Ã€ enrichir proprement.
 
-6. **Compacité**
-   - `fstats` doit rester simple à installer et rapide à exécuter.
+6. **CompacitÃ©**
+   - `fstats` doit rester simple Ã  installer et rapide Ã  exÃ©cuter.
 
 ---
 
-# 3. Pourquoi ce n’est pas encore une killer app
+# 3. Pourquoi ce nâ€™est pas encore une killer app
 
-Parce qu’il manque trois dimensions décisives.
+Parce quâ€™il manque trois dimensions dÃ©cisives.
 
-## A. Il ne décide pas
+## A. Il ne dÃ©cide pas
 
 Un outil killer doit pouvoir dire :
 
 - OK / PAS OK
-- seuil dépassé
-- différence par rapport à une baseline
-- anomalie détectée
+- seuil dÃ©passÃ©
+- diffÃ©rence par rapport Ã  une baseline
+- anomalie dÃ©tectÃ©e
 
 Exemple :
 
@@ -93,10 +93,10 @@ Si la phrase moyenne est trop longue, exit code non nul.
 
 Une killer app doit pouvoir dire :
 
-- ce fichier a changé par rapport à avant
+- ce fichier a changÃ© par rapport Ã  avant
 - le corpus a grossi
-- le nombre d’erreurs dans les logs a augmenté
-- la longueur de ligne a dérivé
+- le nombre dâ€™erreurs dans les logs a augmentÃ©
+- la longueur de ligne a dÃ©rivÃ©
 
 Exemple :
 
@@ -106,15 +106,15 @@ fstats diff baseline.json current.log
 
 ---
 
-## C. Il ne s’intègre pas encore assez aux pipelines
+## C. Il ne sâ€™intÃ¨gre pas encore assez aux pipelines
 
 Pour devenir indispensable, il doit accepter :
 
 - stdin
-- flux compressés
+- flux compressÃ©s
 - listes de fichiers
 - glob patterns
-- récursivité
+- rÃ©cursivitÃ©
 - NDJSON
 - aggregation multi-fichiers
 
@@ -132,26 +132,26 @@ cat app.log | fstats - --json
 
 ---
 
-# 4. Le positionnement killer recommandé
+# 4. Le positionnement killer recommandÃ©
 
-C'est faire de `fstats` non pas un simple “word counter”, mais un outil en 3 modes :
+C'est faire de `fstats` non pas un simple â€œword counterâ€, mais un outil en 3 modes :
 
 ---
 
-## Mode 1 — Text Quality Gate (un couteau suisse mais sans les lames !)
+## Mode 1 â€” Text Quality Gate (un couteau suisse mais sans les lames !)
 
 Pour documentation, rapports, fichiers texte, traduction.
 
-Cas d’usage :
+Cas dâ€™usage :
 
-- vérifier qu’un fichier texte n’est pas vide
-- vérifier que la longueur moyenne de ligne n’explose pas
-- vérifier le nombre de phrases
-- vérifier l’encodage UTF-8
-- vérifier absence de BOM ou CRLF non désiré
+- vÃ©rifier quâ€™un fichier texte nâ€™est pas vide
+- vÃ©rifier que la longueur moyenne de ligne nâ€™explose pas
+- vÃ©rifier le nombre de phrases
+- vÃ©rifier lâ€™encodage UTF-8
+- vÃ©rifier absence de BOM ou CRLF non dÃ©sirÃ©
 - comparer deux versions
 
-Commandes souhaitées :
+Commandes souhaitÃ©es :
 
 ```sh
 fstats report.txt --check
@@ -164,21 +164,21 @@ Exit codes possibles :
 
 | Code | Sens |
 |---:|---|
-| 0 | succès, checks OK |
+| 0 | succÃ¨s, checks OK |
 | 1 | erreur fatale : fichier introuvable, option invalide, etc. |
-| 2 | check échoué |
+| 2 | check Ã©chouÃ© |
 | 3 | warnings seulement |
 
 ---
 
-## Mode 2 — Corpus Profiler (pour évaluer le niveau de bullshit d'un document, si si. Et avec l'IA en mode RAG local ==> merci Fstats !)
+## Mode 2 â€” Corpus Profiler (pour Ã©valuer le niveau de bullshit d'un document, si si. Et avec l'IA en mode RAG local ==> merci Fstats !)
 
 Pour analyse de texte, linguistique, NLP, documentation.
 
-Cas d’usage :
+Cas dâ€™usage :
 
 - top mots
-- top caractères
+- top caractÃ¨res
 - n-grams
 - richesse lexicale
 - entropie
@@ -186,7 +186,7 @@ Cas d’usage :
 - distribution de phrases
 - export pour pandas/R/Excel
 
-Commandes souhaitées :
+Commandes souhaitÃ©es :
 
 ```sh
 fstats corpus/*.txt --aggregate --json
@@ -196,7 +196,7 @@ fstats corpus/*.txt --lexical-stats
 fstats corpus/*.txt --histogram=line_length
 ```
 
-Sortie JSON idéale :
+Sortie JSON idÃ©ale :
 
 ```json
 {
@@ -220,22 +220,22 @@ Sortie JSON idéale :
 
 ---
 
-## Mode 3 — Log Sentinel (t'as déja dépanné un SCADA genre System Platform ? Ou analysé les logs d'un PLC Rockwell/AB ? moi oui ... En fait tu souffres !!!)
+## Mode 3 â€” Log Sentinel (t'as dÃ©ja dÃ©pannÃ© un SCADA genre System Platform ? Ou analysÃ© les logs d'un PLC Rockwell/AB ? moi oui ... En fait tu souffres !!!)
 
-Pour logs applicatifs, logs SCADA, logs d’automates, alarmes.
+Pour logs applicatifs, logs SCADA, logs dâ€™automates, alarmes.
 
-Cas d’usage :
+Cas dâ€™usage :
 
 - compter lignes ERROR/WARN/INFO
 - top messages
 - top tags
-- top codes d’erreur
-- détecter lignes anormalement longues
-- détecter erreurs UTF-8
+- top codes dâ€™erreur
+- dÃ©tecter lignes anormalement longues
+- dÃ©tecter erreurs UTF-8
 - exporter vers CSV/JSON/Grafana
-- surveiller un fichier en temps réel
+- surveiller un fichier en temps rÃ©el
 
-Commandes souhaitées :
+Commandes souhaitÃ©es :
 
 ```sh
 fstats app.log --log-level
@@ -260,7 +260,7 @@ Exemple de sortie :
 }
 ```
 
-Pour SCADA/PLC, tu pourrais même ajouter un mode :
+Pour SCADA/PLC, tu pourrais mÃªme ajouter un mode :
 
 ```sh
 fstats alarms.log --mode=alarm
@@ -269,16 +269,16 @@ fstats alarms.log --mode=alarm
 avec extraction :
 
 - timestamp
-- sévérité
+- sÃ©vÃ©ritÃ©
 - tag
 - message
 - count par tag
-- count par sévérité
+- count par sÃ©vÃ©ritÃ©
 - intervalles de temps anormaux
 
 ---
 
-# 5. Modifications prioritaires — P0
+# 5. Modifications prioritaires â€” P0
 
 Ce sont les modifications les plus importantes. Sans elles, pas de killer app.
 
@@ -286,7 +286,7 @@ Ce sont les modifications les plus importantes. Sans elles, pas de killer app.
 
 ## 5.1. Ajouter stdin
 
-Aujourd’hui, beaucoup d’outils CLI vivent dans des pipelines.
+Aujourdâ€™hui, beaucoup dâ€™outils CLI vivent dans des pipelines.
 
 Il faut supporter :
 
@@ -296,7 +296,7 @@ cat file.txt | fstats --stdin
 git diff | fstats -
 ```
 
-Priorité : **très haute**.
+PrioritÃ© : **trÃ¨s haute**.
 
 ---
 
@@ -304,9 +304,9 @@ Priorité : **très haute**.
 
 Dans la doc :
 
-> `--out` avec plusieurs fichiers concatène les exports : préférer un export par fichier pour du JSON exploitable.
+> `--out` avec plusieurs fichiers concatÃ¨ne les exports : prÃ©fÃ©rer un export par fichier pour du JSON exploitable.
 
-C’est un point à corriger pour une vraie adoption.
+Câ€™est un point Ã  corriger pour une vraie adoption.
 
 Il faut proposer :
 
@@ -314,7 +314,7 @@ Il faut proposer :
 fstats a.txt b.txt --json
 ```
 
-avec plusieurs stratégies :
+avec plusieurs stratÃ©gies :
 
 ### Option 1 : NDJSON / JSON Lines
 
@@ -370,17 +370,17 @@ Sortie :
 
 Recommandation :
 
-- par défaut : un fichier = objet JSON
+- par dÃ©faut : un fichier = objet JSON
 - plusieurs fichiers : NDJSON
-- `--json-mode=array` pour compatibilité outillage
+- `--json-mode=array` pour compatibilitÃ© outillage
 - `--json-mode=aggregate` pour analyse de corpus
 
 ---
 
-## 5.3. Ajouter glob et récursivité
+## 5.3. Ajouter glob et rÃ©cursivitÃ©
 
-Sous Windows, le shell ne fait pas toujours l’expansion de glob.
-Sous Linux, c’est le shell, mais un outil peut être plus puissant.
+Sous Windows, le shell ne fait pas toujours lâ€™expansion de glob.
+Sous Linux, câ€™est le shell, mais un outil peut Ãªtre plus puissant.
 
 Il faut :
 
@@ -391,7 +391,7 @@ fstats --recursive ./docs
 fstats --include "*.log" --exclude "*.gz"
 ```
 
-Options suggérées :
+Options suggÃ©rÃ©es :
 
 ```sh
 --recursive
@@ -402,13 +402,13 @@ Options suggérées :
 --files-from=LISTE
 ```
 
-Très important pour usage PowerShell/CMD/CI.
+TrÃ¨s important pour usage PowerShell/CMD/CI.
 
 ---
 
 ## 5.4. Ajouter aggregation multi-fichiers
 
-Actuellement, l’usage naturel serait :
+Actuellement, lâ€™usage naturel serait :
 
 ```sh
 fstats *.txt
@@ -427,7 +427,7 @@ fstats *.txt --aggregate
 fstats *.txt --summary-only
 ```
 
-JSON recommandé :
+JSON recommandÃ© :
 
 ```json
 {
@@ -451,11 +451,11 @@ JSON recommandé :
 
 ## 5.5. Ajouter vrais exit codes de check
 
-Aujourd’hui :
+Aujourdâ€™hui :
 
 | Code | Signification |
 |---:|---|
-| 0 | succès |
+| 0 | succÃ¨s |
 | 1 | erreur |
 
 Pour CI, il faut distinguer :
@@ -464,7 +464,7 @@ Pour CI, il faut distinguer :
 |---:|---|
 | 0 | OK |
 | 1 | erreur fatale |
-| 2 | seuil/check échoué |
+| 2 | seuil/check Ã©chouÃ© |
 | 3 | warnings |
 
 Exemple :
@@ -479,7 +479,7 @@ ou :
 fstats report.txt --fail-if avg_line_length>120
 ```
 
-Si seuil dépassé :
+Si seuil dÃ©passÃ© :
 
 ```text
 CHECK FAILED: avg_line_length=145 > max=120
@@ -490,7 +490,7 @@ exit code: 2
 
 ## 5.6. Ajouter `fstats check`
 
-C’est probablement LA feature killer.
+Câ€™est probablement LA feature killer.
 
 Exemple :
 
@@ -537,13 +537,13 @@ Exemples de checks utiles :
 --max-nonprintable N
 ```
 
-C’est ce qui transforme l’outil en outil de CI. ALLEZ ... check !
+Câ€™est ce qui transforme lâ€™outil en outil de CI. ALLEZ ... check !
 
 ---
 
 ## 5.7. Ajouter comparaison / baseline
 
-Très utile pour QA et logs.
+TrÃ¨s utile pour QA et logs.
 
 Workflow :
 
@@ -574,7 +574,7 @@ Options :
 
 ---
 
-## 5.8. Ajouter diagnostics d’encodage
+## 5.8. Ajouter diagnostics dâ€™encodage
 
 `fstats` dit : UTF-8 uniquement. Il faut donc devenir excellent sur ce point. Mais pas que
 
@@ -588,7 +588,7 @@ Ajouter :
 --max-errors=N
 ```
 
-Rapport souhaité :
+Rapport souhaitÃ© :
 
 ```json
 {
@@ -603,21 +603,21 @@ Rapport souhaité :
 }
 ```
 
-Très utile pour :
+TrÃ¨s utile pour :
 
 - logs corrompus
 - exports SCADA
 - fichiers Windows avec encoding douteux (OUPS !)
 - OCR
-- fichiers générés par automates (pas industriel ...)
+- fichiers gÃ©nÃ©rÃ©s par automates (pas industriel ...)
 
 ---
 
-## 5.9. Ajouter détection binaire
+## 5.9. Ajouter dÃ©tection binaire
 
 Un fichier texte peut contenir des octets binaires.
 
-Il faut éviter de produire des stats absurdes. C'est mieux !
+Il faut Ã©viter de produire des stats absurdes. C'est mieux !
 
 Options :
 
@@ -625,7 +625,7 @@ Options :
 --on-binary=error|skip|force
 ```
 
-Par défaut :
+Par dÃ©faut :
 
 ```text
 fstats: file appears to be binary, use --force-text to analyze anyway
@@ -636,29 +636,29 @@ exit code: 1
 
 ## 5.10. Ajouter `--quiet`, `--verbose`, `--debug`
 
-Actuellement `--quiet` existe pour éviter confirmation. Il faut une politique claire (enfin) :
+Actuellement `--quiet` existe pour Ã©viter confirmation. Il faut une politique claire (enfin) :
 
-- stdout : données
+- stdout : donnÃ©es
 - stderr : erreurs, warnings, diagnostics
 - `--quiet` : seulement erreurs fatales
-- `--verbose` : informations supplémentaires
-- `--debug` : détails internes
+- `--verbose` : informations supplÃ©mentaires
+- `--debug` : dÃ©tails internes
 
 ---
 
-# 6. Modifications importantes — P1
+# 6. Modifications importantes â€” P1
 
-Ces features ne sont pas indispensables le premier jour, mais elles feront passer l’outil de “bon” à “vraiment utile”. Un peu comme une carriére pro ?!?
+Ces features ne sont pas indispensables le premier jour, mais elles feront passer lâ€™outil de â€œbonâ€ Ã  â€œvraiment utileâ€. Un peu comme une carriÃ©re pro ?!?
 
 ---
 
-## 6.1. Top words amélioré
+## 6.1. Top words amÃ©liorÃ©
 
-Actuellement, la ponctuation collée fait partie du mot. C’est documenté, mais limitant. (on va régler cela juste avant la phase 3 Do not panic !)
+Actuellement, la ponctuation collÃ©e fait partie du mot. Câ€™est documentÃ©, mais limitant. (on va rÃ©gler cela juste avant la phase 3 Do not panic !)
 
 Il faut proposer plusieurs modes.
 
-### Modes suggérés
+### Modes suggÃ©rÃ©s
 
 ```sh
 --word-mode=raw
@@ -674,17 +674,17 @@ fstats file.txt --word-mode=ascii
 ```
 
 - `raw` : comportement actuel
-- `ascii` : mots ASCII seulement, ponctuation retirée
+- `ascii` : mots ASCII seulement, ponctuation retirÃ©e
 - `unicode` : tentative de segmentation Unicode
-- `regex` : définition personnalisée
+- `regex` : dÃ©finition personnalisÃ©e
 
 Exemple :
 
 ```sh
-fstats file.txt --word-regex '[A-Za-zÀ-ÖØ-öø-ÿ0-9_]+'
+fstats file.txt --word-regex '[A-Za-zÃ€-Ã–Ã˜-Ã¶Ã¸-Ã¿0-9_]+'
 ```
 
-Très utile pour :
+TrÃ¨s utile pour :
 
 - logs
 - code source
@@ -707,23 +707,23 @@ Pour analyse de corpus, il faudrait :
 Exemple :
 
 ```text
-École, école, ÉCOLE
+Ã‰cole, Ã©cole, Ã‰COLE
 ```
 
-Peut devenir équivalent si `--casefold=unicode`.
+Peut devenir Ã©quivalent si `--casefold=unicode`.
 
 Attention : Unicode case folding est complexe.
-Commencer simple : ASCII, puis option Unicode basique. Recette du succés.
+Commencer simple : ASCII, puis option Unicode basique. Recette du succÃ©s.
 
 ---
 
-## 6.3. Améliorer la détection de phrases
+## 6.3. AmÃ©liorer la dÃ©tection de phrases
 
-La doc mentionne (pour línstant):
+La doc mentionne (pour lÃ­nstant):
 
-> Un point décimal (`3.14`) clôture donc une phrase.
+> Un point dÃ©cimal (`3.14`) clÃ´ture donc une phrase.
 
-C’est acceptable, mais il faut offrir un mode plus intelligent.
+Câ€™est acceptable, mais il faut offrir un mode plus intelligent.
 
 Options :
 
@@ -735,8 +735,8 @@ Options :
 
 Modes :
 
-- `basic` : `.`, `!`, `?`, `…`
-- `smart` : essaie d’éviter décimales, abréviations, URLs
+- `basic` : `.`, `!`, `?`, `â€¦`
+- `smart` : essaie dâ€™Ã©viter dÃ©cimales, abrÃ©viations, URLs
 - `none` : ne pas compter phrases
 
 Exemple :
@@ -749,7 +749,7 @@ fstats rapport.txt --sentence-mode=smart
 
 ## 6.4. Ajouter statistiques lexicales
 
-Très utile pour corpus/NLP.
+TrÃ¨s utile pour corpus/NLP.
 
 Ajouter :
 
@@ -757,7 +757,7 @@ Ajouter :
 --lexical-stats
 ```
 
-Métriques :
+MÃ©triques :
 
 - unique words
 - hapax legomena : mots apparaissant une seule fois
@@ -786,7 +786,7 @@ Exemple JSON :
 
 ## 6.5. Ajouter n-grams
 
-Feature très puissante.
+Feature trÃ¨s puissante.
 
 ```sh
 fstats corpus.txt --ngrams 1
@@ -818,7 +818,7 @@ Pour logs SCADA :
 fstats alarms.log --ngrams 3
 ```
 
-Peut révéler :
+Peut rÃ©vÃ©ler :
 
 ```text
 "motor over temperature"
@@ -830,7 +830,7 @@ Peut révéler :
 
 ## 6.6. Ajouter histogrammes
 
-Très utile en terminal ASCII.
+TrÃ¨s utile en terminal ASCII.
 
 ```sh
 fstats file.txt --histogram=line-length
@@ -854,7 +854,7 @@ Line length histogram
 
 ## 6.7. Ajouter character classes
 
-Au-delà des top caractères, donner classes :
+Au-delÃ  des top caractÃ¨res, donner classes :
 
 ```sh
 fstats file.txt --char-classes
@@ -890,20 +890,20 @@ JSON :
 
 ---
 
-## 6.8. Ajouter lisibilité
+## 6.8. Ajouter lisibilitÃ©
 
-Pour documentation, rapports, qualité rédactionnelle.
+Pour documentation, rapports, qualitÃ© rÃ©dactionnelle.
 
 ```sh
 fstats report.txt --readability
 ```
 
-Métriques possibles :
+MÃ©triques possibles :
 
 - Flesch Reading Ease
 - Flesch-Kincaid Grade Level
 - Gunning Fog
-- Pour français : Kandel-Moares ou adaptation Flesch-fr
+- Pour franÃ§ais : Kandel-Moares ou adaptation Flesch-fr
 
 Exemple :
 
@@ -916,25 +916,25 @@ Readability
   average_syllables_per_word: 1.6
 ```
 
-Attention : syllabes en français/anglais non trivial.
+Attention : syllabes en franÃ§ais/anglais non trivial.
 Commencer par metrics simples :
 
 - mots par phrase
-- caractères par mot
+- caractÃ¨res par mot
 - pourcentage mots longs
-- score simple basé sur longueur de phrase/mot
+- score simple basÃ© sur longueur de phrase/mot
 
 ---
 
 ## 6.9. Ajouter redaction / privacy
 
-Très utile pour logs.
+TrÃ¨s utile pour logs.
 
 ```sh
 fstats app.log --redact=email,ip,url,token
 ```
 
-Objectif : ne pas afficher ou compter clairement des données sensibles dans les exemples.
+Objectif : ne pas afficher ou compter clairement des donnÃ©es sensibles dans les exemples.
 
 Exemple :
 
@@ -966,15 +966,15 @@ fstats corpus/*.txt --md --out=report.md
 fstats corpus/*.txt --html --out=report.html
 ```
 
-HTML simple, sans JavaScript, ou avec très peu. (Vote for "sans")
+HTML simple, sans JavaScript, ou avec trÃ¨s peu. (Vote for "sans")
 
-Mais attention : ne pas devenir une usine à gaz.
+Mais attention : ne pas devenir une usine Ã  gaz.
 
 ---
 
-# 7. Features avancées — P2
+# 7. Features avancÃ©es â€” P2
 
-À ne faire qu’après avoir solidifié le cœur.
+Ã€ ne faire quâ€™aprÃ¨s avoir solidifiÃ© le cÅ“ur.
 
 ---
 
@@ -1038,9 +1038,9 @@ JSON :
 
 ---
 
-## 7.4. Mode logs structuré
+## 7.4. Mode logs structurÃ©
 
-Pour logs semi-structurés :
+Pour logs semi-structurÃ©s :
 
 ```sh
 fstats app.log --parse 'timestamp level message'
@@ -1052,7 +1052,7 @@ ou :
 fstats alarms.csv --mode=csv --columns timestamp,severity,tag,message
 ```
 
-C’est très pertinent pour SCADA/PLC.
+Câ€™est trÃ¨s pertinent pour SCADA/PLC.
 
 Exemple :
 
@@ -1088,13 +1088,13 @@ Pour plus tard.
 fstats corpus/*.txt --sqlite=stats.db
 ```
 
-Mais au début, JSON/CSV suffisent.
+Mais au dÃ©but, JSON/CSV suffisent.
 
 ---
 
 ## 7.6. Plugins / scripting
 
-Possible mais risqué.
+Possible mais risquÃ©.
 
 Exemple :
 
@@ -1103,11 +1103,11 @@ fstats file.txt --plugin=mycheck.lua
 ```
 
 Mais cela complexifie beaucoup TROP.
-Je ne ferais pas avant d’avoir une base solide. Mais j'ai nanobasic ...
+Je ne ferais pas avant dâ€™avoir une base solide. Mais j'ai nanobasic ...
 
 ---
 
-# 8. Ce qu’il faut améliorer dans la sortie actuelle
+# 8. Ce quâ€™il faut amÃ©liorer dans la sortie actuelle
 
 ## Console
 
@@ -1125,7 +1125,7 @@ Sortie compacte :
 lines=27 words=170 chars=976 sentences=7 avg_words_per_sentence=24 line_min=7 line_max=68 line_avg=35
 ```
 
-Très pratique pour scripts shell :
+TrÃ¨s pratique pour scripts shell :
 
 ```sh
 eval "$(fstats file.txt --summary-env)"
@@ -1154,19 +1154,19 @@ Ajouter :
 }
 ```
 
-Important pour compatibilité future.
+Important pour compatibilitÃ© future.
 
 ---
 
 ## CSV
 
-Le CSV actuel est trop spécialisé :
+Le CSV actuel est trop spÃ©cialisÃ© :
 
 ```csv
 metric,rank,value,code_point,count
 ```
 
-Pour usage sérieux, il faudrait soit plusieurs CSV, soit un format plus clair.
+Pour usage sÃ©rieux, il faudrait soit plusieurs CSV, soit un format plus clair.
 
 ### Option long format
 
@@ -1178,7 +1178,7 @@ demo.txt,line,1,,, ,68
 demo.txt,summary,,,,
 ```
 
-Mais ce n’est pas idéal.
+Mais ce nâ€™est pas idÃ©al.
 
 ### Recommandation ?
 
@@ -1211,12 +1211,12 @@ stats.lines.csv
 
 # 9. Packaging : aussi important que les features
 
-Une killer app n’est pas seulement une bonne idée.
-C’est aussi un outil très facile à installer.
+Une killer app nâ€™est pas seulement une bonne idÃ©e.
+Câ€™est aussi un outil trÃ¨s facile Ã  installer.
 
 ---
 
-## 9.1. Binaires à publier
+## 9.1. Binaires Ã  publier
 
 Publier dans GitHub Releases :
 
@@ -1239,7 +1239,7 @@ Avec :
 
 ## 9.2. Installation
 
-Idéalement :
+IdÃ©alement :
 
 ### Windows
 
@@ -1258,11 +1258,11 @@ apt install fstats
 dnf install fstats
 ```
 
-Au minimum : téléchargement binaire statique.
+Au minimum : tÃ©lÃ©chargement binaire statique.
 
 ### Termux
 
-Très intéressant pour mon profil de developpeur sous termux ou termux/proot-distro (via SSH parce que mon PC de bureau n'est pas toujours avec moi) :
+TrÃ¨s intÃ©ressant pour mon profil de developpeur sous termux ou termux/proot-distro (via SSH parce que mon PC de bureau n'est pas toujours avec moi) :
 
 ```sh
 pkg install fstats
@@ -1279,7 +1279,7 @@ chmod +x $PREFIX/bin/fstats
 
 ## 9.3. Shell completion
 
-À ajouter :
+Ã€ ajouter :
 
 ```sh
 fstats --completion bash
@@ -1298,9 +1298,9 @@ fstats completions bash > /etc/bash_completion.d/fstats
 
 ## 9.4. Documentation
 
-Une killer app a une documentation orientée tâches, sans jeux de mots.
+Une killer app a une documentation orientÃ©e tÃ¢ches, sans jeux de mots.
 
-Sections recommandées :
+Sections recommandÃ©es :
 
 - Quick start
 - Installation
@@ -1316,7 +1316,7 @@ Sections recommandées :
 Exemples de recettes :
 
 ```sh
-# Vérifier un fichier Markdown
+# VÃ©rifier un fichier Markdown
 fstats doc.md --fail-if avg_line_length>120
 
 # Comparer deux versions
@@ -1326,15 +1326,15 @@ fstats new.txt --compare old.json
 # Analyser logs
 fstats app.log --pattern ERROR --json
 
-# Aggréger un corpus
+# AggrÃ©ger un corpus
 fstats corpus/*.txt --aggregate --json
 ```
 
 ---
 
-# 10. CI / GitHub Action : énorme levier (oui mais faire windows-latest avec freepascal et des script cmd/powershell + node  : insomnie garantie)
+# 10. CI / GitHub Action : Ã©norme levier (oui mais faire windows-latest avec freepascal et des script cmd/powershell + node  : insomnie garantie)
 
-Pour rendre `fstats` visible, il faut une intégration CI simple.
+Pour rendre `fstats` visible, il faut une intÃ©gration CI simple.
 
 Exemple GitHub Action :
 
@@ -1363,7 +1363,7 @@ text-quality:
     - fstats docs/**/*.md --fail-if avg_line_length>120
 ```
 
-C’est souvent comme ça qu’un petit outil devient indispensable.
+Câ€™est souvent comme Ã§a quâ€™un petit outil devient indispensable.
 
 ---
 
@@ -1371,7 +1371,7 @@ C’est souvent comme ça qu’un petit outil devient indispensable.
 
 Pour garder le projet maintenable.
 
-## Structure suggérée, espérée
+## Structure suggÃ©rÃ©e, espÃ©rÃ©e
 
 ```text
 fstats/
@@ -1409,36 +1409,36 @@ fstats/
 
 ## Principes
 
-1. **Ne pas charger tout le fichier en mémoire**
+1. **Ne pas charger tout le fichier en mÃ©moire**
    - Lire par blocs.
-   - Décodage UTF-8 incrémental.
+   - DÃ©codage UTF-8 incrÃ©mental.
    - Compteurs en streaming.
 
-2. **Top-K borné**
+2. **Top-K bornÃ©**
    - Ne pas tout stocker si `--top 10`.
-   - Mais si `--all`, attention mémoire sur gros corpus.
+   - Mais si `--all`, attention mÃ©moire sur gros corpus.
    - Ajouter `--max-unique=N`.
 
-3. **Découpler analyse et sortie**
-   - Un objet `TStatsResult` ou record structuré.
-   - Writers console/JSON/CSV indépendants.
+3. **DÃ©coupler analyse et sortie**
+   - Un objet `TStatsResult` ou record structurÃ©.
+   - Writers console/JSON/CSV indÃ©pendants.
 
 4. **Tests golden**
-   - Fichiers de référence.
+   - Fichiers de rÃ©fÃ©rence.
    - Sortie console stable.
-   - JSON validé par parseur.
-   - Tests de non-régression.
+   - JSON validÃ© par parseur.
+   - Tests de non-rÃ©gression.
 
 5. **Fuzzer UTF-8**
-   - Générer séquences invalides.
-   - Tester BOM, CR, LF, CRLF, NEL, contrôles.
+   - GÃ©nÃ©rer sÃ©quences invalides.
+   - Tester BOM, CR, LF, CRLF, NEL, contrÃ´les.
    - Tester gros fichiers.
 
 ---
 
-# 12. Idées de commandes futures
+# 12. IdÃ©es de commandes futures
 
-Voici à quoi pourrait ressembler une v3.
+Voici Ã  quoi pourrait ressembler une v3.
 
 ---
 
@@ -1460,7 +1460,7 @@ fstats report.txt --json --out report.json
 fstats logs/*.log --json-mode=ndjson --out logs.ndjson
 ```
 
-## Corpus agrégé
+## Corpus agrÃ©gÃ©
 
 ```sh
 fstats corpus/*.txt --aggregate --json --out corpus.json
@@ -1513,13 +1513,13 @@ fstats app.log --redact email,ipv4,url
 
 ---
 
-# 13. Roadmap prévue (normalement)
+# 13. Roadmap prÃ©vue (normalement)
 
-## v2.2 — Robustesse et pipelines
+## v2.2 â€” Robustesse et pipelines
 
-Objectif : rendre l’outil vraiment utilisable en script.
+Objectif : rendre lâ€™outil vraiment utilisable en script.
 
-À ajouter :
+Ã€ ajouter :
 
 - stdin `-`
 - `--files-from`
@@ -1529,21 +1529,21 @@ Objectif : rendre l’outil vraiment utilisable en script.
 - JSON multi-fichiers valide
 - CSV v2 avec colonne `file`
 - diagnostics UTF-8
-- détection binaire
+- dÃ©tection binaire
 - `--quiet`, `--verbose`, `debug`
 - exit codes enrichis
 - `--summary-json`
 - tests golden
 
-Cette version n’est pas encore killer, mais elle devient sérieuse. Si
+Cette version nâ€™est pas encore killer, mais elle devient sÃ©rieuse. Si
 
 ---
 
-## v3.0 — Quality Gate
+## v3.0 â€” Quality Gate
 
-Objectif : transformer `fstats` en outil de contrôle.
+Objectif : transformer `fstats` en outil de contrÃ´le.
 
-À ajouter :
+Ã€ ajouter :
 
 - `fstats check`
 - seuils `--fail-if`
@@ -1551,19 +1551,19 @@ Objectif : transformer `fstats` en outil de contrôle.
 - `--fail-on-delta`
 - config file TOML ou JSON
 - rapports Markdown
-- complétions shell
+- complÃ©tions shell
 - GitHub Action / CI examples
 - documentation use-case
 
-Là, `fstats` devient vraiment différenciant.
+LÃ , `fstats` devient vraiment diffÃ©renciant.
 
 ---
 
-## v3.5 — Corpus / Logs Intelligence
+## v3.5 â€” Corpus / Logs Intelligence
 
-Objectif : devenir outil d’analyse avancée.
+Objectif : devenir outil dâ€™analyse avancÃ©e.
 
-À ajouter :
+Ã€ ajouter :
 
 - n-grams
 - lexical stats
@@ -1579,25 +1579,25 @@ Objectif : devenir outil d’analyse avancée.
 
 ---
 
-# 14. Ce qu’il ne faut pas faire
+# 14. Ce quâ€™il ne faut pas faire
 
 Pour ne pas tuer le projet.
 
 ## 1. Ne pas faire une GUI lourde
 
-Une interface graphique peut exister plus tard, mais le cœur doit rester CLI.
+Une interface graphique peut exister plus tard, mais le cÅ“ur doit rester CLI.
 
 ## 2. Ne pas faire un traitement de texte
 
-Pas d’édition, pas de correction automatique.
+Pas dâ€™Ã©dition, pas de correction automatique.
 
 ## 3. Ne pas faire un NLP complet
 
-Pas de modèle linguistique lourd, pas de dépendances massives.
+Pas de modÃ¨le linguistique lourd, pas de dÃ©pendances massives.
 
 ## 4. Ne pas sacrifier la sortie ASCII
 
-C’est un avantage énorme pour :
+Câ€™est un avantage Ã©norme pour :
 
 - redirection
 - CI
@@ -1605,9 +1605,9 @@ C’est un avantage énorme pour :
 - terminals industriels
 - SCADA/IHM
 
-## 5. Ne pas ajouter trop de formats exotiques trop tôt
+## 5. Ne pas ajouter trop de formats exotiques trop tÃ´t
 
-JSON et CSV d’abord.
+JSON et CSV dâ€™abord.
 SQLite, Parquet, Grafana, MQTT plus tard ou PAS ! Sinon Fork ?
 
 ---
@@ -1618,15 +1618,15 @@ Le meilleur pour moins d'effort, je ferais :
 
 ## 1. `stdin + multi-fichiers JSON/NDJSON propre`
 
-Parce que sans ça, l’outil est moins intégrable.
+Parce que sans Ã§a, lâ€™outil est moins intÃ©grable.
 
 ## 2. `fstats check`
 
-Parce que ça transforme l’outil en gate CI.
+Parce que Ã§a transforme lâ€™outil en gate CI.
 
 ## 3. `fstats diff/compare`
 
-Parce que ça transforme l’outil en outil de suivi et de QA.
+Parce que Ã§a transforme lâ€™outil en outil de suivi et de QA.
 
 ---
 
@@ -1634,9 +1634,9 @@ Parce que ça transforme l’outil en outil de suivi et de QA.
 
 Pour que `fstats` devienne une killer app, il ne faut pas seulement ajouter plus de statistiques.
 
-Il faut lui donner un rôle clair :
+Il faut lui donner un rÃ´le clair :
 
-> **Mesurer, comparer et contrôler du texte dans des pipelines.**
+> **Mesurer, comparer et contrÃ´ler du texte dans des pipelines.**
 
 La meilleure version de `fstats` serait :
 
@@ -1648,12 +1648,12 @@ mais en restant :
 
 - rapide
 - portable
-- sans dépendance
+- sans dÃ©pendance
 - ASCII-friendly
 - scriptable
-- adapté Windows/Linux/Termux/ARM64
+- adaptÃ© Windows/Linux/Termux/ARM64
 
-La phrase produit pourrait être :
+La phrase produit pourrait Ãªtre :
 
 > **fstats analyzes text files, logs and corpus; exports JSON/CSV; checks quality thresholds; and fails CI when text drifts.**
 
@@ -1661,4 +1661,4 @@ Si je devais choisir une niche principale, je vise :
 
 1. **CI / text quality gate** pour docs/logs
 2. puis **corpus profiling**
-3. puis **SCADA/log sentinel** comme spécialisation avancée.
+3. puis **SCADA/log sentinel** comme spÃ©cialisation avancÃ©e.
