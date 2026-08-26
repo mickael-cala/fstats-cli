@@ -36,7 +36,13 @@ report() { # <nom> <ok 0/1>
 # --- 1. Compilation ---------------------------------------------------------
 # Sans -FE, FPC place l'executable dans src/ : fstats.exe (Windows) ou fstats (POSIX)
 fpc -O2 -Mobjfpc src/fstats.pas > "$TMPDIR/compile.log" 2>&1
-report "compilation : fpc -O2 -Mobjfpc src/fstats.pas (exit $?)" $?
+STATUS=$?
+if [ "$STATUS" -ne 0 ]; then
+  echo "--- compile.log (echec) ---"
+  cat "$TMPDIR/compile.log"
+  echo "--- fin compile.log ---"
+fi
+report "compilation : fpc -O2 -Mobjfpc src/fstats.pas (exit $STATUS)" "$STATUS"
 grep -oE "[0-9]+ lines compiled" "$TMPDIR/compile.log" | head -1
 
 # Nom du binaire selon la plateforme

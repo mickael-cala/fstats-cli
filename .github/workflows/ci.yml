@@ -11,12 +11,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Installer Free Pascal et lancer les tests
-        shell: cmd
+      - name: Installer Free Pascal
+        shell: pwsh
         run: |
           choco install -y freepascal --no-progress
-          call "C:\ProgramData\chocolatey\bin\refreshenv.bat"
-          tests\run.bat
+          $fpc = Get-ChildItem 'C:\tools\freepascal', 'C:\ProgramData\chocolatey\lib\freepascal' -Recurse -Filter 'fpc.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $fpc) { throw "fpc.exe introuvable apres l'installation" }
+          Write-Output "fpc.exe -> $($fpc.FullName)"
+          Add-Content $env:GITHUB_PATH (Split-Path -Parent $fpc.FullName)
+      - name: Lancer la suite de tests
+        shell: cmd
+        run: tests\run.bat
 
   test-linux:
     runs-on: ubuntu-latest
