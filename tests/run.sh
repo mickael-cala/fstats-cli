@@ -1013,6 +1013,28 @@ printf 'errorerrorerror\n' > "$TMPDIR/adj2.txt"
 if grep -q '"matches": 3' "$TMPDIR/adj2.json"; then OK=0; else OK=1; fi
 report "--pattern=error sur 'errorerrorerror' -> 3 matches" $OK
 
+# --- 109. v2.14.0 (P1-3) : --redact ne fuit dans AUCUNE sortie ------------------
+printf 'login jean.dupont@corp.example ok\nlogin jean.dupont@corp.example ok\n' > "$TMPDIR/leak.log"
+LEAK=0
+"$FSTATS" --redact=email "$TMPDIR/leak.log" > "$TMPDIR/leak_console.txt" 2>/dev/null
+grep -q "jean.dupont" "$TMPDIR/leak_console.txt" && LEAK=1
+"$FSTATS" --json --redact=email "$TMPDIR/leak.log" > "$TMPDIR/leak.json" 2>/dev/null
+grep -q "jean.dupont" "$TMPDIR/leak.json" && LEAK=1
+"$FSTATS" --csv=words --redact=email "$TMPDIR/leak.log" > "$TMPDIR/leak.csv" 2>/dev/null
+grep -q "jean.dupont" "$TMPDIR/leak.csv" && LEAK=1
+"$FSTATS" --summary-json --redact=email "$TMPDIR/leak.log" > "$TMPDIR/leak_sum.json" 2>/dev/null
+grep -q "jean.dupont" "$TMPDIR/leak_sum.json" && LEAK=1
+if [ "$LEAK" -eq 0 ]; then OK=0; else OK=1; fi
+report "--redact=email : email absent de console+JSON+CSV+summary (anti-fuite)" $OK
+
+# --- 110. v2.14.0 (P1-2) : --out désignant le fichier analysé -> refus ----------
+printf 'ligne une\nligne deux\n' > "$TMPDIR/selfout.txt"
+cp "$TMPDIR/selfout.txt" "$TMPDIR/selfout.bak"
+"$FSTATS" "$TMPDIR/selfout.txt" --out="$TMPDIR/selfout.txt" > /dev/null 2> "$TMPDIR/s110.err"
+RC=$?
+if [ "$RC" -eq 1 ] && grep -q "refus" "$TMPDIR/s110.err" && diff -q "$TMPDIR/selfout.txt" "$TMPDIR/selfout.bak" > /dev/null; then OK=0; else OK=1; fi
+report "--out = fichier analysé -> exit 1, stderr, entrée INTACTE" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

@@ -23,7 +23,7 @@ uses
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
-  CMDGEN_VERSION = '2.13.1';
+  CMDGEN_VERSION = '2.14.0';
   OPT_COUNT = 49;   // dont 1 entrée spéciale '' = fichiers positionnels
 
 type
@@ -39,11 +39,22 @@ type
   CmdName = nom du programme (ex. 'fstats'). }
 function BuildCmd(const CmdName: string; const Tokens: TStringList): string;
 
-{ Quote un argument pour le shell courant (cmd.exe / sh). }
+{ Quote un argument pour le shell courant (cmd.exe / sh). v2.14.0 (P1-1) :
+  quotte aussi dès qu'un MÉTACARACTÈRE est présent — l'ancienne règle
+  « espace/tab/guillemet » laissait passer `; & | $ ( ) < >` qui s'exécutent
+  au collage dans un shell. Limite documentée : cmd.exe développe %VAR%
+  même entre guillemets (cf. doc/AUDIT-SECURITE.md). }
 function CmdQuote(const S: string): string;
 
-{ Exécute une commande en attendant la fin ; rend le exit code (-1 si échec). }
-function RunAndWait(const Cmd: string): Integer;
+{ v2.14.0 (P1-1, audit sécurité) : exécute un programme avec ses arguments
+  SÉPARÉS via SysUtils.ExecuteProcess — jamais de ligne de commande assemblée,
+  jamais de shell (l'ancien chemin Unix passait par FpSystem = sh -c, où un
+  `;` ou `$(…)` dans une valeur exécutait du code arbitraire). Rend le exit
+  code du processus, -1 si le lancement échoue. }
+function RunArgs(const ExePath: string; const Args: array of string): Integer;
+
+{ Même chose depuis les tokens du wizard (construit l'argv). }
+function RunTokens(const ExePath: string; const Tokens: TStringList): Integer;
 
 { Retrouve l'index du token d'une option (Name='' → premier token positionnel). }
 function FindOpt(const Tokens: TStringList; const Name: string): Integer;
@@ -162,17 +173,33 @@ begin
 end;
 
 function CmdQuote(const S: string): string;
+const
+  // Métacaractères qui déclenchent le quoting (au-delà de l'espace/tab).
+  // Windows : & | < > ^ % ! (cmd.exe). Unix : ; $ ` \ ( ) & * ? [ ] # ~ ! < >
+  {$IFDEF MSWINDOWS}
+  META: string = '&|<>^%!';
+  {$ELSE}
+  META: string = ';$`()&*?[]#~!<>';
+  {$ENDIF}
+var
+  NeedsQuote: Boolean;
+  i: Integer;
 begin
-  if (S = '') or (Pos(' ', S) > 0) or (Pos(#9, S) > 0) or (Pos('"', S) > 0) then
-  begin
-    {$IFDEF MSWINDOWS}
-    Result := '"' + StringReplace(S, '"', '""', [rfReplaceAll]) + '"';
-    {$ELSE}
-    Result := '''' + StringReplace(S, '''', '''\''''', [rfReplaceAll]) + '''';
-    {$ENDIF}
-  end
-  else
-    Result := S;
+  NeedsQuote := (S = '') or (Pos(' ', S) > 0) or (Pos(#9, S) > 0);
+  if not NeedsQuote then
+    for i := 1 to Length(META) do
+      if Pos(META[i], S) > 0 then
+      begin
+        NeedsQuote := True;
+        Break;
+      end;
+  if not NeedsQuote then
+    Exit(S);
+  {$IFDEF MSWINDOWS}
+  Result := '"' + StringReplace(S, '"', '""', [rfReplaceAll]) + '"';
+  {$ELSE}
+  Result := '''' + StringReplace(S, '''', '''\''''', [rfReplaceAll]) + '''';
+  {$ENDIF}
 end;
 
 function BuildCmd(const CmdName: string; const Tokens: TStringList): string;
@@ -184,34 +211,29 @@ begin
     Result := Result + ' ' + CmdQuote(Tokens[i]);
 end;
 
-function RunAndWait(const Cmd: string): Integer;
-{$IFDEF MSWINDOWS}
+function RunArgs(const ExePath: string; const Args: array of string): Integer;
+begin
+  // v2.14.0 (P1-1) : ExecuteProcess fabrique lui-même l'argv (Unix :
+  // fork/execve, Windows : CreateProcess) — aucun shell, aucun parsing de
+  // la part de l'OS. Une valeur contenant `; rm -rf` est un simple argument.
+  try
+    Result := ExecuteProcess(ExePath, Args);
+  except
+    on E: Exception do
+      Result := -1;  // exécutable introuvable/illisible : échec propre
+  end;
+end;
+
+function RunTokens(const ExePath: string; const Tokens: TStringList): Integer;
 var
-  si: TStartupInfo;
-  pi: TProcessInformation;
-  CmdLine: string;
-  ExitCode: DWORD;
+  A: array of string;
+  i: Integer;
 begin
-  FillChar(si, SizeOf(si), 0);
-  si.cb := SizeOf(si);
-  CmdLine := Cmd;
-  if CreateProcess(nil, PChar(CmdLine), nil, nil, True, 0, nil, nil, si, pi) then
-  begin
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    ExitCode := 0;
-    GetExitCodeProcess(pi.hProcess, ExitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    Result := Integer(ExitCode);
-  end
-  else
-    Result := -1;
+  SetLength(A, Tokens.Count);
+  for i := 0 to Tokens.Count - 1 do
+    A[i] := Tokens[i];
+  Result := RunArgs(ExePath, A);
 end;
-{$ELSE}
-begin
-  Result := FpSystem(Cmd);
-end;
-{$ENDIF}
 
 function FindOpt(const Tokens: TStringList; const Name: string): Integer;
 var

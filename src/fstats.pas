@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.13.1 (P0 : off-by-one pattern, wizard conforme parseur, test version derive)
+  Version    : 2.14.0 (P1 securite : exec par argv, garde --out, redaction partout)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -222,6 +222,8 @@ var
   WizTokens: TStringList;
   WizCmd: string;
   WizAns: string;
+  // v2.14.0 : garde --out (P1-2)
+  OutAbs, InAbs: string;
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -409,9 +411,11 @@ begin
           ReadLn(Input, WizAns);
           if LowerCase(Trim(WizAns)) = 'o' then
           begin
+            // v2.14.0 (P1-1) : exécution par argv (ExecuteProcess), jamais de
+            // shell — le BuildCmd ci-dessous ne sert qu'à l'AFFICHER.
             WizCmd := BuildCmd(ParamStr(0), WizTokens);
             WriteLn('Exécution : ', WizCmd);
-            Halt(RunAndWait(WizCmd));
+            Halt(RunTokens(ParamStr(0), WizTokens));
           end;
           Halt(0);
         finally
@@ -1195,6 +1199,25 @@ begin
       begin
         WriteLn(ErrOutput, 'Erreur: avec --out, choisissez seulement un format d''export (--json, --csv ou --summary-json).');
         Halt(1);
+      end;
+
+      // v2.14.0 (P1-2, audit sécurité) : refuser que --out désigne un fichier
+      // analysé — Rewrite tronque AVANT l'analyse, ce qui détruisait l'entrée
+      // (fstats f.txt --out=f.txt vidait f.txt de façon irréversible).
+      OutAbs := ExpandFileName(OutFileName);
+      for k := 0 to Files.Count - 1 do
+      begin
+        InAbs := ExpandFileName(Files[k]);
+        {$IFDEF MSWINDOWS}
+        if LowerCase(OutAbs) = LowerCase(InAbs) then
+        {$ELSE}
+        if OutAbs = InAbs then
+        {$ENDIF}
+        begin
+          WriteLn(ErrOutput, 'Erreur: --out (', OutFileName, ') designe un fichier analyse (',
+                  Files[k], ') - refus pour eviter sa destruction.');
+          Halt(1);
+        end;
       end;
 
       // Gestion des couleurs : désactivées par défaut dans les fichiers

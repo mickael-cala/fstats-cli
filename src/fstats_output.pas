@@ -369,7 +369,7 @@ begin
 
     for i := 0 to Limit - 1 do
     begin
-      Preview := QuotedStr(Stats.Words[i].Word);
+      Preview := QuotedStr(RedactString(Stats.Words[i].Word, Stats.Redact));
       { Tronque les mots très longs pour préserver l'alignement des colonnes }
       if UTF8Length(Preview) > 32 then
         Preview := UTF8SafeCopy(Preview, 29) + '...';
@@ -557,7 +557,7 @@ begin
     Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit);
     for i := 0 to Limit - 1 do
       WriteLn('  ', i + 1:2, '  ', Format('%5d', [Stats.Tags[i].Count]), '  ',
-              Stats.Tags[i].Tag);
+              RedactString(Stats.Tags[i].Tag, Stats.Redact));
     WriteLn;
   end;
 end;
@@ -705,7 +705,7 @@ begin
       for j := 0 to High(Stats.NGrams[i].Words) do
       begin
         if j > 0 then Write(', ');
-        Write('"', JsonEscape(Stats.NGrams[i].Words[j]), '"');
+        Write('"', JsonEscape(RedactString(Stats.NGrams[i].Words[j], Stats.Redact)), '"');
       end;
       Write('], "count": ', Stats.NGrams[i].Count, '}');
     end;
@@ -764,7 +764,7 @@ begin
     if i > 0 then Write(',');
     WriteLn;
     Write('    {"rank": ', i+1, ', ');
-    Write('"word": "', JsonEscape(Stats.Words[i].Word), '", ');
+    Write('"word": "', JsonEscape(RedactString(Stats.Words[i].Word, Stats.Redact)), '", ');
     Write('"count": ', Stats.Words[i].Count, '}');
   end;
   WriteLn;
@@ -825,7 +825,7 @@ begin
     for i := 0 to Limit do
     begin
       if i > 0 then WriteLn(',');
-      Write('    {"rank": ', i + 1, ', "tag": "', JsonEscape(Stats.Tags[i].Tag),
+      Write('    {"rank": ', i + 1, ', "tag": "', JsonEscape(RedactString(Stats.Tags[i].Tag, Stats.Redact)),
             '", "count": ', Stats.Tags[i].Count, '}');
     end;
     WriteLn;
@@ -893,7 +893,7 @@ begin
   begin
     if i > 0 then Result := Result + ',';
     Result := Result + '{"rank": ' + IntToStr(i + 1) +
-      ', "word": "' + JsonEscape(Stats.Words[i].Word) + '"' +
+      ', "word": "' + JsonEscape(RedactString(Stats.Words[i].Word, Stats.Redact)) + '"' +
       ', "count": ' + IntToStr(Stats.Words[i].Count) + '}';
   end;
   Result := Result + ']';
@@ -977,7 +977,7 @@ begin
     for j := 0 to High(Stats.NGrams[i].Words) do
     begin
       if j > 0 then Result := Result + ', ';
-      Result := Result + '"' + JsonEscape(Stats.NGrams[i].Words[j]) + '"';
+      Result := Result + '"' + JsonEscape(RedactString(Stats.NGrams[i].Words[j], Stats.Redact)) + '"';
     end;
     Result := Result + '], "count": ' + IntToStr(Stats.NGrams[i].Count) + '}';
   end;
@@ -1121,7 +1121,7 @@ begin
     for i := 0 to Limit do
     begin
       if i > 0 then S := S + ',';
-      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(Stats.Tags[i].Tag) +
+      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(RedactString(Stats.Tags[i].Tag, Stats.Redact)) +
         '", "count": ' + IntToStr(Stats.Tags[i].Count) + '}';
     end;
     S := S + ']';
@@ -1241,7 +1241,7 @@ begin
     for i := 0 to EffectiveLimit(Length(Stats.Tags), True, TopTagsLimit) - 1 do
     begin
       if i > 0 then S := S + ',';
-      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(Stats.Tags[i].Tag) +
+      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(RedactString(Stats.Tags[i].Tag, Stats.Redact)) +
         '", "count": ' + IntToStr(Stats.Tags[i].Count) + '}';
     end;
     S := S + ']';
@@ -1387,7 +1387,7 @@ begin
           Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit);
           for i := 0 to Limit - 1 do
             WriteLn(CsvEscape(Stats.Path), ',tag,', i + 1, ',',
-                    CsvEscape(Stats.Tags[i].Tag), ',,',
+                    CsvEscape(RedactString(Stats.Tags[i].Tag, Stats.Redact)), ',,',
                     Stats.Tags[i].Count, ',');
         end;
       end;
@@ -1405,7 +1405,7 @@ begin
         Limit := EffectiveLimit(Length(Stats.Words), ShowAll, TopWordsLimit);
         for i := 0 to Limit - 1 do
           WriteLn(CsvEscape(Stats.Path), ',word,', i + 1, ',',
-                  CsvEscape(Stats.Words[i].Word), ',,',
+                  CsvEscape(RedactString(Stats.Words[i].Word, Stats.Redact)), ',,',
                   Stats.Words[i].Count, ',', UTF8Length(Stats.Words[i].Word));
       end;
   end;

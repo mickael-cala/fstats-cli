@@ -87,14 +87,21 @@ begin
     FstatsPath := ExtractFilePath(ParamStr(0)) + 'fstats';
     {$ENDIF}
     if not FileExists(FstatsPath) then
-      FstatsPath := 'fstats';  // fallback PATH
+    begin
+      // v2.14.0 (P1-1, audit m2) : plus de repli PATH silencieux — un fstats
+      // quelconque plus tôt dans le PATH exécuterait des options construites
+      // ici. Refus explicite.
+      WriteLn(ErrOutput, 'fcmd: fstats introuvable a cote de fcmd (', FstatsPath,
+              '). Placez les deux binaires dans le meme repertoire.');
+      Halt(1);
+    end;
 
     Cmd := BuildCmd(FstatsPath, Tokens);
 
     if Exec then
     begin
       WriteLn('Exécution : ', Cmd);
-      ExitCode := RunAndWait(Cmd);
+      ExitCode := RunTokens(FstatsPath, Tokens);  // argv, jamais de shell
       Halt(ExitCode);
     end;
 
@@ -108,7 +115,7 @@ begin
     if LowerCase(Trim(S)) = 'o' then
     begin
       WriteLn('Exécution : ', Cmd);
-      ExitCode := RunAndWait(Cmd);
+      ExitCode := RunTokens(FstatsPath, Tokens);  // argv, jamais de shell
       Halt(ExitCode);
     end;
     WriteLn('Commande non exécutée. À copier-coller :');

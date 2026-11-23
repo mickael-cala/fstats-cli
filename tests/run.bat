@@ -1070,6 +1070,30 @@ echo errorerrorerror > "%TMPD%\\adj2.txt"
 findstr /C:"\"matches\": 3" "%TMPD%\\adj2.json" >nul && set C108B_OK=1 || set C108B_OK=0
 if "%C108B_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern=error x3 adjacents -^> 3 matches) else (set /a FAIL+=1&echo FAIL: --pattern=error x3 adjacents -^> 3 matches)
 
+rem --- 109. v2.14.0 (P1-3) : --redact ne fuit dans AUCUNE sortie ----------------
+echo login jean.dupont@corp.example ok > "%TMPD%\\leak.log"
+echo login jean.dupont@corp.example ok >> "%TMPD%\\leak.log"
+set LEAK=0
+"%FSTATS%" --redact=email "%TMPD%\\leak.log" > "%TMPD%\\leak_c.txt" 2>nul
+findstr /C:"jean.dupont" "%TMPD%\\leak_c.txt" >nul && set LEAK=1
+"%FSTATS%" --json --redact=email "%TMPD%\\leak.log" > "%TMPD%\\leak_j.txt" 2>nul
+findstr /C:"jean.dupont" "%TMPD%\\leak_j.txt" >nul && set LEAK=1
+"%FSTATS%" --csv=words --redact=email "%TMPD%\\leak.log" > "%TMPD%\\leak_v.txt" 2>nul
+findstr /C:"jean.dupont" "%TMPD%\\leak_v.txt" >nul && set LEAK=1
+"%FSTATS%" --summary-json --redact=email "%TMPD%\\leak.log" > "%TMPD%\\leak_s.txt" 2>nul
+findstr /C:"jean.dupont" "%TMPD%\\leak_s.txt" >nul && set LEAK=1
+if "%LEAK%"=="0" (set /a PASS+=1&echo PASS: --redact=email anti-fuite console+JSON+CSV+summary) else (set /a FAIL+=1&echo FAIL: --redact=email anti-fuite console+JSON+CSV+summary)
+
+rem --- 110. v2.14.0 (P1-2) : --out = fichier analysé -> refus -------------------
+echo ligne une > "%TMPD%\\selfout.txt"
+echo ligne deux >> "%TMPD%\\selfout.txt"
+copy /y "%TMPD%\\selfout.txt" "%TMPD%\\selfout.bak" >nul
+"%FSTATS%" "%TMPD%\\selfout.txt" --out="%TMPD%\\selfout.txt" >nul 2>"%TMPD%\\s110.err"
+if errorlevel 2 (set C110_OK=0) else if errorlevel 1 (set C110_OK=1) else (set C110_OK=0)
+findstr /C:"refus" "%TMPD%\\s110.err" >nul || set C110_OK=0
+fc /b "%TMPD%\\selfout.txt" "%TMPD%\\selfout.bak" >nul || set C110_OK=0
+if "%C110_OK%"=="1" (set /a PASS+=1&echo PASS: --out = fichier analyse -^> exit 1 + entree intacte) else (set /a FAIL+=1&echo FAIL: --out = fichier analyse -^> exit 1 + entree intacte)
+
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul
