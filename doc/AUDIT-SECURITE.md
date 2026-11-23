@@ -58,10 +58,15 @@ décennies de durcissement des bibliothèques éprouvées.
 | P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
 | P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
-## 5. Statut P2 — backlog documenté 📋
+## 5. Statut P2 — vague 1 corrigée en v2.14.1, reste au backlog 📋
 
-Constats vérifiés ou mesurés, non bloquants pour l'usage nominal, à corriger
-par vagues. Synthèse priorisée :
+**Corrigés en v2.14.1** (tests 111-113 + wizard rejoué) : frontière 64 Ko
+(invalid_utf8 faux positif à l'alignement — bug métrique CI), `WARNING`
+classé none (log4j/Python), formules CSV (`= + - @`), gate `--check`
+no-op invisible, wizard UX (numéros affichés, entrée invalide ne quitte
+plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
+
+**Reste au backlog** (par vagues suivantes) :
 
 - **Robustesse sur entrée hostile**
   - Lignes non bornées en longueur (OOM possible sur une ligne géante ;
@@ -69,33 +74,23 @@ par vagues. Synthèse priorisée :
     32 Mo sur une ligne ≈ 18 s).
   - Backtracking exponentiel des matchers (`*a*a*…` gèle ; amplifié par
     `--mode=alarm` et son pattern par défaut). → automates linéaires.
-  - Frontière de lecture 64 Ko : un caractère multi-octets à cheval sur deux
-    blocs peut être compté `invalid_utf8` (gate CI trompeuse). → zone tampon
-    + test d'alignement.
 - **Verdict CI**
   - `--fail-on-delta` ne teste que la croissance (delta négatif = OK).
   - Baseline sans intégrité (réécrivable par un attaquant du dépôt).
-  - `--check` sans aucun check → exit 0 silencieux.
   - Fichier absent de la baseline → checks delta silencieusement ignorés.
 - **Détournements sémantiques**
-  - `WARNING` (log4j, Python) classé `none` (matching « mot entier »).
   - Homoglyphes (`ЕRROR` cyrillique) invisibles aux compteurs ;
     caractères RTL invisibles dans les previews.
-  - CSV : injection de formules (`=`, `+`, `-`, `@` non neutralisés).
 - **UX**
-  - Wizard : numéros d'options non affichés ; entrée non numérique = sortie
-    silencieuse ; répétition de « Commande générée » à chaque tour.
   - Option inconnue → « Fichier inaccessible ou introuvable » ;
-    `--redact`/`--mode` nus → fuite (données analysées sans protection).
+    `--redact`/`--mode` nus → analyse sans protection.
   - `--top-lines=0` : le help dit « tous », le code dit « désactivé ».
   - Pas de verdict final lisible en mode check (dernière ligne = exit code).
+  - `%VAR%` développé par cmd.exe au collage de la commande affichée.
 - **Hygiène dev**
-  - `Halt()` dans les couches basses (try..finally non déroulé, unités non
-    réutilisables en bibliothèque).
-  - Code mort : `OptModeAlarm`, `PrevWords/Chars/Sentences` (watch),
-    `BuildTopLinesJSON`, `INF_DELTA`.
+  - `Halt()` dans les couches basses (try..finally non déroulé).
   - `--recursive`/`--include`/`--exclude`/`--max-depth` : **zéro test**.
-  - Duplication run.sh/run.bat (1000 vs 1050 lignes) qui divergent déjà.
+  - Duplication run.sh/run.bat (1000+ vs 1050+ lignes) qui divergent déjà.
   - Égalités dans Top Words/Chars sans tie-break → ordre non stable.
 
 ## 6. ACCEPTÉ_DOCUMENTÉ (décisions assumées) 📗

@@ -3,6 +3,51 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.14.1 — P2 vague 1 (2026-11-23)
+
+### 1. Frontière de buffer 64 Ko (bug métrique CI)
+
+Constat testé : préfixe de 65 535 'a' + `é` (séquence 2 octets à cheval) →
+`invalid_utf8: 2` sur un fichier **valide** (le gate `--fail-if non_utf8>0`
+rejetait un fichier sain selon son alignement). Correction : zone tampon
+inter-blocs (octets restants portés en tête du bloc suivant ; orphelin de
+fin de fichier toujours compté invalide).
+Après : 6 alignements testés (65 530/65534/65535/65536/65537/65540) →
+`invalid_utf8: 0` ; `invalid-utf8.bin` (vraie corruption) → 1, identique
+avant/après ; `aaa\xC3` orphelin → 1. Test 111.
+
+### 2. WARNING homologué
+
+`printf 'WARNING disk full / WARN slow / ERROR bad'` + `--log-level` :
+`Warn: 2` (avant : 1 — WARNING était classé `none`). `ERRORS` reste `none`
+(test 86 inchangé). Test 113.
+
+### 3. Formules CSV neutralisées
+
+Ligne `=cmd|"/c calc"!A0 in log` + `--csv` : cellule exportée
+`"'=cmd|""/c calc""!A0 in log"` — apostrophe préfixe (OWASP), Excel/Calc
+voient du texte. Aucune cellule `=cmd` nue. Test 112.
+
+### 4. Gate no-op + UX wizard + code mort
+
+- `--check` sans check : stderr `Attention: mode check actif sans aucun
+  check defini...`, exit 0 inchangé ; pas d'avertissement si un check existe.
+- Wizard : numéros globaux affichés (`[29] --mode = alarm  (actif)`) ;
+  entrée non numérique → `[?] entrez un numero de 0 a 7` + re-prompt
+  (la session n'est plus avalée).
+- Supprimé (code mort vérifié) : `OptModeAlarm`, `PrevWords/PrevChars/
+  PrevSentences`, `BuildTopLinesJSON`. Batterie wizard 101-108 rejouée OK.
+
+### 5. Parité
+
+14 commandes vs v2.11.0 ; seuls diffs : horodatage des messages de check
+(faux positif de batterie) et le masquage du Top Words avec `--redact`
+(fix P1-3 voulu). Aucune fixture n'a de ligne commençant par `=` ni de
+fichier > 64 Ko → pas de golden impacté.
+
+`--version` = `fstats 2.14.1`. Comptage : run.sh = **115** report =
+2 compilations + **113 tests**. Dogfood : exit 0.
+
 ## v2.14.0 — P1 sécurité (2026-11-23)
 
 ### 1. P1-1 : exécution par argv (plus de shell)

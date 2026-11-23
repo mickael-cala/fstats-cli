@@ -6,6 +6,47 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.14.1] — 2026-11-23 — P2 (vague 1) : frontière 64 Ko, WARNING, CSV formules, gate visible, UX wizard
+
+Première vague du backlog P2 du registre sécurité. Chaque correctif est
+accompagné d'un test dédié (111-113) ; bugs découverts par l'audit, tous
+**re-testés à l'exécution** avant correction.
+
+### Corrigé
+- **Frontière de buffer 64 Ko** (bug métrique, testé à l'alignement près) :
+  un caractère multi-octets à cheval sur deux blocs de lecture était compté
+  `invalid_utf8` (2 faux positifs par caractère coupé) — un fichier UTF-8
+  **valide** échouait le gate CI selon son alignement (65 535 octets + `é`
+  → `invalid_utf8: 2`). Zone tampon inter-blocs : les octets restants sont
+  portés en tête du bloc suivant ; un début de séquence orphelin en fin de
+  fichier reste compté invalide (vrai fichier cassé). Vérifié sur 6
+  alignements (65 530 à 65 540) + orphelin + fixtures invalides identiques.
+- **`WARNING` reconnu comme niveau warn** (mot entier, à côté de `WARN`) :
+  le niveau le plus répandu du monde réel (log4j, Python, Node) était classé
+  `none`. `ERRORS` reste `none` (mot entier, golden inchangé).
+- **Injection de formules CSV neutralisée** : `CsvEscape` préfixe d'une
+  apostrophe les valeurs commençant par `=`, `+`, `-`, `@` (pratique OWASP)
+  — `=cmd|"/c calc"!A0` (DDE) s'affiche comme texte dans Excel/Calc.
+- **Gate no-op visible** : `--check` sans aucun check défini affiche un
+  avertissement stderr (« le gate ne teste rien ») — exit et sorties
+  inchangés (rétrocompatible CI).
+- **Wizard UX** : numéros globaux (1-49) affichés dans les listes (le prompt
+  demandait un numéro invisible) ; une entrée non numérique au prompt
+  catégorie ne quitte plus la session (message + re-prompt).
+- **Code mort supprimé** : `OptModeAlarm` (jamais lu), `PrevWords/Chars/
+  Sentences` du watch (deltas préparés jamais affichés), `BuildTopLinesJSON`
+  (doublon non appelé de `BuildTopLinesJSONRedact`).
+
+### Vérifié (tests 111-113)
+- 111 : `é` à cheval sur la frontière → `invalid_utf8: 0` ; orphelin → 1.
+- 112 : cellule `=cmd` préfixée `'=cmd`, aucune cellule `=cmd` nue.
+- 113 : `WARNING` + `WARN` → `warn: 2` (avant : 1).
+- Parité 14 commandes vs v2.11.0 (seuls diffs : l'horodatage des messages
+  de check, et le masquage du Top Words avec `--redact` — fix P1-3, voulu).
+- 115 vérifications au total (113 tests + 2 compilations — recompté).
+
+---
+
 ## [2.14.0] — 2026-11-23 — P1 sécurité (exécution par argv, garde --out, redaction sans fuite)
 
 Les trois chantiers P1 de l'audit sécurité (registre :
