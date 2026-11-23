@@ -35,7 +35,8 @@ summary-json. Tests 74-77 (longest_lines, déjà couverts avant) inchangés.
 correctifs). Seul diff voulu : avec `--redact`, un mot du Top Words
 contenant une URL masquée (`***` au lieu de
 `'https://internal.example.com...`). `--version` = `fstats 2.14.0`.
-Total tests : 112 vérifications (run.sh : 113 report dont 2 compiles).
+Comptage (recompté) : run.sh = **112** `report` = 2 compilations + **110
+tests** (nouveau en 2.14.0 : 109 anti-fuite et 110 garde --out).
 
 `--version` = `fstats 2.14.0`. Dogfood : exit 0.
 

@@ -121,6 +121,12 @@ par vagues. Synthèse priorisée :
 5. **Chaque parseur maison vient avec les pièges connus de la bibliothèque
    qu'il imite** — écrire le test du piège en même temps que le parseur.
 6. **La version d'un test ne se figure jamais** (P0-3) : dériver ou mourir.
+7. **Une protection est un point de passage obligé, ou ce n'est qu'une
+   intention.** P1-3 : la redaction existait depuis la v2.8.0, mais dispersée
+   en appels ponctuels — les emails fuyaient dans le Top Words, et la doc
+   d'alors décrivait cette fuite comme la spec. Corrigé en couvrant les
+   *émissions de texte* une par une (11 points) ; testé par « l'objet interdit
+   ne doit apparaître dans AUCUNE sortie » (test 109).
 
 ## 8. Journal des audits
 

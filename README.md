@@ -112,7 +112,7 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 |---|---|
 | `--pattern=TEXTE` | Compte les occurrences du pattern dans chaque ligne (répétable). Littéral + `\|` (alternance) + `*`/`?` (wildcards), insensible à la casse. Sous CMD, échapper `\|` : `--pattern="ERROR\|WARN"` |
 | `--top-lines=N` | Top N des lignes identiques (défaut 10 ; absent = désactivé ; `0` = tous). Mémoire bornée comme les n-grams |
-| `--redact=LISTE` | `email,ipv4,url` (séparés par virgule) : remplace par `***` dans les **sorties seulement** (console/JSON/CSV) ; les compteurs restent calculés sur le texte brut |
+| `--redact=LISTE` | `email,ipv4,url` (séparés par virgule) : remplace par `***` dans les **sorties seulement** — toute émission de texte : mots, n-grams, tags, lignes (v2.14.0) ; les compteurs restent calculés sur le texte brut |
 | `--log-level` | Compte les lignes par niveau : priorité `ERROR` > `WARN` > `INFO` > `DEBUG` > `TRACE` (mot entier, insensible à la casse, n'importe où dans la ligne) + `none`. Somme = `lines` |
 | `--filter=LISTE` | `error,warn,info,debug,trace,none` (virgules) : filtre l'**affichage** des lignes (`Top Lines`, `Longest Lines`) ; les compteurs globaux restent sur tout le fichier |
 | `--regex-tag=PAT` | Extrait et compte les tags (mini-moteur : littéral + classes `[0-9]`/`[a-z]`… + quantifieurs `?` `*` `+`). Ex. `PLC[0-9]+` → `PLC1`, `PLC23` |
@@ -264,6 +264,15 @@ fstats/
 
 ## Limites connues (en bref)
 
+> La liste de référence, priorisée et tenue à jour, est le registre
+> [doc/AUDIT-SECURITE.md](doc/AUDIT-SECURITE.md) — à lire avant d'analyser
+> des fichiers fournis par des tiers.
+
+- `--out` **refuse** désormais de désigner un fichier analysé (protection
+  anti-destruction, v2.14.0) — au lieu de le vider silencieusement.
+- Les valeurs saisies dans le wizard sont exécutées via des arguments
+  séparés (aucun shell) ; en revanche, la commande **affichée** reste du
+  texte : sous cmd.exe, un collage développe encore `%VAR%` (registre P2).
 - **Fichiers texte UTF-8 uniquement** : une séquence invalide est remplacée par
   U+FFFD et comptée (`invalid_utf8`).
 - Le **BOM est détecté mais conservé** (choix assumé).

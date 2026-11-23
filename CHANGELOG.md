@@ -35,8 +35,8 @@ Les trois chantiers P1 de l'audit sécurité (registre :
 
 ### Ajouté
 - Tests 109 (anti-fuite redaction) et 110 (garde --out, entrée intacte
-  vérifiée par comparaison d'octets) dans `run.sh`/`run.bat` : 112
-  vérifications au total.
+  vérifiée par comparaison d'octets) dans `run.sh`/`run.bat` :
+  **110 tests + 2 compilations = 112 vérifications** au total.
 
 ### Vérifié
 - Parité 17/17 commandes vs v2.11.0 hors périmètre des correctifs

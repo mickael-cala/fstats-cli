@@ -602,9 +602,15 @@ assumée et documentée dans le code).
 - **ipv4** : 4 groupes de 1-3 chiffres séparés par `.`, non suivis d'un chiffre
   ni d'un point (évite les décimales `3.14` et les versions `1.2.3.4.5`).
 - **url** : `http://…` ou `https://…` jusqu'au prochain blanc ou fin de chaîne.
-- La redaction s'applique à `longest_lines.content`, `top_lines.line` et aux
-  aperçus console des lignes. Elle ne s'applique PAS aux top mots/caractères
-  (qui sont des tokens, pas des lignes).
+- La redaction s'applique à **toute émission de texte issu du fichier** :
+  `longest_lines.content`, `top_lines.line`, aperçus console des lignes, et
+  — depuis **v2.14.0 (P1-3)** — **top mots, n-grams et tags** dans tous les
+  formats (console, JSON, CSV, `--summary-json`). Les caractères uniques du
+  Top Characters ne sont pas redactés (un seul caractère ne reconstitue pas
+  une donnée). Historique parano : avant v2.14.0, le Top Words laissait
+  fuiter les emails/IPs/URLs malgré `--redact` — la doc d'alors décrivait ce
+  comportement comme voulu ; c'était un défaut, corrigé et testé
+  (test 109 du run.sh : grep de l'objet redacté = 0 dans toutes les sorties).
 
 ## Sémantique Log Sentinel — niveaux (v2.9.0, Cible 3-B)
 
@@ -712,10 +718,17 @@ fstats fichier_inconnu.txt   # code 1, message sur stderr
   seulement la commande (exit 0 si annulé, 1 si EOF avant la fin).
 - `fcmd` : binaire compagnon séparé, même logique. Options :
   `--dry-run` (affiche seulement, exit 0), `--exec` (exécute sans demander,
-  exit code propagé), `--profil=N` (1=corpus 2=log 3=gate), `--help`.
+  exit code propagé), `--profil=N` (1=corpus 2=log 3=gate ; les noms
+  `corpus`/`log`/`gate` sont acceptés depuis v2.13.1), `--help`.
   Le wizard lit ligne par ligne sur stdin : pilotable en pipe
   (`printf '2\n0\n' | fcmd --dry-run`). `fcmd` exécute le `fstats` situé
-  dans le même répertoire que lui-même.
+  dans le même répertoire que lui-même (sinon refus explicite — v2.14.0).
+- **v2.14.0 (P1-1)** : l'exécution se fait par **arguments séparés**
+  (`SysUtils.ExecuteProcess` : fork/execve ou CreateProcess) — jamais de
+  shell. Une valeur contenant `; rm -rf` est un simple argument. La commande
+  affichée quotte les métacaractères (espace, tabulation, `& | < > ^ % !` ;
+  `; $ \` ( ) …`) ; limite connue : cmd.exe développe `%VAR%` au collage
+  même entre guillemets (registre sécurité, P2).
 - Sortie du wizard : `Commande générée :` puis la ligne quotée pour le shell
   courant (guillemets doubles sous Windows, simples sous Unix).
 
