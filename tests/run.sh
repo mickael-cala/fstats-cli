@@ -47,11 +47,18 @@ fi
 report "compilation : fpc -O2 -Mobjfpc src/fstats.pas (exit $STATUS)" "$STATUS"
 grep -oE "[0-9]+ lines compiled" "$TMPDIR/compile.log" | head -1
 
+# v2.13.0 : binaire compagnon fcmd
+fpc -O2 -Mobjfpc src/fcmd.pas > "$TMPDIR/compile_fcmd.log" 2>&1
+STATUS=$?
+report "compilation : fpc -O2 -Mobjfpc src/fcmd.pas (exit $STATUS)" "$STATUS"
+
 # Nom du binaire selon la plateforme
 if [ -f "$ROOT/src/fstats.exe" ]; then
   FSTATS="$ROOT/src/fstats.exe"
+  FCMD="$ROOT/src/fcmd.exe"
 else
   FSTATS="$ROOT/src/fstats"
+  FCMD="$ROOT/src/fcmd"
 fi
 
 # --- 2. Compteurs de référence (tests/fixtures/test_fr.txt) -----------------
@@ -949,6 +956,41 @@ report "--watch - (stdin) -> exit 1 + stderr watch" $OK
 "$FSTATS" --watch --interval=0 tests/fixtures/app.log > /dev/null 2> "$TMPDIR/w100.err"
 if [ $? -eq 1 ] && grep -q "interval" "$TMPDIR/w100.err"; then OK=0; else OK=1; fi
 report "--interval=0 -> exit 1 + stderr interval" $OK
+
+# --- 101. v2.13.0 : fcmd --help ------------------------------------------------
+"$FCMD" --help > "$TMPDIR/c101.txt" 2>/dev/null
+if [ $? -eq 0 ] && grep -q "compagnon" "$TMPDIR/c101.txt"; then OK=0; else OK=1; fi
+report "fcmd --help -> exit 0 + 'compagnon'" $OK
+
+# --- 102. fcmd --dry-run profil log : commande générée avec --mode=alarm --------
+printf '2\n0\n' | "$FCMD" --dry-run > "$TMPDIR/c102.txt" 2>/dev/null
+if [ $? -eq 0 ] && grep -q -- "--mode=alarm" "$TMPDIR/c102.txt" && grep -q -- "--top-lines=10" "$TMPDIR/c102.txt"; then OK=0; else OK=1; fi
+report "fcmd --dry-run profil log -> commande avec --mode=alarm --top-lines=10" $OK
+
+# --- 103. fcmd --dry-run édition fichiers + option ------------------------------
+printf '4\n1\nf\ntests/fixtures/app.log\n2\n15\n2,3\n0\n' | "$FCMD" --dry-run > "$TMPDIR/c103.txt" 2>/dev/null
+if grep -q -- "--ngrams=2,3" "$TMPDIR/c103.txt" && grep -q "app.log" "$TMPDIR/c103.txt"; then OK=0; else OK=1; fi
+report "fcmd --dry-run édition -> fstats tests/fixtures/app.log --ngrams=2,3" $OK
+
+# --- 104. fcmd EOF immédiat -> exit 1 -------------------------------------------
+printf '' | "$FCMD" --dry-run > /dev/null 2>&1
+if [ $? -eq 1 ]; then OK=0; else OK=1; fi
+report "fcmd --dry-run sans entrée (EOF) -> exit 1" $OK
+
+# --- 105. fstats --interactive, réponse 'n' -> exit 0, commande affichée --------
+printf '3\n1\nf\ntests/fixtures/test_fr.txt\n0\nn\n' | "$FSTATS" --interactive > "$TMPDIR/c105.txt" 2>/dev/null
+if [ $? -eq 0 ] && grep -q "Commande générée" "$TMPDIR/c105.txt" && grep -q -- "--check" "$TMPDIR/c105.txt"; then OK=0; else OK=1; fi
+report "fstats --interactive profil gate, 'n' -> exit 0 + commande affichée" $OK
+
+# --- 106. fstats --interactive, 'o' avec fail-if -> exit code propagé (2) -------
+printf '3\n1\nf\ntests/fixtures/test_fr.txt\n5\n40\nwords>5\n0\no\n' | "$FSTATS" --interactive > /dev/null 2>&1
+if [ $? -eq 2 ]; then OK=0; else OK=1; fi
+report "fstats --interactive --fail-if=words>5 exécuté -> exit 2 propagé" $OK
+
+# --- 107. fcmd --exec lance fstats à côté de fcmd -------------------------------
+printf '2\n1\nf\ntests/fixtures/alarms.log\n0\n' | "$FCMD" --exec > "$TMPDIR/c107.txt" 2>/dev/null
+if [ $? -eq 0 ] && grep -q "Lines:" "$TMPDIR/c107.txt"; then OK=0; else OK=1; fi
+report "fcmd --exec profil log -> fstats exécuté, sortie 'Lines:'" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

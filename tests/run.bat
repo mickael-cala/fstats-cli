@@ -32,6 +32,11 @@ rem --- 1. Compilation ---------------------------------------------------------
 fpc -O2 -Mobjfpc -FE. src\fstats.pas > "%TMPD%\compile.log" 2>&1
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%]&type "%TMPD%\compile.log") else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%])
 findstr /C:"lines compiled" "%TMPD%\compile.log"
+rem v2.13.0 : binaire compagnon fcmd
+fpc -O2 -Mobjfpc -FE. src\fcmd.pas > "%TMPD%\compile_fcmd.log" 2>&1
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation fcmd [errorlevel %ERRORLEVEL%]) else (set /a PASS+=1&echo PASS: compilation fcmd [errorlevel %ERRORLEVEL%])
+set "FCMD=%CD%\fcmd.exe"
+
 
 rem --- 2. Compteurs de reference (tests\fixtures\test_fr.txt) -----------------
 "%FSTATS%" --summary-json tests\fixtures\test_fr.txt > "%TMPD%\test_fr.json" 2>nul
@@ -1005,6 +1010,41 @@ node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--
 if errorlevel 1 (set C100_OK=0) else (set C100_OK=1)
 :after100
 if "%C100_OK%"=="1" (set /a PASS+=1&echo PASS: --interval=0 -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --interval=0 -^> exit 1 + stderr)
+
+rem --- 101. v2.13.0 : fcmd --help ------------------------------------------------
+"%FCMD%" --help > "%TMPD%\\c101.txt" 2>nul
+if errorlevel 1 (set C101_OK=0) else (findstr /C:"compagnon" "%TMPD%\\c101.txt" >nul && set C101_OK=1 || set C101_OK=0)
+if "%C101_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --help -^> exit 0 + compagnon) else (set /a FAIL+=1&echo FAIL: fcmd --help -^> exit 0 + compagnon)
+
+rem --- 102. fcmd --dry-run profil log -------------------------------------------
+(echo 2&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c102.txt" 2>nul
+if errorlevel 1 (set C102_OK=0) else (findstr /C:"--mode=alarm" "%TMPD%\\c102.txt" >nul && findstr /C:"--top-lines=10" "%TMPD%\\c102.txt" >nul && set C102_OK=1 || set C102_OK=0)
+if "%C102_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10)
+
+rem --- 103. fcmd --dry-run édition fichiers + option ----------------------------
+(echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2,3&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c103.txt" 2>nul
+findstr /C:"--ngrams=2,3" "%TMPD%\\c103.txt" >nul && findstr /C:"app.log" "%TMPD%\\c103.txt" >nul && set C103_OK=1 || set C103_OK=0
+if "%C103_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run édition -^> app.log + --ngrams=2,3) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run édition -^> app.log + --ngrams=2,3)
+
+rem --- 104. fcmd EOF immédiat -> exit 1 -----------------------------------------
+type nul | "%FCMD%" --dry-run >nul 2>nul
+if errorlevel 1 (set C104_OK=1) else (set C104_OK=0)
+if "%C104_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run EOF -^> exit 1) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run EOF -^> exit 1)
+
+rem --- 105. fstats --interactive 'n' -> exit 0 + commande affichée --------------
+(echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 0&echo n) | "%FSTATS%" --interactive > "%TMPD%\\c105.txt" 2>nul
+if errorlevel 1 (set C105_OK=0) else (findstr /C:"Commande" "%TMPD%\\c105.txt" >nul && findstr /C:"--check" "%TMPD%\\c105.txt" >nul && set C105_OK=1 || set C105_OK=0)
+if "%C105_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive profil gate 'n' -^> exit 0 + commande) else (set /a FAIL+=1&echo FAIL: --interactive profil gate 'n' -^> exit 0 + commande)
+
+rem --- 106. fstats --interactive 'o' fail-if -> exit 2 propagé ------------------
+(echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 5&echo 40&echo words^>5&echo 0&echo o) | "%FSTATS%" --interactive >nul 2>nul
+if errorlevel 3 (set C106_OK=0) else if errorlevel 2 (set C106_OK=1) else (set C106_OK=0)
+if "%C106_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive fail-if words^>5 exécuté -^> exit 2) else (set /a FAIL+=1&echo FAIL: --interactive fail-if words^>5 exécuté -^> exit 2)
+
+rem --- 107. fcmd --exec lance fstats --------------------------------------------
+(echo 2&echo 1&echo f&echo tests\\fixtures\\alarms.log&echo 0) | "%FCMD%" --exec > "%TMPD%\\c107.txt" 2>nul
+if errorlevel 1 (set C107_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c107.txt" >nul && set C107_OK=1 || set C107_OK=0)
+if "%C107_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --exec profil log -^> fstats exécuté) else (set /a FAIL+=1&echo FAIL: fcmd --exec profil log -^> fstats exécuté)
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"

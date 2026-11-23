@@ -39,6 +39,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:TEMP/smoke" | Out-Null
           & (Join-Path $bin 'fpc.exe') -vt -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fstats.pas" 2>&1 | Select-Object -Last 15
           if ($LASTEXITCODE -ne 0) { throw "compilation smoke test echouee (exit $LASTEXITCODE)" }
+          # v2.13.0 : le compagnon fcmd compile aussi
+          & (Join-Path $bin 'fpc.exe') -vt -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fcmd.pas" 2>&1 | Select-Object -Last 15
+          if ($LASTEXITCODE -ne 0) { throw "compilation smoke test fcmd echouee (exit $LASTEXITCODE)" }
       - name: Lancer la suite de tests
         shell: cmd
         run: tests\run.bat
