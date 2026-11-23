@@ -28,7 +28,6 @@ procedure ExportJSON(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolea
 function BoolToJSON(B: Boolean): string;
 function BuildTopCharsJSON(const Stats: TStats; ShowAll: Boolean; TopLimit: Integer): string;
 function BuildTopWordsJSON(const Stats: TStats; ShowAll: Boolean; TopLimit: Integer): string;
-function BuildTopLinesJSON(const Stats: TStats; ShowAll: Boolean): string;
 function BuildTopLinesJSONRedact(const Stats: TStats; ShowAll: Boolean): string;
 function BuildHistogramJSON(const Stats: TStats): string;
 function BuildNGramsJSON(const Stats: TStats; ShowAll: Boolean; TopK: Integer): string;
@@ -900,25 +899,6 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
-  BuildTopLinesJSON : Tableau JSON compact des lignes les plus longues.
-  -----------------------------------------------------------------------------}
-function BuildTopLinesJSON(const Stats: TStats; ShowAll: Boolean): string;
-var
-  i, Limit: Integer;
-begin
-  Limit := EffectiveLimit(Length(Stats.TopLines), ShowAll, DEFAULT_TOP_LIMIT) - 1;
-  Result := '[';
-  for i := 0 to Limit do
-  begin
-    if i > 0 then Result := Result + ',';
-    Result := Result + '{"rank": ' + IntToStr(i + 1) +
-      ', "length": ' + IntToStr(Stats.TopLines[i].Len) +
-      ', "content": "' + JsonEscape(Stats.TopLines[i].Text) + '"}';
-  end;
-  Result := Result + ']';
-end;
-
-{-----------------------------------------------------------------------------
   BuildTopLinesJSONRedact : Comme BuildTopLinesJSON mais applique la redaction
   C3-A au contenu de chaque ligne si Stats.Redact <> [].
   -----------------------------------------------------------------------------}
@@ -1292,6 +1272,13 @@ begin
       Break;
     end;
   end;
+
+  { Passe 3a (v2.14.1, P2) : contre-mesure injection de formules CSV.
+    Excel/LibreOffice évaluent les cellules commençant par = + - @
+    (=HYPERLINK, DDE =cmd|'...'). On préfixe une apostrophe (pratique
+    OWASP) : la donnée reste lisible, la formule est neutralisée. }
+  if (Length(CleanS) > 0) and (CleanS[1] in ['=', '+', '-', '@']) then
+    CleanS := '''' + CleanS;
 
   { Passe 3 : échapper si nécessaire (RFC 4180) }
   if HasSpecial then

@@ -23,7 +23,7 @@ uses
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
-  CMDGEN_VERSION = '2.14.0';
+  CMDGEN_VERSION = '2.14.1';
   OPT_COUNT = 49;   // dont 1 entrée spéciale '' = fichiers positionnels
 
 type
@@ -368,20 +368,30 @@ begin
     WriteLn('Catégorie : 1=Fichiers 2=Analyse 3=Affichage 4=Sentinel 5=Checks 6=Export 7=Divers  0=terminer');
     Write('> ');
     if not ReadLineOrEOF(S) then Exit;
-    if not TryStrToInt(Trim(S), Cat) then Cat := 0;
+    // v2.14.1 (P2/UX) : une entrée non numérique ne QUITTE plus le wizard
+    // (bug M4 : une faute de frappe avalait la session entière).
+    S := Trim(S);
+    if S = '' then Continue;
+    if not TryStrToInt(S, Cat) then
+    begin
+      WriteLn('[?] entrez un numero de 0 a 7 (0 = terminer) - recu "', S, '"');
+      Continue;
+    end;
     if Cat = 0 then Break;
     if (Cat < 1) or (Cat > 7) then Continue;
     // liste les options de la catégorie avec leur état
+    // v2.14.1 (P2/UX) : le NUMÉRO GLOBAL (1-49) est affiché — c'est ce que
+    // le prompt demande (bug M3 : numéro invisible, essais-erreurs).
     WriteLn('--- ', CAT_NAMES[Cat], ' ---');
     for i := 1 to OPT_COUNT do
       if OPTS[i].Cat = Cat then
       begin
         if OPTS[i].Name = '' then
-          WriteLn('  [f] fichiers : ', OptValue(Tokens, ''))
+          WriteLn('  [ 1]', ' fichiers : ', OptValue(Tokens, ''))
         else if FindOpt(Tokens, OPTS[i].Name) >= 0 then
-          WriteLn('  [x] ', OPTS[i].Name, ' = ', OptValue(Tokens, OPTS[i].Name))
+          WriteLn('  [', i:2, '] ', OPTS[i].Name, ' = ', OptValue(Tokens, OPTS[i].Name), '  (actif)')
         else
-          WriteLn('  [ ] ', OPTS[i].Name);
+          WriteLn('  [', i:2, '] ', OPTS[i].Name);
       end;
     Write('N° de l''option à éditer (1-', OPT_COUNT, ', f=fichiers, 0=retour) : ');
     if not ReadLineOrEOF(S) then Exit;

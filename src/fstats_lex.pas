@@ -960,6 +960,10 @@ end;
 function DetectLogLevel(const S: string): TLogLevel;
 begin
   if ContainsWord(S, 'ERROR') then Exit(llError);
+  // v2.14.1 (P2) : WARNING = mot entier à part entière (log4j, Python,
+  // Node — le niveau warn le plus répandu du monde réel). WARN reste
+  // reconnu tel quel ; les autres niveaux inchangés (mot entier).
+  if ContainsWord(S, 'WARNING') then Exit(llWarn);
   if ContainsWord(S, 'WARN') then Exit(llWarn);
   if ContainsWord(S, 'INFO') then Exit(llInfo);
   if ContainsWord(S, 'DEBUG') then Exit(llDebug);

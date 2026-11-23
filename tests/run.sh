@@ -1035,6 +1035,26 @@ RC=$?
 if [ "$RC" -eq 1 ] && grep -q "refus" "$TMPDIR/s110.err" && diff -q "$TMPDIR/selfout.txt" "$TMPDIR/selfout.bak" > /dev/null; then OK=0; else OK=1; fi
 report "--out = fichier analysé -> exit 1, stderr, entrée INTACTE" $OK
 
+# --- 111. v2.14.1 (P2) : frontière de buffer 64 Ko — un caractère multi-octets
+# à cheval sur deux blocs ne doit PAS être compté invalid_utf8 ----------------
+head -c 65535 /dev/zero | tr '\0' 'a' > "$TMPDIR/utf8front.bin"
+printf '\303\251\n' >> "$TMPDIR/utf8front.bin"
+"$FSTATS" --summary-json "$TMPDIR/utf8front.bin" > "$TMPDIR/utf8front.json" 2>/dev/null
+if grep -q '"invalid_utf8": 0' "$TMPDIR/utf8front.json"; then OK=0; else OK=1; fi
+report "é à cheval sur la frontière 64 Ko -> invalid_utf8=0 (était 2)" $OK
+
+# --- 112. v2.14.1 (P2) : injection de formules CSV neutralisée -----------------
+printf 'user clicked\n=cmd|"/c calc"!A0 in log\nok\n' > "$TMPDIR/form.csv.log"
+"$FSTATS" --csv "$TMPDIR/form.csv.log" > "$TMPDIR/form.csv" 2>/dev/null
+if grep -q "'=cmd" "$TMPDIR/form.csv" && ! grep -q '"=cmd' "$TMPDIR/form.csv"; then OK=0; else OK=1; fi
+report "CSV : cellule =cmd... préfixée par apostrophe (anti-formule)" $OK
+
+# --- 113. v2.14.1 (P2) : WARNING reconnu comme niveau warn --------------------
+printf 'WARNING disk full\nWARN slow\nERROR bad\n' > "$TMPDIR/warn.log"
+"$FSTATS" --log-level "$TMPDIR/warn.log" > "$TMPDIR/warn.txt" 2>/dev/null
+if [ "$(grep -c 'Warn:' "$TMPDIR/warn.txt")" -ge 1 ] && grep -A1 'Warn:' "$TMPDIR/warn.txt" | grep -q '2'; then OK=0; else OK=1; fi
+report "--log-level : WARNING + WARN -> warn=2 (avant : 1)" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

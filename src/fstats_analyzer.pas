@@ -113,6 +113,8 @@ procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats;
 var
   Buffer: array[0..BUF_SIZE - 1] of Byte;
   ReadBytes, Pos, Used, i: Integer;
+  Carried, NRead, SeqLen, j: Integer;  // v2.14.1 : zone tampon inter-blocs
+  Trunc: Boolean;
   CP: UInt32;
   InWord: Boolean;
   IsWordChar: Boolean;
@@ -297,8 +299,22 @@ begin
 
   try
     // Boucle principale de lecture par blocs (fichier ou entrée standard)
+    Carried := 0;  // v2.14.1 : octets portés du bloc précédent
     repeat
-      ReadBytes := Stream.Read(Buffer, BUF_SIZE);
+      // v2.14.1 (P2, bug métrique) : lire APRÈS les octets portés. Avant,
+      // un caractère multi-octets à cheval sur la frontière du buffer 64 Ko
+      // était compté invalid_utf8 (2 faux positifs par caractère coupé) —
+      // un fichier UTF-8 valide échouait le gate CI selon son alignement.
+      NRead := Stream.Read(Buffer[Carried], BUF_SIZE - Carried);
+      ReadBytes := Carried + NRead;
+      if (NRead = 0) and (Carried > 0) then
+      begin
+        // Début de séquence orphelin en fin de fichier : chaque octet restant
+        // est réellement invalide (1 par octet, comme une séquence cassée).
+        Inc(Stats.InvalidUTF8, Carried);
+        Carried := 0;
+        Break;
+      end;
       Pos := 0;
 
       // Traitement octet par octet du buffer courant
@@ -307,6 +323,17 @@ begin
         // Décodage UTF-8 avec validation stricte
         if not DecodeUTF8(@Buffer[Pos], ReadBytes - Pos, CP, Used) then
         begin
+          // v2.14.1 : séquence TRONQUÉE par la fin de bloc ? L'octet de tête
+          // annonce plus d'octets qu'il n'en reste ET les octets présents
+          // sont des continuations valides -> ce n'est PAS une erreur :
+          // sortir du while, les octets seront portés au bloc suivant.
+          SeqLen := UTF8SeqLen(Buffer[Pos]);
+          Trunc := (SeqLen > 1) and (SeqLen > ReadBytes - Pos);
+          if Trunc then
+            for j := Pos + 1 to ReadBytes - 1 do
+              if (Buffer[j] and $C0) <> $80 then Trunc := False;
+          if Trunc then Break;
+
           // Caractère invalide : utiliser le caractère de remplacement
           CP := $FFFD;
           Used := 1;
@@ -529,7 +556,12 @@ begin
         if Length(LastChars) > 8 then
           LastChars := Copy(LastChars, Length(LastChars) - 7, 8);
       end;
-    until ReadBytes = 0;  // Fin du fichier
+      // v2.14.1 : porter le début de séquence tronqué en tête du prochain
+      // bloc (zone tampon). Move est sûr : le décalage va vers l'avant.
+      Carried := ReadBytes - Pos;
+      if Carried > 0 then
+        Move(Buffer[Pos], Buffer[0], Carried);
+    until NRead = 0;  // Fin du fichier
 
     // Traitement de la dernière ligne si le fichier ne termine pas par un saut de ligne
     if LineLen > 0 then
@@ -736,7 +768,7 @@ procedure WatchFile(const Path: string; IntervalSec: Integer; OptAll: Boolean;
                     const SOpts: TStructureOptions; const LOpts: TLogOptions);
 var
   Stats: TStats;
-  PrevLines, PrevWords, PrevChars, PrevSentences: Int64;
+  PrevLines: Int64;  // v2.14.1 : seul le delta lignes est affiche (precedents morts supprimes)
   PrevSize: Int64;
   FirstTick: Boolean;
   CurSize: Int64;
@@ -752,7 +784,7 @@ begin
   InstallWatchHandler;
   WriteLn('Watching: ', Path, ' (every ', IntervalSec, 's, Ctrl+C to stop)');
   Flush(Output);
-  PrevLines := -1; PrevWords := -1; PrevChars := -1; PrevSentences := -1;
+  PrevLines := -1;
   PrevSize := -1;
   FirstTick := True;
   while not WatchStop do
@@ -796,9 +828,6 @@ begin
       WriteLn(S);
       Flush(Output);
       PrevLines := Stats.LineCount;
-      PrevWords := Stats.WordCount;
-      PrevChars := Stats.CharCount;
-      PrevSentences := Stats.SentenceCount;
       PrevSize := CurSize;
     except
       on E: Exception do

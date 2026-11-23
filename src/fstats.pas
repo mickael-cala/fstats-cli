@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.14.0 (P1 securite : exec par argv, garde --out, redaction partout)
+  Version    : 2.14.1 (P2 : frontiere 64Ko, WARNING, CSV formules, gate no-op visible)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -190,7 +190,6 @@ var
   FilterLevels: TLogLevelSet;  // --filter=ERROR,WARN
   // Cible 3-C : alarm / tags
   RegexTag: string;            // --regex-tag=PATTERN
-  OptModeAlarm: Boolean;       // --mode=alarm
   // Cible 3-D : watch
   OptWatch: Boolean;           // --watch / --follow
   WatchInterval: Integer;      // --interval=N (défaut 2, min 1)
@@ -298,7 +297,6 @@ begin
   LOpts.FilterLevels := [];
   // Cible 3-C : défauts
   RegexTag := '';
-  OptModeAlarm := False;
   TopTagsLimit := DEFAULT_TOP_LIMIT;
   LOpts.RegexTag := '';
   LOpts.TopTagsLimit := DEFAULT_TOP_LIMIT;
@@ -847,7 +845,6 @@ begin
       // Cible 3-C : --mode=alarm (raccourci = --log-level + --top-lines + --regex-tag)
       else if (Param = '--mode=alarm') or (Param = '--mode:alarm') then
       begin
-        OptModeAlarm := True;
         OptLogLevel := True;
         if LOpts.TopLinesLimit = 0 then
         begin
@@ -1171,6 +1168,14 @@ begin
     // C2 (v2.6.0) : mode check implicite — --fail-if, --warn-if, --compare et
     // --fail-on-delta activent le mode check sans --check explicite.
     CheckMode := OptCheck or (Length(Checks) > 0) or (CompareFile <> '');
+
+    // v2.14.1 (P2) : un gate no-op doit être VISIBLE. Sans check défini,
+    // le mode check rend toujours exit 0 sans rien tester — footgun CI.
+    // Avertissement stderr uniquement (comportement/exit inchangés).
+    if CheckMode and (Length(Checks) = 0) then
+      WriteLn(ErrOutput, 'Attention: mode check actif sans aucun check defini ',
+              '(--fail-if / --warn-if / --fail-on-delta) : le gate ne teste rien.',
+              ' Ajoutez au moins un check ou retirez --check.');
 
     // --fail-on-delta sans --compare : erreur fatale — un check de dérive
     // n'a pas de base de comparaison sans baseline.

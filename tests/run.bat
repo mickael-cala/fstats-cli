@@ -1094,6 +1094,30 @@ findstr /C:"refus" "%TMPD%\\s110.err" >nul || set C110_OK=0
 fc /b "%TMPD%\\selfout.txt" "%TMPD%\\selfout.bak" >nul || set C110_OK=0
 if "%C110_OK%"=="1" (set /a PASS+=1&echo PASS: --out = fichier analyse -^> exit 1 + entree intacte) else (set /a FAIL+=1&echo FAIL: --out = fichier analyse -^> exit 1 + entree intacte)
 
+rem --- 111. v2.14.1 (P2) : frontiere 64 Ko — é à cheval = pas d'invalid_utf8 ----
+powershell -NoProfile -Command "$b=New-Object byte[] 65538; for($i=0;$i -lt 65535;$i++){$b[$i]=97}; $b[65535]=195; $b[65536]=169; $b[65537]=10; [IO.File]::WriteAllBytes('%TMPD%\utf8front.bin',$b)" >nul 2>nul
+"%FSTATS%" --summary-json "%TMPD%\utf8front.bin" > "%TMPD%\utf8front.json" 2>nul
+findstr /C:"\"invalid_utf8\": 0" "%TMPD%\utf8front.json" >nul && set C111_OK=1 || set C111_OK=0
+if "%C111_OK%"=="1" (set /a PASS+=1&echo PASS: frontiere 64 Ko -^> invalid_utf8=0) else (set /a FAIL+=1&echo FAIL: frontiere 64 Ko -^> invalid_utf8=0)
+
+rem --- 112. v2.14.1 (P2) : formules CSV neutralisees -----------------------------
+echo user clicked > "%TMPD%\form.csv.log"
+echo =cmd^|"/c calc"!A0 in log >> "%TMPD%\form.csv.log"
+echo ok >> "%TMPD%\form.csv.log"
+"%FSTATS%" --csv "%TMPD%\form.csv.log" > "%TMPD%\form.csv" 2>nul
+set C112_OK=0
+findstr /C:"'=cmd" "%TMPD%\form.csv" >nul && set C112_OK=1
+findstr /C:"""=cmd" "%TMPD%\form.csv" >nul && set C112_OK=0
+if "%C112_OK%"=="1" (set /a PASS+=1&echo PASS: CSV anti-formule ^('=cmd^)) else (set /a FAIL+=1&echo FAIL: CSV anti-formule)
+
+rem --- 113. v2.14.1 (P2) : WARNING reconnu comme warn ---------------------------
+echo WARNING disk full > "%TMPD%\warn.log"
+echo WARN slow >> "%TMPD%\warn.log"
+echo ERROR bad >> "%TMPD%\warn.log"
+"%FSTATS%" --log-level "%TMPD%\warn.log" > "%TMPD%\warn113.txt" 2>nul
+findstr /R /C:"Warn:.*2" "%TMPD%\warn113.txt" >nul && set C113_OK=1 || set C113_OK=0
+if "%C113_OK%"=="1" (set /a PASS+=1&echo PASS: WARNING + WARN -^> warn=2) else (set /a FAIL+=1&echo FAIL: WARNING + WARN -^> warn=2)
+
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul
