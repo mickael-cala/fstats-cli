@@ -3,6 +3,42 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.14.0 — P1 sécurité (2026-11-23)
+
+### 1. P1-1 : exécution par argv (plus de shell)
+
+`RunAndWait` (ligne de commande assemblée, `FpSystem` = `sh -c` sous Unix)
+remplacé par `RunArgs`/`RunTokens` (`SysUtils.ExecuteProcess` : fork/execve,
+CreateProcess — l'OS reçoit un argv, aucun métacaractère n'est interprété).
+Batterie wizard rejouée : 101-108 OK, exit 2 propagé (106), `--exec` OK (103b,
+107). `fcmd` isolé (sans fstats à côté) : refus explicite exit 1, plus de
+repli PATH silencieux. `CmdQuote` quotte les métacaractères pour l'affichage.
+
+### 2. P1-2 : garde --out
+
+Avant : `fstats f.txt --out=f.txt` → fichier vidé, exit 1 (perte de données).
+Après : `Erreur: --out (...) designe un fichier analyse (...) - refus`,
+exit 1, **fichier d'entrée intact** (vérifié par diff d'octets). Test 110.
+
+### 3. P1-3 : redaction sans fuite
+
+Avant : `--redact=email` sur un log contenant `jean.dupont@corp.example` →
+l'email sortait en clair dans le Top Words (`'jean.dupont@corp.example' 3`).
+Après : `'***'`. `RedactString` appliqué aux 11 points d'émission
+(console words, JSON words/ngrams/tags ×3 formats, CSV words/tags).
+Test 109 : grep `jean.dupont` = 0 occurrence sur console + JSON + CSV +
+summary-json. Tests 74-77 (longest_lines, déjà couverts avant) inchangés.
+
+### 4. Parité
+
+17/17 commandes identiques au binaire v2.11.0 (hors périmètre des
+correctifs). Seul diff voulu : avec `--redact`, un mot du Top Words
+contenant une URL masquée (`***` au lieu de
+`'https://internal.example.com...`). `--version` = `fstats 2.14.0`.
+Total tests : 112 vérifications (run.sh : 113 report dont 2 compiles).
+
+`--version` = `fstats 2.14.0`. Dogfood : exit 0.
+
 ## v2.13.1 — corrections P0 de l'audit croisé (2026-11-23)
 
 Audit croisé dev × cyber × UX (trois auditeurs indépendants, constats

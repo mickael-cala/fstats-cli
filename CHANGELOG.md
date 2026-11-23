@@ -6,6 +6,45 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.14.0] — 2026-11-23 — P1 sécurité (exécution par argv, garde --out, redaction sans fuite)
+
+Les trois chantiers P1 de l'audit sécurité (registre :
+`doc/AUDIT-SECURITE.md`), chaque correctif vérifié par un test dédié.
+
+### Corrigé
+- **Exécution par argv, jamais de shell** (P1-1) : le wizard exécutait sa
+  commande via `FpSystem` (`/bin/sh -c`) sous Unix, et ne quottait pas les
+  valeurs sans espaces → `;`, `` ` ``, `$(…)` dans une valeur saisie
+  exécutaient du code arbitraire. Remplacé par `SysUtils.ExecuteProcess`
+  (argv séparé : fork/execve, CreateProcess — aucun shell). La commande
+  **affichée** quotte désormais aussi les métacaractères (`& | < > ^ % !` /
+  `; $ \` ( ) …`). Limite documentée : `%VAR%` reste développé par cmd.exe
+  au collage (registre P2). `fcmd` refuse enfin le repli PATH silencieux
+  (un `fstats` quelconque du PATH ne peut plus être exécuté à la place).
+- **`--out` ne détruit plus le fichier d'entrée** (P1-2) : `Rewrite`
+  survenait avant l'analyse → `fstats f.txt --out=f.txt` vidait `f.txt`
+  de façon irréversible. Garde : refus (exit 1 + stderr) si `--out`
+  désigne un fichier analysé (chemins absolus comparés, casse ignorée
+  sous Windows).
+- **`--redact` sans fuite** (P1-3) : la redaction ne couvrait que
+  top-lines/longest-lines ; les emails/IPs sortaient en clair dans les
+  **Top Words**, n-grams et **tags** (console, JSON, CSV, summary).
+  `RedactString` est maintenant appliqué aux 11 points d'émission de
+  texte du fichier. Test 109 : l'email ne doit apparaître dans **aucune**
+  sortie (grep sur console + JSON + CSV + summary).
+
+### Ajouté
+- Tests 109 (anti-fuite redaction) et 110 (garde --out, entrée intacte
+  vérifiée par comparaison d'octets) dans `run.sh`/`run.bat` : 112
+  vérifications au total.
+
+### Vérifié
+- Parité 17/17 commandes vs v2.11.0 hors périmètre des correctifs
+  (seul diff voulu : avec `--redact`, un mot contenant une URL masquée).
+- Batterie wizard rejouée : 101-108 + fcmd isolé refuse le repli PATH.
+
+---
+
 ## [2.13.1] — 2026-11-23 — Corrections P0 (audit dev × cyber × UX)
 
 Corrections issues de l'audit croisé à trois auditeurs indépendants

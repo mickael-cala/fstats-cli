@@ -50,13 +50,13 @@ décennies de durcissement des bibliothèques éprouvées.
 | P0-4 | `fcmd --profil=log` promis mais non supporté | noms acceptés |
 | P0-5 | `--help` « ASCII pur » contenant un accent | normalisé |
 
-## 4. Statut P1 — sécurité, en cours 🟠
+## 4. Statut P1 — corrigé en v2.14.0 ✅
 
-| ID | Constat (vérifié) | Gravité | Plan |
+| ID | Constat (vérifié) | Gravité | Correction |
 |---|---|---|---|
-| P1-1 | **Injection shell Unix** : le wizard exécute la commande via `FpSystem` (`/bin/sh -c`) ; les valeurs sans espaces ne sont pas quotées → `;`, `` ` ``, `$(…)` exécutables | RCE | Exécuter via `SysUtils.ExecuteProcess` (argv, **jamais de shell**) ; élargir le quoting de la commande *affichée* (copier-coller) |
-| P1-2 | **`--out` détruit le fichier d'entrée** : ouvert en troncature *avant* l'analyse → `fstats f.txt --out=f.txt` vide le fichier, exit 1 | Perte de données | Garde : refus si `--out` ∈ fichiers analysés (chemins absolus comparés) |
-| P1-3 | **Fuite `--redact`** : la redaction ne couvre que top-lines/longest-lines ; Top Words, n-grams et tags sortent en clair (emails/IPs en bout de chaîne) | Divulgation | Choke-point : `RedactString` appliqué à **toute** émission de texte du fichier aux sorties + test anti-fuite (grep sur toutes les sorties) |
+| P1-1 | **Injection shell Unix** : le wizard exécutait la commande via `FpSystem` (`/bin/sh -c`) ; les valeurs sans espaces n'étaient pas quotées → `;`, `` ` ``, `$(…)` exécutables | RCE | `SysUtils.ExecuteProcess` (argv, **jamais de shell**) via `RunArgs`/`RunTokens` ; `CmdQuote` étendu aux métacaractères pour l'affichage ; `fcmd` refuse le repli PATH silencieux. Reste ouvert (P2) : `%VAR%` développé par cmd.exe au collage |
+| P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
+| P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
 ## 5. Statut P2 — backlog documenté 📋
 
@@ -127,3 +127,4 @@ par vagues. Synthèse priorisée :
 | Date | Version | Audit | Sortie |
 |---|---|---|---|
 | 2026-11-23 | v2.13.0 | dev × cyber × UX (3 agents + re-vérif manuelle) | P0 → v2.13.1 ; ce registre ; P1 lancé |
+| 2026-11-23 | v2.14.0 | — | P1-1/2/3 corrigés + tests 109/110 ; restes notés au §5/P2 |

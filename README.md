@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.13.1 · Free Pascal (mode objfpc) · MIT
+Version 2.14.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -220,7 +220,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 
 | Fichier | Contenu |
 |---|---|
-| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.13.1) |
+| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.14.0) |
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
