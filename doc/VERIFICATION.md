@@ -575,3 +575,203 @@ La §6.3 du ROADMAPFULL (detection de phrases) est traitee : decimales
 perimetre documente dans SEMANTIQUE.md). Le plan `--sentence-mode` a trois
 valeurs de la roadmap a ete simplifie a deux (`none` ecarte : ne pas
 compter les phrases n'apporte rien).
+
+---
+
+## 14. Cible 3-A — Log Sentinel : patterns, top-lines, redaction (v2.8.0)
+
+Date : 2026-11-23. Ajout de `--pattern=TEXTE` (littéral + `|` + `*`/`?`,
+insensible à la casse, occurrences non chevauchantes), `--top-lines=N`
+(lignes identiques groupées, top-K borné comme les n-grams) et
+`--redact=email,ipv4,url` (remplace par `***` dans les sorties seulement,
+compteurs sur le brut). Bump `FSTATS_VERSION` 2.7.0 → 2.8.0. Nouvelles
+fixtures `tests/fixtures/app.log` (9 lignes log avec niveaux ERROR/WARN/INFO,
+lignes dupliquées, email/IP/URL) et `tests/fixtures/redact.txt`.
+
+### 14.1 Compilation
+
+`fpc -O2 -Mobjfpc -FE. src\fstats.pas` : exit=0 (`5900 lines compiled`).
+
+### 14.2 Patterns (golden app.log)
+
+- `--pattern=ERROR` → `{"pattern":"ERROR","lines":4,"matches":4}` (4 lignes ERROR).
+- `--pattern='ERROR|WARN'` → 5 lignes / 5 matches (4 ERROR + 1 WARN, alternance).
+- `--pattern='*timeout*'` → 3/3 (wildcard des deux côtés, substring match).
+- `--pattern='*'` → 9/9 (toutes les lignes).
+- stdin : `echo -e "ERROR x\nINFO ok\nERROR y" | fstats - --summary-json --pattern=ERROR`
+  → `lines=2, matches=2`.
+
+### 14.3 Top-lines (golden app.log)
+
+- `--top-lines=2` → 2 entrées, top 1 = `2026-01-15 10:00:05 ERROR connection timeout to db.internal` (count=2),
+  top 2 = `2026-01-15 10:00:12 INFO health check OK` (count=2).
+- stdin `aaa\nbbb\naaa` + `--top-lines=5` → top 1 = `aaa` count=2.
+- Tri : fréquence décroissante, puis alphabétique (déterministe).
+
+### 14.4 Redaction (golden redact.txt)
+
+- `--redact=email,ipv4,url` → `longest_lines[0].content` =
+  `Contact *** or visit *** from ***` (email, URL, IPv4 masqués).
+- `--redact=email` seul → email masqué, `10.0.0.1` conservée.
+- `--redact=ipv4` seul → IPv4 masquée, email conservé.
+- `--redact=url` seul → URL masquée, email conservé.
+- Compteurs sur le brut : `characters=195` inchangé (la redaction n'affecte
+  que les sorties).
+
+### 14.5 Options invalides
+
+- `--redact=bogus` → exit 1, stderr `Erreur: --redact attend "email", "ipv4" ou "url"`.
+- `--top-lines=abc` → exit 1, stderr `--top-lines attend un entier >= 0`.
+- `--pattern=` (vide) → exit 1, stderr `--pattern : valeur vide`.
+
+### 14.6 Non-régression et ANSI
+
+- `test_fr.txt` : 3/13/72/3, moy 4, min/max/moy 16/30/23 (inchangé).
+- Sortie pipée `--pattern --top-lines --redact` : aucune séquence ANSI (ESC).
+- JSON C3-A complet parseable (patterns + top_lines + redact dans longest_lines).
+
+### 14.7 Suites automatisées
+
+`tests\run.bat` / `tests\run.sh` : 82 cas (67 existants + 15 nouveaux C3-A),
+`--version` attendu `2.8.0`. (Validation node non exécutée localement ici —
+node absent de l'environnement ; cas vérifiés manuellement un par un.)
+
+### Bilan
+
+C3-A satisfait les critères de ROADMAP-CIBLE3.md : matcher interne documenté
+(littéral + `|` + `*`/`?`, PAS une regex complète), top-lines borné (comme les
+n-grams), redaction post-comptage (compteurs sur le brut), exports console/JSON/
+CSV/summary-json, exit codes 0/1 conservés, ASCII pur en pipe. C3-B (niveaux),
+C3-C (alarm) et C3-D (watch) restent à venir.
+
+---
+
+## 15. Cible 3-B — niveaux de log + filtre (v2.9.0)
+
+Date : 2026-11-23. Ajout de `--log-level` (détection ERROR>WARN>INFO>DEBUG>TRACE,
+mot entier insensible à la casse, somme = lines) et `--filter=niveaux` (filtre
+l'affichage console des lignes, compteurs sur tout le fichier). Bump
+`FSTATS_VERSION` 2.8.0 → 2.9.0. Nouvelle fixture `tests/fixtures/levels.log`
+(8 lignes avec tous les niveaux + pièges ERRORS/mot entier).
+
+### 15.1 Compilation
+
+`fpc -O2 -Mobjfpc -FE. src\fstats.pas` : exit=0 (`~6060 lines compiled`).
+
+### 15.2 Niveaux (golden levels.log)
+
+`--log-level levels.log` → `error=2, warn=1, info=1, debug=1, trace=1, none=2`.
+- `ERRORS not a level word` → `none` (mot entier : ERRORS ≠ ERROR).
+- `error lowercase counts too` → `error` (insensible à la casse).
+- Somme = 8 = lines.
+
+`--log-level app.log` → `error=4, warn=1, info=4, debug=0, trace=0, none=0`,
+somme = 9 = lines.
+
+### 15.3 Priorité et mot entier (stdin)
+
+- `WARN then ERROR here` → `error=1, warn=0` (priorité ERROR > WARN).
+- `ERRORS everywhere` → `none=1` (pas de match mot entier).
+
+### 15.4 Filtre (console)
+
+- `--log-level --filter=error --top-lines=5 app.log` → Top Lines ne contient que
+  les lignes ERROR (rangs renumérotés 1, 2).
+- `--filter=error,warn levels.log` → ERROR + WARN affichés, pas INFO.
+- `--filter=bogus` → exit 1, stderr `--filter attend "error", ...`.
+- Compteurs globaux inchangés (lines=9 sur app.log malgré le filtre).
+
+### 15.5 Non-régression et ANSI
+
+- `test_fr.txt` : 3/13/72/3 (inchangé).
+- Sortie pipée `--log-level --filter` : aucune séquence ANSI.
+- JSON `log_levels` présent en pretty/NDJSON/summary-json ; lignes `loglevel` en CSV.
+
+### 15.6 Suites automatisées
+
+`tests\run.bat` / `tests\run.sh` : 90 cas (82 + 8 nouveaux C3-B), `--version`
+attendu `2.9.0`.
+
+### Bilan
+
+C3-B livré : détection de niveaux figée (mot entier, priorité, somme=lines),
+filtre d'affichage console, exports JSON/CSV/summary, non-régression OK.
+C3-C (alarm/SCADA) et C3-D (watch) restent à venir.
+
+---
+
+## 16. Cible 3-C — alarm : regex-tag + mode=alarm (v2.10.0)
+
+Date : 2026-11-23. Ajout du mini-moteur `--regex-tag=PATTERN` (littéral +
+classes `[...]` + quantifieurs `? * +`, extraction non chevauchante) et du
+raccourci `--mode=alarm` (= `--log-level` + `--top-lines` + `--regex-tag`
+avec défaut `[A-Z]+[0-9]+`). Bump `FSTATS_VERSION` 2.9.0 → 2.10.0. Nouvelle
+fixture `tests/fixtures/alarms.log` (9 lignes SCADA avec PLC1/MOTOR23/PLC2/SENSOR7).
+
+### 16.1 Compilation
+
+`fpc -O2 -Mobjfpc -FE. src\fstats.pas` : exit=0.
+
+### 16.2 Tags (golden alarms.log)
+
+- `--regex-tag='PLC[0-9]+'` → `PLC1` count=5, `PLC2` count=1.
+- `--regex-tag='[A-Z]+[0-9]+' --top-tags=10` → PLC1=5, MOTOR23=2, PLC2=1, SENSOR7=1.
+- `--top-tags=2` → exactement 2 entrées (PLC1, MOTOR23).
+- Quantifieur `+` : stdin `PLC sans chiffre\nPLC42 ok` → seul `PLC42` extrait.
+
+### 16.3 Mode alarm
+
+`--mode=alarm alarms.log` → `log_levels` (error=3, warn=2, info=3) +
+`top_lines` + `tags` (PLC1=5 en tête). Pattern défaut `[A-Z]+[0-9]+`.
+
+### 16.4 Options invalides
+
+`--top-tags=abc`, `--mode=bogus`, `--regex-tag=` (vide) → exit 1 + stderr.
+
+### 16.5 Non-régression
+
+- `test_fr.txt` : 3/13/72/3 (inchangé).
+- Sortie pipée `--mode=alarm` : aucune séquence ANSI.
+- 97 cas dans run.sh/run.bat, `--version` = `2.10.0`.
+
+### Bilan
+
+C3-C livré. C3-D (watch/follow en polling) reste à venir.
+
+---
+
+## 17. Cible 3-D — watch/follow en polling (v2.11.0) — **Cible 3 COMPLÈTE**
+
+Date : 2026-11-23. Ajout de `--watch`/`--follow` + `--interval=N` (défaut 2 s,
+min 1) : boucle de polling qui ré-analyse le fichier à chaque tick et affiche
+`[timestamp] lines=N (+delta) words=N chars=N sentences=N | error=… …`.
+Handler Ctrl+C cross-platform (SetConsoleCtrlHandler Windows / FpSignal
+SIGINT+TERM Linux) → arrêt propre exit 0. Bump `FSTATS_VERSION` 2.10.0 → 2.11.0.
+
+### 17.1 Watch (vérifié avec timeout 4 s, interval 1)
+
+`--watch --interval=1 --log-level app.log` → 5 statuts :
+`[ts] lines=9 (+0) words=65 chars=540 sentences=7 | error=4 warn=1 info=4 none=0`
+
+### 17.2 Delta positif (fichier qui grandit)
+
+Watch en arrière-plan + `echo "…ERROR new alarm on PLC9" >> watch_test.log`
+→ tick suivant : `lines=10 (+1) … error=5` (delta et niveau mis à jour).
+
+### 17.3 Restrictions
+
+- `--watch -` (stdin) → exit 1, stderr.
+- `--watch a.log b.log` (2 fichiers) → exit 1, stderr.
+- `--interval=0` → exit 1, stderr.
+
+### 17.4 Non-régression
+
+- `test_fr.txt` : 3/13/72/3 (inchangé). 100 cas dans run.sh/run.bat,
+  `--version` = `2.11.0`.
+
+### Bilan
+
+**Cible 3 complète** : C3-A (patterns/top-lines/redaction) + C3-B (log-level/
+filter) + C3-C (alarm/regex-tag) + C3-D (watch). fstats v2.11.0 = text profiler
++ quality gate + log sentinel, toujours mono-fichier (6 795 lignes), zéro
+dépendance, ASCII pur, exit codes stables.

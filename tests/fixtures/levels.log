@@ -1,0 +1,8 @@
+2026-01-15 10:00:01 INFO server started
+2026-01-15 10:00:02 DEBUG loading config from /etc/app.conf
+2026-01-15 10:00:03 TRACE entering main loop
+2026-01-15 10:00:04 WARN disk usage at 85%
+2026-01-15 10:00:05 ERROR connection refused by db
+2026-01-15 10:00:06 ERRORS not a level word (no match)
+2026-01-15 10:00:07 plain line without level
+2026-01-15 10:00:08 error lowercase counts too

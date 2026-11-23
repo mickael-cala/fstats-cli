@@ -128,8 +128,8 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.7.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.7.0) else (set /a PASS+=1&echo PASS: --version affiche 2.7.0)
+"%FSTATS%" --version | findstr /C:"2.11.0" >nul
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.11.0) else (set /a PASS+=1&echo PASS: --version affiche 2.11.0)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -690,8 +690,324 @@ goto :after67
 node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\smconsole.txt"
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --sentence-mode=smart sans sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --sentence-mode=smart sans sequence ANSI [ESC])
 :after67
+
+rem --- 68. C3-A : --pattern=ERROR sur app.log -> 4/4 -----------------------------
+"%FSTATS%" --summary-json --pattern=ERROR tests\fixtures\app.log > "%TMPD%\p68.json" 2>nul
+if "%NODE_OK%"=="1" goto :node68
+echo SKIP: p68 (node indisponible)
+goto :after68
+:node68
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].pattern==='ERROR'&&o.patterns[0].lines===4&&o.patterns[0].matches===4)?0:1);" < "%TMPD%\p68.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=ERROR app.log -^> lines=4 matches=4) else (set /a PASS+=1&echo PASS: --pattern=ERROR app.log -^> lines=4 matches=4)
+:after68
+
+rem --- 69. C3-A : alternance ERROR^|WARN -> 5/5 ----------------------------------
+"%FSTATS%" --summary-json "--pattern=ERROR|WARN" tests\fixtures\app.log > "%TMPD%\p69.json" 2>nul
+if "%NODE_OK%"=="1" goto :node69
+echo SKIP: p69 (node indisponible)
+goto :after69
+:node69
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].lines===5&&o.patterns[0].matches===5)?0:1);" < "%TMPD%\p69.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=ERROR^|WARN app.log -^> 5/5) else (set /a PASS+=1&echo PASS: --pattern=ERROR^|WARN app.log -^> 5/5)
+:after69
+
+rem --- 70. C3-A : wildcard *timeout* -> 3/3 --------------------------------------
+"%FSTATS%" --summary-json "--pattern=*timeout*" tests\fixtures\app.log > "%TMPD%\p70.json" 2>nul
+if "%NODE_OK%"=="1" goto :node70
+echo SKIP: p70 (node indisponible)
+goto :after70
+:node70
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].lines===3&&o.patterns[0].matches===3)?0:1);" < "%TMPD%\p70.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=*timeout* app.log -^> 3/3) else (set /a PASS+=1&echo PASS: --pattern=*timeout* app.log -^> 3/3)
+:after70
+
+rem --- 71. C3-A : wildcard * matche toutes les lignes ---------------------------
+"%FSTATS%" --summary-json "--pattern=*" tests\fixtures\app.log > "%TMPD%\p71.json" 2>nul
+if "%NODE_OK%"=="1" goto :node71
+echo SKIP: p71 (node indisponible)
+goto :after71
+:node71
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].lines===9&&o.patterns[0].matches===9)?0:1);" < "%TMPD%\p71.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=* app.log -^> 9/9) else (set /a PASS+=1&echo PASS: --pattern=* app.log -^> 9/9)
+:after71
+
+rem --- 72. C3-A : --top-lines=2 -> 2 entrees, top count=2 ------------------------
+"%FSTATS%" --summary-json --top-lines=2 tests\fixtures\app.log > "%TMPD%\p72.json" 2>nul
+if "%NODE_OK%"=="1" goto :node72
+echo SKIP: p72 (node indisponible)
+goto :after72
+:node72
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.top_lines.length===2&&o.top_lines[0].count===2)?0:1);" < "%TMPD%\p72.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --top-lines=2 app.log -^> 2 entrees top count=2) else (set /a PASS+=1&echo PASS: --top-lines=2 app.log -^> 2 entrees top count=2)
+:after72
+
+rem --- 73. C3-A : --top-lines sur stdin (aaa groupe count=2) ---------------------
+if "%NODE_OK%"=="1" goto :node73
+echo SKIP: p73 (node indisponible)
+goto :after73
+:node73
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--top-lines=5'],{input:'aaa\nbbb\naaa\n',encoding:'utf8'});var o=JSON.parse(r.stdout);if(o.top_lines.length===2&&o.top_lines[0].line==='aaa'&&o.top_lines[0].count===2){process.exit(0);}console.error('[cas73] '+JSON.stringify(o.top_lines));process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: stdin --top-lines=5 : aaa groupe count=2) else (set /a PASS+=1&echo PASS: stdin --top-lines=5 : aaa groupe count=2)
+:after73
+
+rem --- 74. C3-A : --redact=email,ipv4,url -> *** dans longest_lines --------------
+"%FSTATS%" --json --redact=email,ipv4,url tests\fixtures\redact.txt > "%TMPD%\p74.json" 2>nul
+if "%NODE_OK%"=="1" goto :node74
+echo SKIP: p74 (node indisponible)
+goto :after74
+:node74
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var c=o.longest_lines[0].content;process.exit((c.indexOf('***')>=0&&c.indexOf('admin@example.com')<0&&c.indexOf('10.0.0.1')<0&&c.indexOf('https://')<0)?0:1);" < "%TMPD%\p74.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --redact=email,ipv4,url redact.txt -^> *** dans longest_lines) else (set /a PASS+=1&echo PASS: --redact=email,ipv4,url redact.txt -^> *** dans longest_lines)
+:after74
+
+rem --- 75. C3-A : --redact=email seul --------------------------------------------
+"%FSTATS%" --json --redact=email tests\fixtures\redact.txt > "%TMPD%\p75.json" 2>nul
+if "%NODE_OK%"=="1" goto :node75
+echo SKIP: p75 (node indisponible)
+goto :after75
+:node75
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var c=o.longest_lines[0].content;process.exit((c.indexOf('***')>=0&&c.indexOf('admin@example.com')<0&&c.indexOf('10.0.0.1')>=0)?0:1);" < "%TMPD%\p75.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --redact=email seul -^> email masque IPv4 conservee) else (set /a PASS+=1&echo PASS: --redact=email seul -^> email masque IPv4 conservee)
+:after75
+
+rem --- 76. C3-A : --redact=ipv4 seul ---------------------------------------------
+"%FSTATS%" --json --redact=ipv4 tests\fixtures\redact.txt > "%TMPD%\p76.json" 2>nul
+if "%NODE_OK%"=="1" goto :node76
+echo SKIP: p76 (node indisponible)
+goto :after76
+:node76
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var c=o.longest_lines[0].content;process.exit((c.indexOf('***')>=0&&c.indexOf('10.0.0.1')<0&&c.indexOf('admin@example.com')>=0)?0:1);" < "%TMPD%\p76.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --redact=ipv4 seul -^> IPv4 masquee email conserve) else (set /a PASS+=1&echo PASS: --redact=ipv4 seul -^> IPv4 masquee email conserve)
+:after76
+
+rem --- 77. C3-A : --redact=url seul ----------------------------------------------
+"%FSTATS%" --json --redact=url tests\fixtures\redact.txt > "%TMPD%\p77.json" 2>nul
+if "%NODE_OK%"=="1" goto :node77
+echo SKIP: p77 (node indisponible)
+goto :after77
+:node77
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var c=o.longest_lines[0].content;process.exit((c.indexOf('***')>=0&&c.indexOf('https://')<0&&c.indexOf('admin@example.com')>=0)?0:1);" < "%TMPD%\p77.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --redact=url seul -^> URL masquee email conserve) else (set /a PASS+=1&echo PASS: --redact=url seul -^> URL masquee email conserve)
+:after77
+
+rem --- 78. C3-A : --redact=bogus -> exit 1 --------------------------------------
+if "%NODE_OK%"=="1" goto :node78
+set C78_OK=1
+goto :after78
+:node78
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--redact=bogus','tests/fixtures/redact.txt'],{encoding:'utf8'});if(r.status===1&&/redact/.test(r.stderr)){process.exit(0);}console.error('[cas78] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C78_OK=0) else (set C78_OK=1)
+:after78
+if "%C78_OK%"=="1" (set /a PASS+=1&echo PASS: --redact=bogus -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --redact=bogus -^> exit 1 + stderr)
+
+rem --- 79. C3-A : --top-lines=abc -> exit 1 --------------------------------------
+if "%NODE_OK%"=="1" goto :node79
+set C79_OK=1
+goto :after79
+:node79
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--top-lines=abc','tests/fixtures/app.log'],{encoding:'utf8'});if(r.status===1&&/top-lines/.test(r.stderr)){process.exit(0);}console.error('[cas79] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C79_OK=0) else (set C79_OK=1)
+:after79
+if "%C79_OK%"=="1" (set /a PASS+=1&echo PASS: --top-lines=abc -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --top-lines=abc -^> exit 1 + stderr)
+
+rem --- 80. C3-A : --pattern= (vide) -> exit 1 ------------------------------------
+if "%NODE_OK%"=="1" goto :node80
+set C80_OK=1
+goto :after80
+:node80
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--pattern=','tests/fixtures/app.log'],{encoding:'utf8'});if(r.status===1&&/pattern/.test(r.stderr)){process.exit(0);}console.error('[cas80] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C80_OK=0) else (set C80_OK=1)
+:after80
+if "%C80_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern= vide -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --pattern= vide -^> exit 1 + stderr)
+
+rem --- 81. C3-A : JSON complet parseable (patterns+top_lines+redact) -------------
+"%FSTATS%" --json --pattern=ERROR "--pattern=*timeout*" --top-lines=3 --redact=email,ipv4,url tests\fixtures\app.log > "%TMPD%\p81.json" 2>nul
+if "%NODE_OK%"=="1" goto :node81
+echo SKIP: p81 (node indisponible)
+goto :after81
+:node81
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns.length===2&&o.top_lines.length===3&&o.longest_lines[0].content.indexOf('***')>=0)?0:1);" < "%TMPD%\p81.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: JSON C3-A complet parseable) else (set /a PASS+=1&echo PASS: JSON C3-A complet parseable)
+:after81
+
+rem --- 82. C3-A : sortie pipee C3-A sans ANSI -----------------------------------
+"%FSTATS%" --pattern=ERROR --top-lines=5 --redact=email,ipv4,url tests\fixtures\app.log > "%TMPD%\p82.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node82
+echo SKIP: controle ANSI C3-A (node indisponible)
+goto :after82
+:node82
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\p82.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee C3-A : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee C3-A : aucune sequence ANSI [ESC])
+:after82
+
+rem --- 83. C3-B : --log-level levels.log -> 2/1/1/1/1/2 -------------------------
+"%FSTATS%" --summary-json --log-level tests\fixtures\levels.log > "%TMPD%\l83.json" 2>nul
+if "%NODE_OK%"=="1" goto :node83
+echo SKIP: l83 (node indisponible)
+goto :after83
+:node83
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var l=o.log_levels;process.exit((l.error===2&&l.warn===1&&l.info===1&&l.debug===1&&l.trace===1&&l.none===2)?0:1);" < "%TMPD%\l83.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --log-level levels.log -^> 2/1/1/1/1/2) else (set /a PASS+=1&echo PASS: --log-level levels.log -^> 2/1/1/1/1/2)
+:after83
+
+rem --- 84. C3-B : --log-level app.log -> 4/1/4 somme=9 ---------------------------
+"%FSTATS%" --summary-json --log-level tests\fixtures\app.log > "%TMPD%\l84.json" 2>nul
+if "%NODE_OK%"=="1" goto :node84
+echo SKIP: l84 (node indisponible)
+goto :after84
+:node84
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var l=o.log_levels;var s=l.error+l.warn+l.info+l.debug+l.trace+l.none;process.exit((l.error===4&&l.warn===1&&l.info===4&&s===o.lines)?0:1);" < "%TMPD%\l84.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --log-level app.log -^> 4/1/4 somme=lines) else (set /a PASS+=1&echo PASS: --log-level app.log -^> 4/1/4 somme=lines)
+:after84
+
+rem --- 85. C3-B : priorite ERROR^>WARN ------------------------------------------
+if "%NODE_OK%"=="1" goto :node85
+echo SKIP: l85 (node indisponible)
+goto :after85
+:node85
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--log-level'],{input:'WARN then ERROR here\n',encoding:'utf8'});var o=JSON.parse(r.stdout);process.exit((o.log_levels.error===1&&o.log_levels.warn===0)?0:1);" "%FSTATS%"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: priorite ERROR^>WARN) else (set /a PASS+=1&echo PASS: priorite ERROR^>WARN)
+:after85
+
+rem --- 86. C3-B : mot entier ERRORS=none ----------------------------------------
+if "%NODE_OK%"=="1" goto :node86
+echo SKIP: l86 (node indisponible)
+goto :after86
+:node86
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--log-level'],{input:'ERRORS everywhere\n',encoding:'utf8'});var o=JSON.parse(r.stdout);process.exit(o.log_levels.none===1?0:1);" "%FSTATS%"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: mot entier ERRORS=none) else (set /a PASS+=1&echo PASS: mot entier ERRORS=none)
+:after86
+
+rem --- 87. C3-B : --filter=error filtre Top Lines --------------------------------
+"%FSTATS%" --log-level --filter=error --top-lines=5 tests\fixtures\app.log > "%TMPD%\l87.txt" 2>nul
+findstr /C:"ERROR connection timeout" "%TMPD%\l87.txt" >nul && (findstr /C:"INFO health check" "%TMPD%\l87.txt" >nul && (set OK87=1) || (set OK87=0)) || set OK87=1
+if "%OK87%"=="0" (set /a PASS+=1&echo PASS: --filter=error : Top Lines que ERROR) else (set /a FAIL+=1&echo FAIL: --filter=error : Top Lines que ERROR)
+
+rem --- 88. C3-B : --filter=error,warn ---------------------------------------------
+"%FSTATS%" --log-level --filter=error,warn --top-lines=8 tests\fixtures\levels.log > "%TMPD%\l88.txt" 2>nul
+findstr /C:"ERROR" "%TMPD%\l88.txt" >nul && findstr /C:"WARN" "%TMPD%\l88.txt" >nul && (findstr /C:"INFO server" "%TMPD%\l88.txt" >nul && (set OK88=1) || (set OK88=0)) || set OK88=1
+if "%OK88%"=="0" (set /a PASS+=1&echo PASS: --filter=error,warn = ERROR+WARN pas INFO) else (set /a FAIL+=1&echo FAIL: --filter=error,warn = ERROR+WARN pas INFO)
+
+rem --- 89. C3-B : --filter=bogus -> exit 1 ---------------------------------------
+if "%NODE_OK%"=="1" goto :node89
+set C89_OK=1
+goto :after89
+:node89
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--filter=bogus','tests/fixtures/app.log'],{encoding:'utf8'});if(r.status===1&&/filter/.test(r.stderr)){process.exit(0);}console.error('[cas89] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C89_OK=0) else (set C89_OK=1)
+:after89
+if "%C89_OK%"=="1" (set /a PASS+=1&echo PASS: --filter=bogus -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --filter=bogus -^> exit 1 + stderr)
+
+rem --- 90. C3-B : sortie pipee log-level+filter sans ANSI -------------------------
+"%FSTATS%" --log-level --filter=error --top-lines=5 tests\fixtures\app.log > "%TMPD%\l90.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node90
+echo SKIP: controle ANSI C3-B (node indisponible)
+goto :after90
+:node90
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\l90.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee C3-B : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee C3-B : aucune sequence ANSI [ESC])
+:after90
+
+rem --- 91. C3-C : --regex-tag=PLC[0-9]+ -> PLC1=5 PLC2=1 -------------------------
+"%FSTATS%" --summary-json "--regex-tag=PLC[0-9]+" tests\fixtures\alarms.log > "%TMPD%\t91.json" 2>nul
+if "%NODE_OK%"=="1" goto :node91
+echo SKIP: t91 (node indisponible)
+goto :after91
+:node91
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.tags.length===2&&o.tags[0].tag==='PLC1'&&o.tags[0].count===5&&o.tags[1].tag==='PLC2')?0:1);" < "%TMPD%\t91.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --regex-tag=PLC[0-9]+ -^> PLC1=5 PLC2=1) else (set /a PASS+=1&echo PASS: --regex-tag=PLC[0-9]+ -^> PLC1=5 PLC2=1)
+:after91
+
+rem --- 92. C3-C : --mode=alarm active log-level+top-lines+tags -------------------
+"%FSTATS%" --summary-json --mode=alarm tests\fixtures\alarms.log > "%TMPD%\t92.json" 2>nul
+if "%NODE_OK%"=="1" goto :node92
+echo SKIP: t92 (node indisponible)
+goto :after92
+:node92
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.log_levels&&o.log_levels.error===3&&o.top_lines&&o.tags&&o.tags[0].tag==='PLC1'&&o.tags[0].count===5)?0:1);" < "%TMPD%\t92.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --mode=alarm -^> log-level+top-lines+tags) else (set /a PASS+=1&echo PASS: --mode=alarm -^> log-level+top-lines+tags)
+:after92
+
+rem --- 93. C3-C : --regex-tag=[A-Z]+[0-9]+ extrait tous les tags ------------------
+"%FSTATS%" --summary-json "--regex-tag=[A-Z]+[0-9]+" --top-tags=10 tests\fixtures\alarms.log > "%TMPD%\t93.json" 2>nul
+if "%NODE_OK%"=="1" goto :node93
+echo SKIP: t93 (node indisponible)
+goto :after93
+:node93
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));var t=o.tags.map(function(x){return x.tag;});process.exit((t.indexOf('PLC1')>=0&&t.indexOf('MOTOR23')>=0&&t.indexOf('SENSOR7')>=0)?0:1);" < "%TMPD%\t93.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: [A-Z]+[0-9]+ -^> PLC1/MOTOR23/SENSOR7) else (set /a PASS+=1&echo PASS: [A-Z]+[0-9]+ -^> PLC1/MOTOR23/SENSOR7)
+:after93
+
+rem --- 94. C3-C : --top-tags=2 limite a 2 entrees --------------------------------
+"%FSTATS%" --summary-json "--regex-tag=[A-Z]+[0-9]+" --top-tags=2 tests\fixtures\alarms.log > "%TMPD%\t94.json" 2>nul
+if "%NODE_OK%"=="1" goto :node94
+echo SKIP: t94 (node indisponible)
+goto :after94
+:node94
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.tags.length===2&&o.tags[0].tag==='PLC1'&&o.tags[1].tag==='MOTOR23')?0:1);" < "%TMPD%\t94.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --top-tags=2 -^> 2 tags) else (set /a PASS+=1&echo PASS: --top-tags=2 -^> 2 tags)
+:after94
+
+rem --- 95. C3-C : quantifieur + (PLC seul non extrait) --------------------------
+if "%NODE_OK%"=="1" goto :node95
+echo SKIP: t95 (node indisponible)
+goto :after95
+:node95
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['-','--summary-json','--regex-tag=PLC[0-9]+'],{input:'PLC sans chiffre\nPLC42 ok\n',encoding:'utf8'});var o=JSON.parse(r.stdout);process.exit((o.tags.length===1&&o.tags[0].tag==='PLC42')?0:1);" "%FSTATS%"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: quantifieur + PLC42 seul) else (set /a PASS+=1&echo PASS: quantifieur + PLC42 seul)
+:after95
+
+rem --- 96. C3-C : options invalides -> exit 1 -----------------------------------
+if "%NODE_OK%"=="1" goto :node96
+set C96_OK=1
+goto :after96
+:node96
+node -e "var cp=require('child_process');function chk(a){var r=cp.spawnSync(process.argv[1],a,{encoding:'utf8'});return r.status===1;}if(chk(['--top-tags=abc','tests/fixtures/alarms.log'])&&chk(['--mode=bogus','tests/fixtures/alarms.log'])&&chk(['--regex-tag=','tests/fixtures/alarms.log'])){process.exit(0);}process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C96_OK=0) else (set C96_OK=1)
+:after96
+if "%C96_OK%"=="1" (set /a PASS+=1&echo PASS: --top-tags=abc / --mode=bogus / --regex-tag= vide -^> exit 1) else (set /a FAIL+=1&echo FAIL: options C3-C invalides -^> exit 1)
+
+rem --- 97. C3-C : sortie pipee --mode=alarm sans ANSI -----------------------------
+"%FSTATS%" --mode=alarm tests\fixtures\alarms.log > "%TMPD%\t97.txt" 2>nul
+if "%NODE_OK%"=="1" goto :node97
+echo SKIP: controle ANSI C3-C (node indisponible)
+goto :after97
+:node97
+node -e "var b=require('fs').readFileSync(0);process.exit(b.indexOf(27)<0?0:1);" < "%TMPD%\t97.txt"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie pipee --mode=alarm : aucune sequence ANSI [ESC]) else (set /a PASS+=1&echo PASS: sortie pipee --mode=alarm : aucune sequence ANSI [ESC])
+:after97
+
+rem --- 98. C3-D : --watch demarre (timeout via node spawnSync avec kill apres 3s) ---
+if "%NODE_OK%"=="1" goto :node98
+echo SKIP: w98 (node indisponible)
+goto :after98
+:node98
+node -e "var cp=require('child_process');var r=cp.spawn(process.argv[1],['--watch','--interval=1','--log-level','tests/fixtures/app.log'],{encoding:'utf8'});var out='';r.stdout.on('data',function(d){out+=d;});setTimeout(function(){r.kill();var lines=out.split('\n');var statuts=lines.filter(function(l){return l.indexOf('lines=')>=0;});if(out.indexOf('Watching:')>=0&&statuts.length>=2&&out.indexOf('error=4')>=0){process.exit(0);}console.error('[cas98] out='+out);process.exit(1);},3500);" "%FSTATS%"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --watch demarre et affiche >=2 statuts) else (set /a PASS+=1&echo PASS: --watch demarre et affiche >=2 statuts)
+:after98
+
+rem --- 99. C3-D : --watch + stdin -> exit 1 ---------------------------------------
+if "%NODE_OK%"=="1" goto :node99
+set C99_OK=1
+goto :after99
+:node99
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--watch','-'],{encoding:'utf8'});if(r.status===1&&/watch/.test(r.stderr)){process.exit(0);}console.error('[cas99] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C99_OK=0) else (set C99_OK=1)
+:after99
+if "%C99_OK%"=="1" (set /a PASS+=1&echo PASS: --watch - stdin -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --watch - stdin -^> exit 1 + stderr)
+
+rem --- 100. C3-D : --interval=0 -> exit 1 -----------------------------------------
+if "%NODE_OK%"=="1" goto :node100
+set C100_OK=1
+goto :after100
+:node100
+node -e "var cp=require('child_process');var r=cp.spawnSync(process.argv[1],['--watch','--interval=0','tests/fixtures/app.log'],{encoding:'utf8'});if(r.status===1&&/interval/.test(r.stderr)){process.exit(0);}console.error('[cas100] exit='+r.status);process.exit(1);" "%FSTATS%"
+if errorlevel 1 (set C100_OK=0) else (set C100_OK=1)
+:after100
+if "%C100_OK%"=="1" (set /a PASS+=1&echo PASS: --interval=0 -^> exit 1 + stderr) else (set /a FAIL+=1&echo FAIL: --interval=0 -^> exit 1 + stderr)
+
 echo.
-echo RESULTAT : %PASS% reussi, %FAIL% echec(s)
+echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul
 if "%FAIL%"=="0" exit /b 0
 exit /b 1

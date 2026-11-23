@@ -1,5 +1,9 @@
 # Roadmap Cible 3 — Log Sentinel
 
+Statut : **COMPLÈTE — C3-A v2.8.0 + C3-B v2.9.0 + C3-C v2.10.0 + C3-D v2.11.0
+(2026-11-23, 100 tests)** — patterns, top-lines, redaction, niveaux, filtre,
+alarm/tags, watch/follow.
+
 Positionnement : `fstats` surveille les logs applicatifs et SCADA/PLC :
 niveaux, top messages, patterns, redaction, watch. Sortie NDJSON pour
 pipelines/Grafana.
@@ -39,39 +43,44 @@ compteur.
 
 ## Incréments
 
-### C3-A — Patterns & top messages
+### C3-A — Patterns & top messages — **LIVRÉ (v2.8.0)**
 
 - `--pattern=TEXTE` (répétable, littéral) ; alternance `A|B` ; wildcards
-  `*`/`?` (matcher interne documenté, PAS une regex complète).
-- `--top-lines=N` : regroupe les lignes identiques (count + exemple tronqué).
+  `*`/`?` (matcher interne documenté, PAS une regex complète). ✅
+- `--top-lines=N` : regroupe les lignes identiques (count + exemple tronqué),
+  top-K borné comme les n-grams. ✅
 - `--redact=email,ipv4,url` : remplace par `***` **dans les sorties seulement**
-  (les compteurs restent calculés sur le texte brut).
-- JSON : `patterns: [{pattern, matches, lines}]`, `top_lines: [{rank, count, line}]`.
+  (les compteurs restent calculés sur le texte brut). ✅
+- JSON : `patterns: [{pattern, matches, lines}]`, `top_lines: [{rank, count, line}]`. ✅
+- Console : sections `Patterns` et `Top Lines`. CSV : lignes `pattern`/`topline`.
+  `--summary-json` : clés plates `patterns`/`top_lines`.
 
-### C3-B — Niveaux
+### C3-B — Niveaux — **LIVRÉ (v2.9.0)**
 
 - `--log-level` : détecte ERROR/WARN/INFO/DEBUG/TRACE (mot entier insensible à
-  la casse, priorité dans cet ordre, sémantique documentée : n'importe où dans
-  la ligne).
-- Comptage par niveau + `none` (lignes sans niveau).
-- `--filter=ERROR[,WARN]` : ne conserve que les lignes de ces niveaux
-  (avec `--log-level`).
-- JSON : `log_levels: {error: N, warn: N, info: N, debug: N, trace: N, none: N}`.
+  la casse, priorité dans cet ordre, n'importe où dans la ligne). ✅
+- Comptage par niveau + `none` (lignes sans niveau). Somme des 6 = `lines`. ✅
+- `--filter=error,warn,...` : filtre l'affichage console des lignes
+  (`Top Lines`, `Longest Lines`), compteurs globaux sur tout le fichier. ✅
+- JSON : `log_levels: {error: N, warn: N, info: N, debug: N, trace: N, none: N}`. ✅
+- Console : section `Log Levels`. CSV : lignes `type=loglevel`.
 
-### C3-C — Alarm/SCADA v1
+### C3-C — Alarm/SCADA v1 — **LIVRÉ (v2.10.0)**
 
-- `--mode=alarm` : raccourci = `--log-level` + `--top-lines` + `--regex-tag`.
-- `--regex-tag=PATTERN` (subset : identifiants type `TAG[0-9]+`, classes
-  simples) : extrait et compte les tags.
-- Sortie JSON : par sévérité + top tags (cf. roadmap §7.4, sans timestamps).
+- `--mode=alarm` : raccourci = `--log-level` + `--top-lines` + `--regex-tag`. ✅
+- `--regex-tag=PATTERN` (subset : littéraux + classes `[...]` + `? * +`) :
+  extrait et compte les tags (ex. `PLC[0-9]+`). ✅
+- `--top-tags=N` : borne du top des tags (défaut 10). ✅
+- Sortie JSON : `log_levels` + `tags` (sans timestamps, comme prévu). ✅
 
-### C3-D — Watch (polling)
+### C3-D — Watch (polling) — **LIVRÉ (v2.11.0)**
 
 - `--watch` / `--follow`, `--interval=N` (défaut 2 s, min 1 s) : résumé
-  périodique (lignes, niveaux, erreurs, dernière MAJ).
-- Suivi de position : ne relit que les octets ajoutés ; fichier tronqué =
-  repart de zéro.
-- Console ASCII uniquement ; erreurs sur stderr ; exit 0 tant que lisible.
+  périodique (lignes, niveaux, delta, timestamp). ✅
+- v1 : ré-analyse complète à chaque tick (l'incrémental octet à octet est une
+  optimisation future, documentée) ; fichier tronqué → marqueur `[TRUNCATED]`. ✅
+- Console ASCII, Flush temps réel, erreurs sur stderr, Ctrl+C → exit 0. ✅
+- Restreint à UN fichier (stdin/multi-fichiers → exit 1). ✅
 
 ## Sémantique à figer
 
@@ -104,5 +113,5 @@ compteur.
 
 ## Décision
 
-Ordre : **C3-A → C3-B → C3-C → C3-D**. C3-D peut être repoussé si le polling
-est jugé secondaire.
+Ordre : **C3-A ✅ → C3-B ✅ → C3-C ✅ → C3-D ✅ — CIBLE 3 COMPLÈTE (v2.11.0,
+100 tests).**

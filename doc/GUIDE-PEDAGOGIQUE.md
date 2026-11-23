@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.7.0`.
+Doit afficher quelque chose comme `fstats 2.11.0`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -202,6 +202,104 @@ ou plus), et un score de 0 à 100 (plus c'est haut, plus c'est facile à lire).
 C'est une approximation **sans syllabes** — pas un Flesch-Kincaid exact — mais
 suffisante pour comparer deux versions d'un texte entre elles.
 
+### Analyser des logs (patterns, lignes répétées, redaction)
+
+```
+fstats --pattern='ERROR|WARN' --top-lines=5 app.log
+```
+
+```
+Patterns
+--------
+  Pattern                   Lines  Matches
+  'ERROR|WARN'                  5        5
+
+Top Lines
+---------
+  #  Count  Line
+   1      2  2026-01-15 10:00:05 ERROR connection timeout to db.internal
+   2      2  2026-01-15 10:00:12 INFO health check OK
+```
+
+- `--pattern=TEXTE` : cherche le texte dans chaque ligne (`*` = n'importe quoi,
+  `?` = un caractère, `|` = « ou »). Compte les lignes touchées et le total
+  d'occurrences. On peut en mettre plusieurs.
+- `--top-lines=N` : regroupe les lignes **identiques** et montre les N plus
+  fréquentes (pratique pour repérer les messages qui reviennent en boucle).
+- `--redact=email,ipv4,url` : remplace les emails, IPs et URLs par `***` dans
+  l'affichage (les compteurs, eux, restent sur le texte brut).
+- `--log-level` : compte les lignes par niveau (`ERROR`, `WARN`, `INFO`,
+  `DEBUG`, `TRACE` — mot entier, insensible à la casse) :
+
+```
+fstats --log-level app.log
+```
+
+```
+Log Levels
+----------
+  Error:               4
+  Warn:                1
+  Info:                4
+  Debug:               0
+  Trace:               0
+  None:                0
+```
+
+- `--filter=error,warn` : n'affiche (dans `Top Lines` / `Longest Lines`) que les
+  lignes de ces niveaux. Les compteurs, eux, portent toujours sur tout le fichier.
+
+```
+fstats --log-level --filter=error --top-lines=5 app.log
+```
+
+### Mode alarm (SCADA / automates)
+
+```
+fstats --mode=alarm alarms.log
+```
+
+C'est un raccourci qui active trois choses d'un coup : les niveaux
+(`--log-level`), les lignes répétées (`--top-lines`) et l'extraction de
+**tags** (`--regex-tag`, pattern par défaut `[A-Z]+[0-9]+` qui attrape
+`PLC1`, `MOTOR23`, `TAG007`…) :
+
+```
+Log Levels
+----------
+  Error:               3
+  Warn:                2
+  Info:                3
+
+Tags
+----
+  #  Count  Tag
+   1      5  PLC1
+   2      2  MOTOR23
+   3      1  PLC2
+```
+
+On peut aussi cibler un tag précis : `--regex-tag='PLC[0-9]+'` n'extrait que
+les `PLC…`. Le mini-moteur accepte les classes `[0-9]`, `[A-Z]`… et les
+quantifieurs `?` `*` `+` (ce n'est pas une regex complète, c'est documenté).
+
+### Surveiller un log en direct (watch)
+
+```
+fstats --watch --interval=2 --log-level app.log
+```
+
+```
+Watching: app.log (every 2s, Ctrl+C to stop)
+[2026-11-23 19:55:44] lines=9 words=65 chars=540 sentences=7 | error=4 warn=1 info=4 none=0
+[2026-11-23 19:55:46] lines=10 (+1) words=72 chars=584 sentences=7 | error=5 warn=1 info=4 none=0
+```
+
+Toutes les 2 secondes, fstats ré-analyse le fichier et affiche un résumé avec
+le **delta** de lignes depuis le dernier affichage (`+1` quand une ligne a été
+ajoutée). `Ctrl+C` arrête proprement (code 0). Ça ne marche que sur **un seul
+fichier** (pas sur stdin).
+
 ### Vérifier la qualité automatiquement (pour la CI)
 
 `fstats` peut jouer le rôle de **garde-fou** : des checks sur des seuils, avec
@@ -327,7 +425,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.7.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -340,7 +438,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.7.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -438,7 +536,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.7.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient
@@ -465,8 +563,10 @@ Les détails techniques des schémas (champs exacts, modes `ndjson`/`array`/
 
 | Code | Signification | Exemple |
 |---|---|---|
-| `0` | tout s'est bien passé | `fstats test.txt` |
+| `0` | tout s'est bien passé (ou tous les checks passent) | `fstats test.txt` |
 | `1` | une erreur est survenue | fichier inexistant, option inconnue, glob sans résultat… |
+| `2` | mode check : au moins un `--fail-if` a échoué | `fstats --check --fail-if lines>100 test.txt` |
+| `3` | mode check : aucun échec, mais au moins un `--warn-if` déclenché | `fstats --check --warn-if lines>2 test.txt` |
 
 Les erreurs sont écrites sur **stderr** avec un message explicite, la sortie
 normale (les données) sur **stdout** : tu peux rediriger l'une sans l'autre.
@@ -489,6 +589,14 @@ normale (les données) sur **stdout** : tu peux rediriger l'une sans l'autre.
 - Le mode `smart` (`--sentence-mode=smart`) ne reconnaît qu'une **liste
   figée** d'abréviations et les URLs avec `://` — pas toutes les
   abréviations imaginables.
+- `--regex-tag` est un **mini-moteur** (littéral + classes `[0-9]`… +
+  quantifieurs `? * +`), pas une regex complète.
+- `--top-lines` / `--top-tags` : top-K approximatif sur très gros logs
+  (mémoire bornée, comme les n-grams).
+- La redaction (`--redact`) s'applique aux **sorties seulement** : les
+  compteurs (`words`, `characters`…) sont toujours calculés sur le texte brut.
+- `--watch` (v1) ré-analyse le fichier **en entier** à chaque tick ; ce n'est
+  pas un suivi octet à octet incrémental.
 
 Dans 95 % des cas — fichiers normaux, textes de taille raisonnable — les
 résultats sont exacts et fiables.

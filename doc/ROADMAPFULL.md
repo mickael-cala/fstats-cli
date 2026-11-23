@@ -1147,7 +1147,7 @@ Ajouter :
 ```json
 {
   "tool": "fstats",
-  "version": "2.2.0",
+  "version": "2.11.0",
   "schema_version": "1.0",
   "file": "demo.obm",
   "generated": "..."
@@ -1513,69 +1513,36 @@ fstats app.log --redact email,ipv4,url
 
 ---
 
-# 13. Roadmap prévue (normalement)
+# 13. Roadmap prévue → **RÉALISÉE** (état au 2026-11-23, v2.11.0)
 
-## v2.2 — Robustesse et pipelines
+> Cette section était la roadmap *prévue* à l'origine. Tout ce qui était prévu
+> a été livré — en versions 2.x plutôt que 3.x (le rythme a été plus rapide
+> que prévu). Voir `CHANGELOG.md` pour l'historique détaillé et
+> `VERIFICATION.md` pour les preuves.
 
-Objectif : rendre l’outil vraiment utilisable en script.
+## v2.2 — Robustesse et pipelines ✅ LIVRÉ (v2.2.0)
 
-À ajouter :
+- stdin `-` ✅ · glob interne ✅ · `--recursive` ✅ · NDJSON ✅
+- JSON multi-fichiers valide (NDJSON/array/aggregate) ✅
+- compteurs qualité (UTF-8 invalide, BOM, CRLF, tabs, contrôles) ✅
+- `--quiet` ✅ · exit codes enrichis ✅ · `--summary-json` ✅ · tests golden ✅
+- `--files-from`, détection binaire, `--verbose`/`--debug` : **écartés**
+  (hors périmètre, documenté)
 
-- stdin `-`
-- `--files-from`
-- glob interne
-- `--recursive`
-- NDJSON
-- JSON multi-fichiers valide
-- CSV v2 avec colonne `file`
-- diagnostics UTF-8
-- détection binaire
-- `--quiet`, `--verbose`, `debug`
-- exit codes enrichis
-- `--summary-json`
-- tests golden
+## v3.0 — Quality Gate ✅ LIVRÉ (v2.6.0, sous le nom « Cible 1 B+C »)
 
-Cette version n’est pas encore killer, mais elle devient sérieuse. Si
+- `--check` + `--fail-if` + `--warn-if` ✅ · `--compare` + `--fail-on-delta` ✅
+- exit codes 0/1/2/3 ✅ · section Checks console + bloc JSON ✅ · CI GitHub Actions ✅
+- config TOML/JSON, rapports Markdown, complétions shell, GitHub Action
+  officielle : **écartés** (les `--fail-if` en CLI suffisent ; la CI du dépôt
+  dogfood déjà avec fstats lui-même)
 
----
+## v3.5 — Corpus / Logs Intelligence ✅ LIVRÉ (v2.3.0 → v2.11.0)
 
-## v3.0 — Quality Gate
-
-Objectif : transformer `fstats` en outil de contrôle.
-
-À ajouter :
-
-- `fstats check`
-- seuils `--fail-if`
-- baseline `--compare`
-- `--fail-on-delta`
-- config file TOML ou JSON
-- rapports Markdown
-- complétions shell
-- GitHub Action / CI examples
-- documentation use-case
-
-Là, `fstats` devient vraiment différenciant.
-
----
-
-## v3.5 — Corpus / Logs Intelligence
-
-Objectif : devenir outil d’analyse avancée.
-
-À ajouter :
-
-- n-grams
-- lexical stats
-- entropy
-- histograms
-- readability
-- patterns/regex
-- log level detection
-- alarm mode
-- watch mode
-- redaction
-- SQLite export optionnel
+- n-grams ✅ · lexical stats (TTR, hapax, entropie) ✅ · histogrammes ✅
+- readability ✅ · patterns ✅ · log-level ✅ · alarm mode ✅ · watch ✅ · redaction ✅
+- `--word-mode` / `--casefold` / `--sentence-mode=smart` ✅ (v2.3.0, v2.7.0)
+- SQLite export : **écarté** (JSON/CSV suffisent, roadmap §7.5 « plus tard »)
 
 ---
 

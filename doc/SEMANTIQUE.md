@@ -1,6 +1,6 @@
 # Spécification technique — sémantique figée et formats de sortie
 
-> Document de référence de `fstats` (v2.4.0). La sémantique décrite ici est
+> Document de référence de `fstats` (v2.11.0). La sémantique décrite ici est
 > **figée** : elle ne changera pas dans les versions futures sans annonce
 > explicite. Pour la prise en main, voir le
 > [guide pédagogique](GUIDE-PEDAGOGIQUE.md) ; pour la vue d'ensemble, le
@@ -101,7 +101,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.4.0",
+  "version": "2.11.0",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -138,8 +138,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -160,7 +160,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.4.0",
+  "version": "2.11.0",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -173,7 +173,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.4.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Avec `--lexical-stats`, `--summary-json` ajoute (toujours à plat) les clés
@@ -557,6 +557,127 @@ au README.
 Comme les n-grams, la lisibilité **n'est pas agrégée** dans
 `--json-mode=aggregate` (présente par fichier uniquement — limitation
 assumée et documentée dans le code).
+
+## Sémantique Log Sentinel (v2.8.0, Cible 3-A)
+
+### Patterns (`--pattern=TEXTE`)
+
+- **Matcher interne** (PAS une regex complète) : littéral + `|` (alternance) +
+  `*` (n'importe quelle suite, séparateurs compris) + `?` (exactement un
+  caractère). Insensible à la casse (UpCase ASCII, comme le glob Windows).
+- **Occurrences non chevauchantes**, recherchées de gauche à droite dans chaque
+  ligne. Une ligne contribue à `lines` si elle contient au moins un match, et
+  à `matches` du nombre total d'occurrences.
+- Le matching s'effectue sur la ligne telle que construite en interne
+  (`VisualChar` appliqué : les contrôles deviennent `\t`, `[CTRL]`…).
+- Répétable : chaque `--pattern` produit une entrée distincte dans `patterns`.
+- JSON : `"patterns": [{"pattern": "...", "lines": N, "matches": M}, ...]`.
+  Console : section `Patterns`. CSV : lignes `type=pattern` (`value`=pattern,
+  `count`=matches, `length`=lines). `--summary-json` : clé plate `patterns`.
+
+### Top lignes identiques (`--top-lines=N`)
+
+- Regroupe les lignes **identiques** (comparaison exacte de la chaîne interne)
+  et conserve les N plus fréquentes (défaut 10 ; `0` = tous ; option absente =
+  section désactivée). Tri décroissant par fréquence, puis alphabétique pour
+  les égalités (déterminisme).
+- **Mémoire bornée** comme les n-grams : quand le dictionnaire dépasse
+  `max(8×N, 64)` entrées, il est réduit au top-N (les lignes rares écartées en
+  cours de route sont perdues — approximation documentée, exacte sur les petits
+  corpus).
+- JSON : `"top_lines": [{"rank": r, "count": c, "line": "..."}, ...]`.
+  Console : section `Top Lines`. CSV : lignes `type=topline` (`rank`, `value`=ligne,
+  `count`). `--summary-json` : clé plate `top_lines`.
+- Non agrégé en `--json-mode=aggregate` (comme les n-grams et la lisibilité) :
+  présent par fichier uniquement.
+
+### Redaction (`--redact=email,ipv4,url`)
+
+- Liste séparée par des virgules, répétable. Chaque mode remplace les
+  occurrences trouvées par `***` **dans les sorties uniquement** (console,
+  JSON, CSV) — les compteurs (`words`, `characters`, `lines`…) restent calculés
+  sur le **texte brut** (documenté, testé).
+- **email** : `partie-locale@domaine.tld` avec au moins un point dans le domaine
+  et des caractères `[A-Za-z0-9._+-]` pour la partie locale.
+- **ipv4** : 4 groupes de 1-3 chiffres séparés par `.`, non suivis d'un chiffre
+  ni d'un point (évite les décimales `3.14` et les versions `1.2.3.4.5`).
+- **url** : `http://…` ou `https://…` jusqu'au prochain blanc ou fin de chaîne.
+- La redaction s'applique à `longest_lines.content`, `top_lines.line` et aux
+  aperçus console des lignes. Elle ne s'applique PAS aux top mots/caractères
+  (qui sont des tokens, pas des lignes).
+
+## Sémantique Log Sentinel — niveaux (v2.9.0, Cible 3-B)
+
+### Niveaux de log (`--log-level`)
+
+- Détection par **mot entier** insensible à la casse, n'importe où dans la
+  ligne : `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. Un « mot entier » est
+  délimité par des caractères non-alphanumériques ASCII ou les bords de
+  chaîne (`ERRORS` ne matche pas `ERROR` ; `ERROR:` oui).
+- **Priorité figée** : `ERROR` > `WARN` > `INFO` > `DEBUG` > `TRACE` — le
+  premier trouvé dans cet ordre gagne, même si un niveau plus bas est aussi
+  présent (`WARN then ERROR` → `error`).
+- `none` = ligne sans aucun de ces mots. **Somme des 6 niveaux = `lines`**
+  (assertion de test).
+- JSON : `"log_levels": {"error": N, "warn": N, "info": N, "debug": N,
+  "trace": N, "none": N}`. Console : section `Log Levels`. CSV : lignes
+  `type=loglevel` (`value`=nom, `count`=lignes). `--summary-json` : clé plate
+  `log_levels`. Non agrégé en `--json-mode=aggregate` (comme n-grams).
+
+### Filtre (`--filter=error,warn,...`)
+
+- Liste de niveaux séparés par des virgules (`error,warn,info,debug,trace,none`,
+  insensible à la casse). Filtre **l'affichage console** des sections de lignes
+  (`Top Lines`, `Longest Lines`) : seules les lignes dont le niveau détecté
+  appartient à l'ensemble sont affichées, avec renumérotation des rangs.
+- **Les compteurs globaux restent sur tout le fichier** (documenté, testé) :
+  `lines`, `words`, `log_levels`, `patterns`… ne sont pas affectés.
+- En JSON/CSV, toutes les lignes sont exportées (le filtre est console-only).
+- `--filter` sans `--log-level` est accepté (le filtre s'applique quand même à
+  l'affichage, la détection étant faite à la volée).
+
+## Sémantique Log Sentinel — alarm / tags (v2.10.0, Cible 3-C)
+
+### Extraction de tags (`--regex-tag=PATTERN`)
+
+- **Mini-moteur regex subset** (PAS une regex complète, périmètre figé) :
+  littéraux + classes `[...]` (plages `a-z`, `0-9`, `A-Z`, chars isolés) +
+  quantifieurs `?` (0..1), `+` (1..∞), `*` (0..∞) après un token ; défaut = 1.
+  Insensible à la casse pour les littéraux.
+- Extraction : occurrences **non chevauchantes**, de gauche à droite, dans
+  chaque ligne. Le tag = la sous-chaîne matchée.
+- Exemples : `PLC[0-9]+` → `PLC1`, `PLC23` ; `[A-Z]+[0-9]+` → `PLC1`, `MOTOR23`,
+  `SENSOR7`.
+- Top-K borné comme les n-grams/top-lines : `--top-tags=N` (défaut 10, `0` =
+  tous) ; dictionnaire réduit au top-N au-delà de `max(8×N, 64)` entrées.
+- JSON : `"tags": [{"rank": r, "tag": "...", "count": N}, ...]`. Console :
+  section `Tags`. CSV : lignes `type=tag`. `--summary-json` : clé plate `tags`.
+  Non agrégé en `--json-mode=aggregate`.
+
+### Mode alarm (`--mode=alarm`)
+
+- Raccourci SCADA/PLC : active `--log-level` + `--top-lines` (10) +
+  `--regex-tag` avec le pattern par défaut `[A-Z]+[0-9]+` (identifiants type
+  `PLC1`, `TAG007`). Si `--regex-tag` est aussi passé, il prend le relais.
+- `--mode` n'accepte que `alarm` (autre valeur → exit 1).
+
+## Sémantique Log Sentinel — watch (v2.11.0, Cible 3-D)
+
+### Watch (`--watch` / `--follow` + `--interval=N`)
+
+- Surveille **exactement un fichier** (stdin et multi-fichiers interdits → exit 1).
+  Fichier absent au départ → exit 1.
+- Boucle infinie en polling : toutes les `N` secondes (défaut 2, min 1), le
+  fichier est **ré-analysé complètement** (v1 — l'incrémental octet à octet
+  n'est pas implémenté, limitation documentée) et une ligne de statut ASCII
+  est affichée :
+  `[timestamp] lines=N (+delta) words=N chars=N sentences=N | error=… warn=… info=… none=…`
+  (les niveaux n'apparaissent qu'avec `--log-level`).
+- `+delta` = variation des lignes depuis le tick précédent. Si le fichier a
+  rétréci (troncature/rotation), un marqueur `[TRUNCATED]` est affiché.
+- Fichier illisible en cours de route → message sur stderr, la boucle continue.
+- **Ctrl+C** (SIGINT/SIGTERM) → arrêt propre, message `Stopped.`, **exit 0**.
+- Console ASCII pur (aucun ANSI), `Flush` après chaque ligne (temps réel).
 
 ## Validation (texte de référence)
 

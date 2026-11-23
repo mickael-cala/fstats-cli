@@ -98,4 +98,5 @@ fstats docs/*.md --check --config fstats.json                 # plus tard
 
 ## Décision
 
-Périmètre validé, incrément A livré (v2.2.0). B et C suivent.
+Périmètre validé. **Tous les incréments livrés** : A (v2.2.0), B et C (v2.6.0),
+correctif v2.6.1, `--sentence-mode=smart` v2.7.0. **Cible 1 complète.**

@@ -1,0 +1,3 @@
+Contact admin@example.com or visit https://internal.example.com/path from 10.0.0.1
+Mail support@test.org now, server 172.16.254.1 unreachable
+No secrets here: just plain text without any address

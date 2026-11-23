@@ -1,0 +1,9 @@
+2026-01-15 10:00:01 INFO server started on 192.168.1.10
+2026-01-15 10:00:05 ERROR connection timeout to db.internal
+2026-01-15 10:00:05 ERROR connection timeout to db.internal
+2026-01-15 10:00:06 WARN retrying connection (attempt 1)
+2026-01-15 10:00:07 ERROR connection timeout to db.internal
+2026-01-15 10:00:10 INFO user admin@example.com logged in from https://portal.example.com/login
+2026-01-15 10:00:12 INFO health check OK
+2026-01-15 10:00:12 INFO health check OK
+2026-01-15 10:00:15 ERROR disk usage above 90% on /dev/sda1

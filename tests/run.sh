@@ -132,8 +132,8 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.7.0"
-report "--version affiche 2.7.0" $?
+"$FSTATS" --version | grep -q "2.11.0"
+report "--version affiche 2.11.0" $?
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -695,6 +695,261 @@ report "smart histogram words_per_sentence somme=2=sentences" $OK
 "$FSTATS" --sentence-mode=smart tests/fixtures/test_fr.txt > "$TMPDIR/smconsole.txt" 2>/dev/null
 if grep -q $'\x1b' "$TMPDIR/smconsole.txt"; then OK=1; else OK=0; fi
 report "sortie pipee --sentence-mode=smart sans sequence ANSI" $OK
+
+# --- 68. C3-A : --pattern=ERROR sur app.log -> 4 lignes / 4 matches ------------
+"$FSTATS" --summary-json --pattern='ERROR' tests/fixtures/app.log > "$TMPDIR/p68.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var p = o.patterns[0];
+process.exit((p.pattern === "ERROR" && p.lines === 4 && p.matches === 4) ? 0 : 1);
+' "$TMPDIR/p68.json"
+report "--pattern=ERROR app.log -> lines=4 matches=4" $?
+
+# --- 69. C3-A : alternance ERROR|WARN -> 5/5 -----------------------------------
+"$FSTATS" --summary-json --pattern='ERROR|WARN' tests/fixtures/app.log > "$TMPDIR/p69.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var p = o.patterns[0];
+process.exit((p.lines === 5 && p.matches === 5) ? 0 : 1);
+' "$TMPDIR/p69.json"
+report "--pattern='ERROR|WARN' app.log -> 5 lignes / 5 matches" $?
+
+# --- 70. C3-A : wildcard *timeout* -> 3/3 --------------------------------------
+"$FSTATS" --summary-json --pattern='*timeout*' tests/fixtures/app.log > "$TMPDIR/p70.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.patterns[0].lines === 3 && o.patterns[0].matches === 3) ? 0 : 1);
+' "$TMPDIR/p70.json"
+report "--pattern='*timeout*' app.log -> 3/3" $?
+
+# --- 71. C3-A : wildcard '*' matche toutes les lignes --------------------------
+"$FSTATS" --summary-json --pattern='*' tests/fixtures/app.log > "$TMPDIR/p71.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.patterns[0].lines === 9 && o.patterns[0].matches === 9) ? 0 : 1);
+' "$TMPDIR/p71.json"
+report "--pattern='*' app.log -> toutes les lignes (9/9)" $?
+
+# --- 72. C3-A : --top-lines=2 sur app.log -> 2 entrees, top count=2 ------------
+"$FSTATS" --summary-json --top-lines=2 tests/fixtures/app.log > "$TMPDIR/p72.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.top_lines.length === 2 && o.top_lines[0].count === 2) ? 0 : 1);
+' "$TMPDIR/p72.json"
+report "--top-lines=2 app.log -> 2 entrees, top count=2" $?
+
+# --- 73. C3-A : --top-lines sur stdin ------------------------------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--top-lines=5"], { input: "aaa\nbbb\naaa\n", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit((o.top_lines.length === 2 && o.top_lines[0].line === "aaa" && o.top_lines[0].count === 2) ? 0 : 1);
+' "$FSTATS"
+report "stdin --top-lines=5 : aaa groupe (count=2) en top 1" $?
+
+# --- 74. C3-A : --redact=email,ipv4,url sur redact.txt -> *** dans longest_lines
+"$FSTATS" --json --redact=email,ipv4,url tests/fixtures/redact.txt > "$TMPDIR/p74.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.longest_lines[0].content;
+process.exit((c.indexOf("***") >= 0 && c.indexOf("admin@example.com") < 0 && c.indexOf("10.0.0.1") < 0 && c.indexOf("https://") < 0) ? 0 : 1);
+' "$TMPDIR/p74.json"
+report "--redact=email,ipv4,url redact.txt -> *** dans longest_lines, compteurs sur le brut" $?
+
+# --- 75. C3-A : --redact=email seul -> seul l'email est masque -----------------
+"$FSTATS" --json --redact=email tests/fixtures/redact.txt > "$TMPDIR/p75.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.longest_lines[0].content;
+process.exit((c.indexOf("***") >= 0 && c.indexOf("admin@example.com") < 0 && c.indexOf("10.0.0.1") >= 0) ? 0 : 1);
+' "$TMPDIR/p75.json"
+report "--redact=email seul -> email masque, IPv4 conservee" $?
+
+# --- 76. C3-A : --redact=ipv4 seul ---------------------------------------------
+"$FSTATS" --json --redact=ipv4 tests/fixtures/redact.txt > "$TMPDIR/p76.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.longest_lines[0].content;
+process.exit((c.indexOf("***") >= 0 && c.indexOf("10.0.0.1") < 0 && c.indexOf("admin@example.com") >= 0) ? 0 : 1);
+' "$TMPDIR/p76.json"
+report "--redact=ipv4 seul -> IPv4 masquee, email conserve" $?
+
+# --- 77. C3-A : --redact=url seul ----------------------------------------------
+"$FSTATS" --json --redact=url tests/fixtures/redact.txt > "$TMPDIR/p77.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var c = o.longest_lines[0].content;
+process.exit((c.indexOf("***") >= 0 && c.indexOf("https://") < 0 && c.indexOf("admin@example.com") >= 0) ? 0 : 1);
+' "$TMPDIR/p77.json"
+report "--redact=url seul -> URL masquee, email conserve" $?
+
+# --- 78. C3-A : --redact=bogus -> exit 1 + stderr ------------------------------
+"$FSTATS" --redact=bogus tests/fixtures/redact.txt > /dev/null 2> "$TMPDIR/p78.err"
+if [ $? -eq 1 ] && grep -q "redact" "$TMPDIR/p78.err"; then OK=0; else OK=1; fi
+report "--redact=bogus -> exit 1 + stderr redact" $OK
+
+# --- 79. C3-A : --top-lines=abc -> exit 1 + stderr ------------------------------
+"$FSTATS" --top-lines=abc tests/fixtures/app.log > /dev/null 2> "$TMPDIR/p79.err"
+if [ $? -eq 1 ] && grep -q "top-lines" "$TMPDIR/p79.err"; then OK=0; else OK=1; fi
+report "--top-lines=abc -> exit 1 + stderr top-lines" $OK
+
+# --- 80. C3-A : --pattern= (vide) -> exit 1 ------------------------------------
+"$FSTATS" --pattern= tests/fixtures/app.log > /dev/null 2> "$TMPDIR/p80.err"
+if [ $? -eq 1 ] && grep -q "pattern" "$TMPDIR/p80.err"; then OK=0; else OK=1; fi
+report "--pattern= (vide) -> exit 1 + stderr pattern" $OK
+
+# --- 81. C3-A : JSON valide avec patterns + top_lines + redact (parse node) -----
+"$FSTATS" --json --pattern='ERROR' --pattern='*timeout*' --top-lines=3 --redact=email,ipv4,url tests/fixtures/app.log > "$TMPDIR/p81.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var ok = o.patterns.length === 2 && o.top_lines.length === 3 &&
+  o.longest_lines[0].content.indexOf("***") >= 0;
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/p81.json"
+report "JSON C3-A complet parseable (patterns=2, top_lines=3, redact appliquee)" $?
+
+# --- 82. C3-A : sortie pipee avec toutes les options log sans ANSI -------------
+"$FSTATS" --pattern='ERROR' --top-lines=5 --redact=email,ipv4,url tests/fixtures/app.log > "$TMPDIR/p82.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/p82.txt"; then OK=1; else OK=0; fi
+report "sortie pipee C3-A (pattern+top-lines+redact) : aucune sequence ANSI" $OK
+
+# --- 83. C3-B : --log-level sur levels.log -> error=2 warn=1 info=1 debug=1 trace=1 none=2
+"$FSTATS" --summary-json --log-level tests/fixtures/levels.log > "$TMPDIR/l83.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var l = o.log_levels;
+process.exit((l.error === 2 && l.warn === 1 && l.info === 1 && l.debug === 1 && l.trace === 1 && l.none === 2) ? 0 : 1);
+' "$TMPDIR/l83.json"
+report "--log-level levels.log -> error=2 warn=1 info=1 debug=1 trace=1 none=2 (ERRORS=none)" $?
+
+# --- 84. C3-B : --log-level sur app.log -> error=4 warn=1 info=4, somme=9=lines
+"$FSTATS" --summary-json --log-level tests/fixtures/app.log > "$TMPDIR/l84.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var l = o.log_levels;
+var sum = l.error + l.warn + l.info + l.debug + l.trace + l.none;
+process.exit((l.error === 4 && l.warn === 1 && l.info === 4 && sum === o.lines) ? 0 : 1);
+' "$TMPDIR/l84.json"
+report "--log-level app.log -> error=4 warn=1 info=4, somme=lines=9" $?
+
+# --- 85. C3-B : priorite ERROR > WARN (ligne avec les deux -> error) ----------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--log-level"], { input: "WARN then ERROR here\n", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit((o.log_levels.error === 1 && o.log_levels.warn === 0) ? 0 : 1);
+' "$FSTATS"
+report "priorite ERROR>WARN : ligne 'WARN then ERROR' compte error" $?
+
+# --- 86. C3-B : mot entier (ERRORS ne matche pas ERROR) -------------------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--log-level"], { input: "ERRORS everywhere\n", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit(o.log_levels.none === 1 ? 0 : 1);
+' "$FSTATS"
+report "mot entier : 'ERRORS' -> none (pas error)" $?
+
+# --- 87. C3-B : --filter=error filtre l affichage Top Lines (console) ------------
+"$FSTATS" --log-level --filter=error --top-lines=5 tests/fixtures/app.log > "$TMPDIR/l87.txt" 2>/dev/null
+if grep -q "ERROR connection timeout" "$TMPDIR/l87.txt" && ! grep -q "INFO health check" "$TMPDIR/l87.txt"; then OK=0; else OK=1; fi
+report "--filter=error : Top Lines ne contient que les lignes ERROR" $OK
+
+# --- 88. C3-B : --filter=error,warn sur levels.log --------------------------------
+"$FSTATS" --log-level --filter=error,warn --top-lines=8 tests/fixtures/levels.log > "$TMPDIR/l88.txt" 2>/dev/null
+if grep -q "ERROR" "$TMPDIR/l88.txt" && grep -q "WARN" "$TMPDIR/l88.txt" && ! grep -q "INFO server" "$TMPDIR/l88.txt"; then OK=0; else OK=1; fi
+report "--filter=error,warn : Top Lines = ERROR+WARN, pas INFO" $OK
+
+# --- 89. C3-B : --filter=bogus -> exit 1 + stderr --------------------------------
+"$FSTATS" --filter=bogus tests/fixtures/app.log > /dev/null 2> "$TMPDIR/l89.err"
+if [ $? -eq 1 ] && grep -q "filter" "$TMPDIR/l89.err"; then OK=0; else OK=1; fi
+report "--filter=bogus -> exit 1 + stderr filter" $OK
+
+# --- 90. C3-B : sortie pipee --log-level --filter sans ANSI ----------------------
+"$FSTATS" --log-level --filter=error --top-lines=5 tests/fixtures/app.log > "$TMPDIR/l90.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/l90.txt"; then OK=1; else OK=0; fi
+report "sortie pipee C3-B (log-level+filter) : aucune sequence ANSI" $OK
+
+# --- 91. C3-C : --regex-tag=PLC[0-9]+ sur alarms.log -> PLC1=5, PLC2=1 ----------
+"$FSTATS" --summary-json --regex-tag='PLC[0-9]+' tests/fixtures/alarms.log > "$TMPDIR/t91.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var t = o.tags;
+process.exit((t.length === 2 && t[0].tag === "PLC1" && t[0].count === 5 && t[1].tag === "PLC2" && t[1].count === 1) ? 0 : 1);
+' "$TMPDIR/t91.json"
+report "--regex-tag=PLC[0-9]+ alarms.log -> PLC1=5, PLC2=1" $?
+
+# --- 92. C3-C : --mode=alarm active log-level + top-lines + tags ----------------
+"$FSTATS" --summary-json --mode=alarm tests/fixtures/alarms.log > "$TMPDIR/t92.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var ok = o.log_levels && o.log_levels.error === 3 && o.top_lines && o.tags &&
+  o.tags[0].tag === "PLC1" && o.tags[0].count === 5;
+process.exit(ok ? 0 : 1);
+' "$TMPDIR/t92.json"
+report "--mode=alarm alarms.log -> log_levels + top_lines + tags (PLC1=5)" $?
+
+# --- 93. C3-C : --regex-tag=[A-Z]+[0-9]+ extrait tous les tags ------------------
+"$FSTATS" --summary-json --regex-tag='[A-Z]+[0-9]+' --top-tags=10 tests/fixtures/alarms.log > "$TMPDIR/t93.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+var tags = o.tags.map(function(t){return t.tag;});
+process.exit((tags.indexOf("PLC1") >= 0 && tags.indexOf("MOTOR23") >= 0 && tags.indexOf("SENSOR7") >= 0) ? 0 : 1);
+' "$TMPDIR/t93.json"
+report "--regex-tag=[A-Z]+[0-9]+ -> PLC1, MOTOR23, PLC2, SENSOR7 extraits" $?
+
+# --- 94. C3-C : --top-tags=2 limite a 2 entrees ---------------------------------
+"$FSTATS" --summary-json --regex-tag='[A-Z]+[0-9]+' --top-tags=2 tests/fixtures/alarms.log > "$TMPDIR/t94.json" 2>/dev/null
+node -e '
+var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.exit((o.tags.length === 2 && o.tags[0].tag === "PLC1" && o.tags[1].tag === "MOTOR23") ? 0 : 1);
+' "$TMPDIR/t94.json"
+report "--top-tags=2 -> exactement 2 tags (PLC1, MOTOR23)" $?
+
+# --- 95. C3-C : quantifieur + (PLC[0-9]+ exige au moins 1 chiffre) --------------
+node -e '
+var cp = require("child_process");
+var r = cp.spawnSync(process.argv[1], ["-", "--summary-json", "--regex-tag=PLC[0-9]+"], { input: "PLC sans chiffre\nPLC42 ok\n", encoding: "utf8" });
+var o = JSON.parse(r.stdout);
+process.exit((o.tags.length === 1 && o.tags[0].tag === "PLC42" && o.tags[0].count === 1) ? 0 : 1);
+' "$FSTATS"
+report "quantifieur + : 'PLC' seul non extrait, 'PLC42' oui" $?
+
+# --- 96. C3-C : options invalides -> exit 1 -------------------------------------
+"$FSTATS" --top-tags=abc tests/fixtures/alarms.log > /dev/null 2> "$TMPDIR/t96a.err"
+ST_A=$?
+"$FSTATS" --mode=bogus tests/fixtures/alarms.log > /dev/null 2> "$TMPDIR/t96b.err"
+ST_B=$?
+"$FSTATS" --regex-tag= tests/fixtures/alarms.log > /dev/null 2> "$TMPDIR/t96c.err"
+ST_C=$?
+if [ $ST_A -eq 1 ] && [ $ST_B -eq 1 ] && [ $ST_C -eq 1 ]; then OK=0; else OK=1; fi
+report "--top-tags=abc / --mode=bogus / --regex-tag= vide -> exit 1" $OK
+
+# --- 97. C3-C : sortie pipee --mode=alarm sans ANSI ------------------------------
+"$FSTATS" --mode=alarm tests/fixtures/alarms.log > "$TMPDIR/t97.txt" 2>/dev/null
+if grep -q $'\x1b' "$TMPDIR/t97.txt"; then OK=1; else OK=0; fi
+report "sortie pipee --mode=alarm : aucune sequence ANSI" $OK
+
+# --- 98. C3-D : --watch demarre et affiche des statuts (timeout 3s, interval 1) --
+if command -v timeout >/dev/null 2>&1; then
+  timeout 3 "$FSTATS" --watch --interval=1 --log-level tests/fixtures/app.log > "$TMPDIR/w98.txt" 2>/dev/null
+  if grep -q "Watching:" "$TMPDIR/w98.txt" && [ "$(grep -c 'lines=' "$TMPDIR/w98.txt")" -ge 2 ] && grep -q "error=4" "$TMPDIR/w98.txt"; then OK=0; else OK=1; fi
+else
+  echo "SKIP: w98 (timeout indisponible)"
+  OK=0
+fi
+report "--watch --interval=1 app.log (3s) -> 'Watching:' + >=2 statuts avec error=4" $OK
+
+# --- 99. C3-D : --watch + stdin -> exit 1 ----------------------------------------
+"$FSTATS" --watch - > /dev/null 2> "$TMPDIR/w99.err"
+if [ $? -eq 1 ] && grep -q "watch" "$TMPDIR/w99.err"; then OK=0; else OK=1; fi
+report "--watch - (stdin) -> exit 1 + stderr watch" $OK
+
+# --- 100. C3-D : --interval=0 -> exit 1 ------------------------------------------
+"$FSTATS" --watch --interval=0 tests/fixtures/app.log > /dev/null 2> "$TMPDIR/w100.err"
+if [ $? -eq 1 ] && grep -q "interval" "$TMPDIR/w100.err"; then OK=0; else OK=1; fi
+report "--interval=0 -> exit 1 + stderr interval" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.6.1 (Sécurisée)
+  Version    : 2.11.0 (Cible 3-D : watch/follow en polling — Cible 3 complète)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -20,6 +20,12 @@
     caractères (--char-classes)
   - Lisibilité (C2-C) : --readability, 4 métriques + score 0-100 sans
     syllabes (inspiré de Flesch, documenté)
+  - Log Sentinel (C3-A v2.8.0, C3-B v2.9.0) : --pattern (littéral + | * ?,
+    insensible à la casse, occurrences non chevauchantes), --top-lines
+    (lignes identiques groupées, top-K borné), --redact=email,ipv4,url
+    (*** dans les sorties seulement, compteurs sur le brut),
+    --log-level (ERROR>WARN>INFO>DEBUG>TRACE, mot entier), --filter=niveaux
+    (filtre l'affichage des lignes, compteurs sur tout le fichier)
   - Checks (Cible 1 B+C) : --check/--fail-if/--warn-if, --compare/
     --fail-on-delta, exit codes 0/1/2/3
   - v2.6.1 : un point entre deux chiffres (3.14) ne clôture plus une phrase
@@ -93,7 +99,7 @@ program fstats;
 {$ELSE}
   // Linux/Mac : pas besoin d'API spécifique, UTF-8 natif
   uses
-    SysUtils, Classes, Generics.Collections, Generics.Defaults;
+    SysUtils, Classes, BaseUnix, Generics.Collections, Generics.Defaults;
 {$ENDIF}
 
 {=============================================================================
@@ -113,7 +119,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.7.0';
+  FSTATS_VERSION = '2.11.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;
@@ -138,6 +144,10 @@ const
   CC_OTHER = 5;
   CC_CLASS_COUNT = 6;
 
+  // Cible 3-A : seuil de réduction du dictionnaire top-lines (comme les n-grams :
+  // quand le dictionnaire dépasse max(8×K, 64) entrées, réduit au top-K).
+  TOPLINES_PRUNE_THRESHOLD = 64;
+
 {=============================================================================
   VARIABLES GLOBALES DE CONTRÔLE D'AFFICHAGE
   =============================================================================}
@@ -156,6 +166,13 @@ var
   TopWordsLimit: Integer = DEFAULT_TOP_LIMIT;
   TopCharsLimit: Integer = DEFAULT_TOP_LIMIT;
   TopNgramsLimit: Integer = DEFAULT_TOP_LIMIT;
+  // Cible 3-A : limite du top-lines identiques (--top-lines=N, défaut 10 ; 0 = désactivé)
+  TopLinesDupLimit: Integer = DEFAULT_TOP_LIMIT;
+  // Cible 3-C : limite du top des tags extraits (--top-tags=N, défaut 10)
+  TopTagsLimit: Integer = DEFAULT_TOP_LIMIT;
+
+  // Cible 3-D : mode watch — arrêt propre sur Ctrl+C (SIGINT/SIGTERM)
+  WatchStop: Boolean = False;
 
 {=============================================================================
   PROCÉDURE DE CONFIGURATION CONSOLE WINDOWS
@@ -164,6 +181,34 @@ var
   Sécurité : Ne modifie que la sortie standard, pas l'entrée
   Compatibilité : Fonctionne sur Windows 10+ avec Virtual Terminal Processing
   =============================================================================}
+{=============================================================================
+  CIBLE 3-D — WATCH : arrêt propre sur Ctrl+C
+  =============================================================================}
+{$IFDEF MSWINDOWS}
+function CtrlCHandler(dwCtrlType: DWORD): BOOL; stdcall;
+begin
+  // CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT → arrêt demandé
+  WatchStop := True;
+  Result := True;
+end;
+
+procedure InstallWatchHandler;
+begin
+  SetConsoleCtrlHandler(@CtrlCHandler, True);
+end;
+{$ELSE}
+procedure SigIntHandler(sig: cint); cdecl;
+begin
+  WatchStop := True;
+end;
+
+procedure InstallWatchHandler;
+begin
+  FpSignal(SIGINT, @SigIntHandler);
+  FpSignal(SIGTERM, @SigIntHandler);
+end;
+{$ENDIF}
+
 {$IFDEF MSWINDOWS}
 procedure ConfigureConsoleForUTF8;
 var
@@ -239,6 +284,77 @@ type
   end;
   TLineArray = array of TLineInfo;
 
+  // ============================================================================
+  // CIBLE 3-A (Log Sentinel) — patterns, top-lignes, redaction
+  // ============================================================================
+
+  // Mode de redaction (--redact=email,ipv4,url) : appliquée aux SORTIES
+  // uniquement (console/JSON/CSV), jamais aux compteurs calculés sur le brut.
+  TRedactMode = (rmEmail, rmIPv4, rmURL);
+  TRedactSet = set of TRedactMode;
+
+  // Résultat d'un --pattern=TEXTE sur un fichier : nombre total d'occurrences
+  // (matches) et nombre de lignes contenant au moins une occurrence (lines).
+  TPatternMatch = record
+    Pattern: string;    // Pattern tel que passé en ligne de commande
+    Matches: Int64;     // Nombre total d'occurrences dans le fichier
+    Lines: Int64;       // Nombre de lignes avec au moins un match
+  end;
+  TPatternMatchArray = array of TPatternMatch;
+
+  // Ligne identique groupée (--top-lines=N) : texte brut + fréquence.
+  TTopLine = record
+    Line: string;       // Contenu brut de la ligne (redaction appliquée à l'affichage)
+    Count: Int64;       // Nombre d'occurrences
+  end;
+  TTopLineArray = array of TTopLine;
+
+  // ============================================================================
+  // CIBLE 3-B (Log Sentinel) — niveaux de log et filtre
+  // ============================================================================
+
+  // Niveau de log détecté dans une ligne (mot entier, insensible à la casse,
+  // priorité ERROR > WARN > INFO > DEBUG > TRACE ; llNone si aucun).
+  TLogLevel = (llError, llWarn, llInfo, llDebug, llTrace, llNone);
+  TLogLevelSet = set of TLogLevel;
+  TLogLevelCount = array[TLogLevel] of Int64;
+
+  // ============================================================================
+  // CIBLE 3-C (Log Sentinel) — extraction de tags (mini-moteur regex subset)
+  // ============================================================================
+
+  // Token d'un pattern tag : littéral OU classe [..], avec quantifieur.
+  // Quantifieurs supportés : (défaut)=1, '?'=0..1, '+'=1..inf, '*'=0..inf.
+  TTagToken = record
+    IsClass: Boolean;
+    Ch: Char;                  // littéral (si IsClass=False)
+    ClassSet: set of Char;     // classe (si IsClass=True)
+    MinRep, MaxRep: Integer;   // bornes de répétition (MaxRep = MaxInt = infini)
+  end;
+  TTagPattern = array of TTagToken;
+
+  // Tag extrait + fréquence (--regex-tag / --mode=alarm)
+  TTagFreq = record
+    Tag: string;
+    Count: Int64;
+  end;
+  TTagFreqArray = array of TTagFreq;
+  TTagDict = specialize TDictionary<string, Int64>;
+
+  // Options Cible 3 transmises à l'analyse (comme TStructureOptions).
+  TLogOptions = record
+    Patterns: TStringArray;   // --pattern=... (répétable)
+    TopLinesLimit: Integer;   // --top-lines=N (0 = désactivé)
+    Redact: TRedactSet;       // --redact=email,ipv4,url
+    LogLevels: Boolean;       // --log-level (détection des niveaux)
+    FilterLevels: TLogLevelSet; // --filter=ERROR,WARN (filtre affichage lignes)
+    RegexTag: string;         // --regex-tag=PATTERN ('' = désactivé)
+    TopTagsLimit: Integer;    // --top-tags=N (borne du top des tags)
+  end;
+
+  // Dictionnaire pour le top-lines : ligne -> fréquence (borné comme les n-grams)
+  TLineDict = specialize TDictionary<string, Int64>;
+
   // Structure principale contenant toutes les statistiques d'un fichier
   TStats = record
     Path: string;                    // Chemin du fichier analysé ('stdin' pour l'entrée standard)
@@ -266,6 +382,18 @@ type
     HistogramKind: THistogramKind;   // hkNone = histogramme désactivé
     HistRanges: TStringArray;        // Libellés des classes (ex. '0-9','10-19',...)
     HistCounts: array of Int64;      // Comptes par classe (taille = nb de classes)
+    // Cible 3-A (Log Sentinel) : patterns, top-lignes identiques, redaction
+    PatternResults: TPatternMatchArray; // Résultats des --pattern (rempli si Patterns non vide)
+    TopLinesDup: TTopLineArray;         // Top-K lignes identiques (--top-lines=N)
+    TopLinesDupEnabled: Boolean;        // --top-lines actif
+    Redact: TRedactSet;                 // --redact=email,ipv4,url (appliqué aux sorties seulement)
+    // Cible 3-B : niveaux de log + filtre d'affichage
+    LogLevelsEnabled: Boolean;          // --log-level actif
+    LogLevels: TLogLevelCount;          // compteurs par niveau (somme = lines)
+    FilterLevels: TLogLevelSet;         // --filter=... (filtre l'AFFICHAGE des lignes)
+    // Cible 3-C : tags extraits (--regex-tag / --mode=alarm)
+    TagsEnabled: Boolean;               // --regex-tag actif
+    Tags: TTagFreqArray;                // top-K tags extraits (tri fréquence puis alpha)
   end;
 
   // Mode d'export JSON multi-fichiers (--json-mode)
@@ -1568,12 +1696,772 @@ begin
 end;
 
 {=============================================================================
+  CIBLE 3-A — MOTEUR LOG SENTINEL : patterns, top-lignes, redaction
+  =============================================================================
+  --pattern=TEXTE   : matcher interne LITTÉRAL avec alternance '|' et
+                      wildcards '*' (n'importe quelle suite) et '?' (un
+                      caractère). PAS une regex complète (documenté).
+                      Répétable. Matching insensible à la casse (comme le glob
+                      Windows) — cohérent avec l'usage log (ERROR/error).
+  --top-lines=N     : regroupe les lignes identiques (count + exemple) ;
+                      top-K borné comme les n-grams (défaut 10, 0 = tous).
+  --redact=LISTE    : email,ipv4,url (séparés par virgule). Remplace par '***'
+                      dans les SORTIES (console/JSON/CSV) uniquement ; les
+                      compteurs (words, chars, lines…) restent sur le brut.
+  =============================================================================}
+
+{-----------------------------------------------------------------------------
+  WildcardMatch : Vrai si S correspond au pattern P contenant '*' et '?'.
+  Algorithme récursif à deux indices, identique à GlobMatch mais sans la
+  notion de séparateur de chemin ('*' et '?' traversent tout ici).
+  Insensible à la casse (UpCase ASCII, comme CharEquals).
+  -----------------------------------------------------------------------------}
+function WildcardMatch(const P, S: string): Boolean;
+
+  function DoMatch(pi, si: Integer): Boolean;
+  var
+    pc: Char;
+  begin
+    while pi <= Length(P) do
+    begin
+      pc := P[pi];
+      if pc = '*' then
+      begin
+        if DoMatch(pi + 1, si) then Exit(True);
+        while si <= Length(S) do
+        begin
+          Inc(si);
+          if DoMatch(pi + 1, si) then Exit(True);
+        end;
+        Exit(False);
+      end;
+      if si > Length(S) then Exit(False);
+      if pc = '?' then
+      begin
+        Inc(pi); Inc(si);
+      end
+      else
+      begin
+        if UpCase(pc) <> UpCase(S[si]) then Exit(False);
+        Inc(pi); Inc(si);
+      end;
+    end;
+    Result := si > Length(S);
+  end;
+
+begin
+  Result := DoMatch(1, 1);
+end;
+
+{-----------------------------------------------------------------------------
+  PatternMatch : Vrai si la ligne S correspond au pattern complet P.
+  P peut contenir '|' pour l'alternance (ex. 'ERROR|WARN'). Chaque segment
+  entre '|' est matché avec WildcardMatch.
+  -----------------------------------------------------------------------------}
+function PatternMatch(const P, S: string): Boolean;
+var
+  Seg, Rest: string;
+  i: Integer;
+begin
+  Result := False;
+  Rest := P;
+  while Rest <> '' do
+  begin
+    i := Pos('|', Rest);
+    if i > 0 then
+    begin
+      Seg := Copy(Rest, 1, i - 1);
+      Rest := Copy(Rest, i + 1, Length(Rest));
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    if WildcardMatch(Seg, S) then Exit(True);
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  WildcardMatchAt : Vrai si le pattern P matche un PRÉFIXE de S à partir de
+  la position Start (recherche de sous-chaîne, pas match de la ligne entière).
+  Retourne dans MatchLen la longueur du match (caractères de S consommés).
+  -----------------------------------------------------------------------------}
+function WildcardMatchAt(const P, S: string; Start: Integer; out MatchLen: Integer): Boolean;
+
+  function DoMatch(pi, si: Integer; var EndSi: Integer): Boolean;
+  var
+    pc: Char;
+  begin
+    while pi <= Length(P) do
+    begin
+      pc := P[pi];
+      if pc = '*' then
+      begin
+        if DoMatch(pi + 1, si, EndSi) then Exit(True);
+        while si <= Length(S) do
+        begin
+          Inc(si);
+          if DoMatch(pi + 1, si, EndSi) then Exit(True);
+        end;
+        Exit(False);
+      end;
+      if si > Length(S) then Exit(False);
+      if pc = '?' then
+      begin
+        Inc(pi); Inc(si);
+      end
+      else
+      begin
+        if UpCase(pc) <> UpCase(S[si]) then Exit(False);
+        Inc(pi); Inc(si);
+      end;
+    end;
+    EndSi := si;
+    Result := True;  // tout le pattern consommé = match (préfixe de S)
+  end;
+
+var
+  EndSi: Integer;
+begin
+  EndSi := Start;
+  Result := DoMatch(1, Start, EndSi);
+  if Result then
+    MatchLen := EndSi - Start + 1
+  else
+    MatchLen := 0;
+end;
+
+{-----------------------------------------------------------------------------
+  CountPatternOccurrences : Compte le nombre d'occurrences du pattern P dans
+  la ligne S. Occurrences non chevauchantes, recherche de gauche à droite
+  (sémantique documentée).
+  -----------------------------------------------------------------------------}
+function CountPatternOccurrences(const P, S: string): Int64;
+var
+  Seg, Rest: string;
+  i, StartPos, SegLen: Integer;
+  Found: Boolean;
+begin
+  Result := 0;
+  Rest := P;
+  // Pour chaque segment d'alternance, compter les occurrences dans S
+  while Rest <> '' do
+  begin
+    i := Pos('|', Rest);
+    if i > 0 then
+    begin
+      Seg := Copy(Rest, 1, i - 1);
+      Rest := Copy(Rest, i + 1, Length(Rest));
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    // Compter les occurrences non chevauchantes de Seg dans S
+    StartPos := 1;
+    while StartPos <= Length(S) do
+    begin
+      Found := False;
+      for i := StartPos to Length(S) do
+      begin
+        if WildcardMatchAt(Seg, S, i, SegLen) then
+        begin
+          Inc(Result);
+          StartPos := i + SegLen;
+          if StartPos > Length(S) + 1 then StartPos := Length(S) + 1;
+          Found := True;
+          Break;
+        end;
+      end;
+      if not Found then Break;
+    end;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  IsEmailChar : Vrai si C peut faire partie d'une adresse email locale
+  (lettres, chiffres, . _ + -). Le '@' et le domaine sont traités à part.
+  -----------------------------------------------------------------------------}
+function IsEmailChar(C: Char): Boolean;
+begin
+  Result := ((C >= 'a') and (C <= 'z')) or
+            ((C >= 'A') and (C <= 'Z')) or
+            ((C >= '0') and (C <= '9')) or
+            (C = '.') or (C = '_') or (C = '+') or (C = '-');
+end;
+
+{-----------------------------------------------------------------------------
+  IsDigit : Vrai si C est un chiffre ASCII.
+  -----------------------------------------------------------------------------}
+function IsDigit(C: Char): Boolean;
+begin
+  Result := (C >= '0') and (C <= '9');
+end;
+
+{-----------------------------------------------------------------------------
+  IsIPv4At : Vrai si S contient une adresse IPv4 commençant à la position Pos.
+  Format : 4 groupes de 1-3 chiffres séparés par '.'. Retourne la longueur
+  totale (9 à 15 caractères).
+  -----------------------------------------------------------------------------}
+function IsIPv4At(const S: string; Pos: Integer; out Len: Integer): Boolean;
+var
+  i, Group, DigitCount: Integer;
+begin
+  Result := False;
+  Len := 0;
+  i := Pos;
+  for Group := 1 to 4 do
+  begin
+    DigitCount := 0;
+    while (i <= Length(S)) and IsDigit(S[i]) and (DigitCount < 3) do
+    begin
+      Inc(i);
+      Inc(DigitCount);
+    end;
+    if DigitCount = 0 then Exit;
+    Inc(Len, DigitCount);
+    if Group < 4 then
+    begin
+      if (i > Length(S)) or (S[i] <> '.') then Exit;
+      Inc(i);
+      Inc(Len);
+    end;
+  end;
+  // Le caractère suivant ne doit pas être un chiffre ni un point (sinon c'est
+  // un nombre décimal ou une version, pas une IPv4)
+  if (i <= Length(S)) and (IsDigit(S[i]) or (S[i] = '.')) then Exit;
+  Result := True;
+end;
+
+{-----------------------------------------------------------------------------
+  IsEmailAt : Vrai si S contient un email commençant à la position Pos.
+  Format : partie-locale '@' domaine avec au moins un point dans le domaine.
+  -----------------------------------------------------------------------------}
+function IsEmailAt(const S: string; Pos: Integer; out Len: Integer): Boolean;
+var
+  i, AtPos, DotPos: Integer;
+begin
+  Result := False;
+  Len := 0;
+  // Trouver le '@' après une suite de caractères email
+  i := Pos;
+  while (i <= Length(S)) and IsEmailChar(S[i]) do Inc(i);
+  if (i <= Length(S)) and (S[i] = '@') and (i > Pos) then
+  begin
+    AtPos := i;
+    Inc(i);
+    // Domaine : au moins un caractère, puis un point, puis au moins un caractère
+    if (i <= Length(S)) and IsEmailChar(S[i]) then
+    begin
+      DotPos := 0;
+      while (i <= Length(S)) and (IsEmailChar(S[i]) or (S[i] = '-')) do
+      begin
+        if S[i] = '.' then DotPos := i;
+        Inc(i);
+      end;
+      if (DotPos > AtPos + 1) and (DotPos < i - 1) then
+      begin
+        Len := i - Pos;
+        Result := True;
+      end;
+    end;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  IsURLAt : Vrai si S contient une URL commençant à la position Pos
+  (http:// ou https://). S'étend jusqu'au prochain blanc ou fin de chaîne.
+  -----------------------------------------------------------------------------}
+function IsURLAt(const S: string; Pos: Integer; out Len: Integer): Boolean;
+var
+  i: Integer;
+  Prefix: string;
+begin
+  Result := False;
+  Len := 0;
+  if (Pos + 6 <= Length(S) + 1) and
+     ((Copy(S, Pos, 7) = 'http://') or (Copy(S, Pos, 8) = 'https://')) then
+  begin
+    if Copy(S, Pos, 7) = 'http://' then Prefix := 'http://' else Prefix := 'https://';
+    i := Pos + Length(Prefix);
+    while (i <= Length(S)) and (S[i] > ' ') do Inc(i);
+    Len := i - Pos;
+    if Len > Length(Prefix) then Result := True;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  RedactString : Applique la redaction (email, ipv4, url) à la chaîne S.
+  Remplace chaque occurrence par '***'. Les compteurs ne sont PAS affectés
+  (cette fonction n'est appelée que dans les exports/affichage).
+  -----------------------------------------------------------------------------}
+function RedactString(const S: string; Modes: TRedactSet): string;
+var
+  i, L, Skip: Integer;
+begin
+  Result := '';
+  i := 1;
+  L := Length(S);
+  while i <= L do
+  begin
+    Skip := 0;
+    if (rmEmail in Modes) and IsEmailAt(S, i, Skip) then
+    begin
+      Result := Result + '***';
+      Inc(i, Skip);
+      Continue;
+    end;
+    if (rmIPv4 in Modes) and IsIPv4At(S, i, Skip) then
+    begin
+      Result := Result + '***';
+      Inc(i, Skip);
+      Continue;
+    end;
+    if (rmURL in Modes) and IsURLAt(S, i, Skip) then
+    begin
+      Result := Result + '***';
+      Inc(i, Skip);
+      Continue;
+    end;
+    Result := Result + S[i];
+    Inc(i);
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  QuickSortTopLines : Tri décroissant par Count, puis croissant par Line
+  (déterminisme des égalités).
+  -----------------------------------------------------------------------------}
+procedure QuickSortTopLines(var A: TTopLineArray; L, R: Integer);
+var
+  I, J: Integer;
+  P, T: TTopLine;
+begin
+  if L >= R then Exit;
+  I := L; J := R;
+  P := A[(L + R) div 2];
+  repeat
+    while (A[I].Count > P.Count) or
+          ((A[I].Count = P.Count) and (CompareStr(A[I].Line, P.Line) < 0)) do Inc(I);
+    while (A[J].Count < P.Count) or
+          ((A[J].Count = P.Count) and (CompareStr(A[J].Line, P.Line) > 0)) do Dec(J);
+    if I <= J then
+    begin
+      T := A[I]; A[I] := A[J]; A[J] := T;
+      Inc(I); Dec(J);
+    end;
+  until I > J;
+  if L < J then QuickSortTopLines(A, L, J);
+  if I < R then QuickSortTopLines(A, I, R);
+end;
+
+{-----------------------------------------------------------------------------
+  PruneTopLines : Réduit le dictionnaire des lignes identiques à ses Keep
+  entrées les plus fréquentes (mémoire bornée, comme PruneNGrams).
+  -----------------------------------------------------------------------------}
+procedure PruneTopLines(Dict: TLineDict; Keep: Integer);
+var
+  Arr: TTopLineArray;
+  Pair: TWordPair;
+  i: Integer;
+begin
+  if Keep <= 0 then Exit;
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Line := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortTopLines(Arr, 0, High(Arr));
+  if Length(Arr) > Keep then SetLength(Arr, Keep);
+  Dict.Clear;
+  for i := 0 to High(Arr) do
+    Dict.Add(Arr[i].Line, Arr[i].Count);
+end;
+
+{-----------------------------------------------------------------------------
+  BuildTopLines : Convertit le dictionnaire en tableau top-K trié.
+  -----------------------------------------------------------------------------}
+procedure BuildTopLines(Dict: TLineDict; TopK: Integer; var OutArr: TTopLineArray);
+var
+  Arr: TTopLineArray;
+  i, Limit: Integer;
+  Pair: TWordPair;
+begin
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Line := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortTopLines(Arr, 0, High(Arr));
+  Limit := Length(Arr);
+  if (TopK > 0) and (Limit > TopK) then Limit := TopK;
+  SetLength(OutArr, Limit);
+  for i := 0 to Limit - 1 do
+  begin
+    OutArr[i].Line := Arr[i].Line;
+    OutArr[i].Count := Arr[i].Count;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  LogLevelName : Nom canonique minuscule d'un niveau ('error', 'warn', ...).
+  -----------------------------------------------------------------------------}
+function LogLevelName(LL: TLogLevel): string;
+begin
+  case LL of
+    llError:  Result := 'error';
+    llWarn:   Result := 'warn';
+    llInfo:   Result := 'info';
+    llDebug:  Result := 'debug';
+    llTrace:  Result := 'trace';
+    else      Result := 'none';
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  ParseLogLevelName : Parse un nom de niveau ('error','warn','info','debug',
+  'trace','none', insensible à la casse). Retourne False si inconnu.
+  -----------------------------------------------------------------------------}
+function ParseLogLevelName(const S: string; out LL: TLogLevel): Boolean;
+var
+  V: string;
+begin
+  V := LowerCase(Trim(S));
+  if V = 'error' then LL := llError
+  else if V = 'warn' then LL := llWarn
+  else if V = 'info' then LL := llInfo
+  else if V = 'debug' then LL := llDebug
+  else if V = 'trace' then LL := llTrace
+  else if V = 'none' then LL := llNone
+  else Exit(False);
+  Result := True;
+end;
+
+{-----------------------------------------------------------------------------
+  IsAlphaNum : Vrai si C est une lettre ou un chiffre ASCII (borne de mot).
+  -----------------------------------------------------------------------------}
+function IsAlphaNum(C: Char): Boolean;
+begin
+  Result := ((C >= 'a') and (C <= 'z')) or
+            ((C >= 'A') and (C <= 'Z')) or
+            ((C >= '0') and (C <= '9'));
+end;
+
+{-----------------------------------------------------------------------------
+  ContainsWord : Vrai si le mot W (ex. 'ERROR') apparaît dans S comme MOT
+  ENTIER (délimité par des non-alphanumériques ou les bords de chaîne),
+  insensible à la casse.
+  -----------------------------------------------------------------------------}
+function ContainsWord(const S, W: string): Boolean;
+var
+  i, WL: Integer;
+begin
+  Result := False;
+  WL := Length(W);
+  if WL = 0 then Exit;
+  for i := 1 to Length(S) - WL + 1 do
+  begin
+    if UpCase(Copy(S, i, WL)) = UpCase(W) then
+    begin
+      if ((i = 1) or (not IsAlphaNum(S[i - 1]))) and
+         ((i + WL > Length(S)) or (not IsAlphaNum(S[i + WL]))) then
+        Exit(True);
+    end;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  DetectLogLevel : Détecte le niveau de log d'une ligne. Cherche les mots
+  entiers ERROR, WARN, INFO, DEBUG, TRACE (insensible à la casse) dans cet
+  ordre de priorité ; le premier trouvé gagne. Aucun → llNone.
+  -----------------------------------------------------------------------------}
+function DetectLogLevel(const S: string): TLogLevel;
+begin
+  if ContainsWord(S, 'ERROR') then Exit(llError);
+  if ContainsWord(S, 'WARN') then Exit(llWarn);
+  if ContainsWord(S, 'INFO') then Exit(llInfo);
+  if ContainsWord(S, 'DEBUG') then Exit(llDebug);
+  if ContainsWord(S, 'TRACE') then Exit(llTrace);
+  Result := llNone;
+end;
+
+{=============================================================================
+  CIBLE 3-C — MINI-MOTEUR REGEX-TAG (subset documenté, PAS une regex complète)
+  =============================================================================
+  Syntaxe supportée :
+    - littéral        : 'P', 'L', 'C' ...
+    - classe [...]    : [0-9], [a-z], [A-Z], [a-zA-Z0-9_], chars isolés [abc]
+    - quantifieurs    : '?' (0..1), '+' (1..inf), '*' (0..inf) après un token ;
+                        défaut = exactement 1.
+  Exemples : 'PLC[0-9]+' -> PLC1, PLC23 ; '[A-Z]+[0-9]+' -> TAG007, MOTOR3.
+  Extraction : occurrences non chevauchantes, de gauche à droite, dans chaque
+  ligne. Le tag extrait est la sous-chaîne matchée.
+  =============================================================================}
+
+{-----------------------------------------------------------------------------
+  ParseTagPattern : Parse le pattern P en séquence de tokens. Retourne False
+  si syntaxe invalide (classe non fermée, quantifieur sans token, etc.).
+  -----------------------------------------------------------------------------}
+function ParseTagPattern(const P: string; out Pat: TTagPattern): Boolean;
+var
+  i, n: Integer;
+  Tok: TTagToken;
+  procedure AddTok;
+  begin
+    SetLength(Pat, Length(Pat) + 1);
+    Pat[High(Pat)] := Tok;
+  end;
+begin
+  Result := False;
+  SetLength(Pat, 0);
+  i := 1;
+  n := Length(P);
+  while i <= n do
+  begin
+    Tok.MinRep := 1;
+    Tok.MaxRep := 1;
+    if P[i] = '[' then
+    begin
+      // Classe [..] : parser jusqu'à ']'
+      Inc(i);
+      Tok.IsClass := True;
+      Tok.ClassSet := [];
+      if (i <= n) and (P[i] = ']') then
+      begin
+        // [] vide = classe contenant ']' littéral (convention) — simplifié : interdit
+        Exit;
+      end;
+      while (i <= n) and (P[i] <> ']') do
+      begin
+        if (i + 2 <= n) and (P[i + 1] = '-') and (P[i + 2] <> ']') then
+        begin
+          // Plage c1-c2
+          Tok.ClassSet := Tok.ClassSet + [P[i]..P[i + 2]];
+          Inc(i, 3);
+        end
+        else
+        begin
+          Tok.ClassSet := Tok.ClassSet + [P[i]];
+          Inc(i);
+        end;
+      end;
+      if (i > n) or (P[i] <> ']') then Exit;  // classe non fermée
+      Inc(i);  // consommer ']'
+    end
+    else
+    begin
+      Tok.IsClass := False;
+      Tok.Ch := P[i];
+      Inc(i);
+    end;
+    // Quantifieur optionnel
+    if (i <= n) then
+    begin
+      case P[i] of
+        '?': begin Tok.MinRep := 0; Tok.MaxRep := 1; Inc(i); end;
+        '+': begin Tok.MinRep := 1; Tok.MaxRep := MaxInt; Inc(i); end;
+        '*': begin Tok.MinRep := 0; Tok.MaxRep := MaxInt; Inc(i); end;
+      end;
+    end;
+    AddTok;
+  end;
+  Result := Length(Pat) > 0;
+end;
+
+{-----------------------------------------------------------------------------
+  TokenMatchAt : Vrai si le token Tok matche à la position si de S.
+  Retourne dans Rep le nombre de répétitions trouvées (pour avancer).
+  -----------------------------------------------------------------------------}
+function TokenMatchAt(const Tok: TTagToken; const S: string; si: Integer;
+                      out Rep: Integer): Boolean;
+var
+  c: Char;
+  Count: Integer;
+begin
+  Result := False;
+  Rep := 0;
+  Count := 0;
+  while (si + Count <= Length(S)) and (Count < Tok.MaxRep) do
+  begin
+    c := S[si + Count];
+    if Tok.IsClass then
+    begin
+      if not (c in Tok.ClassSet) then Break;
+    end
+    else
+    begin
+      if UpCase(c) <> UpCase(Tok.Ch) then Break;
+    end;
+    Inc(Count);
+  end;
+  if Count >= Tok.MinRep then
+  begin
+    Rep := Count;
+    Result := True;
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  MatchTagAt : Tente de matcher tout le pattern Pat à partir de la position
+  Start dans S. Retourne la longueur totale matchée dans MatchLen.
+  Algorithme glouton avec backtracking limité (récursif sur les tokens).
+  -----------------------------------------------------------------------------}
+function MatchTagAt(const Pat: TTagPattern; const S: string; Start: Integer;
+                    out MatchLen: Integer): Boolean;
+
+  function DoMatch(ti, si: Integer; var EndSi: Integer): Boolean;
+  var
+    Rep, k: Integer;
+  begin
+    if ti >= Length(Pat) then
+    begin
+      EndSi := si;
+      Result := True;
+      Exit;
+    end;
+    // Essaie le plus de répétitions d'abord (glouton), puis backtrack
+    if TokenMatchAt(Pat[ti], S, si, Rep) then
+    begin
+      // Essayer de 0 à Rep répétitions (du max au min pour le glouton)
+      if Rep > Pat[ti].MaxRep then Rep := Pat[ti].MaxRep;
+      for k := Rep downto Pat[ti].MinRep do
+      begin
+        if DoMatch(ti + 1, si + k, EndSi) then Exit(True);
+      end;
+      // Si MinRep = 0, essayer aussi 0 répétition
+      if Pat[ti].MinRep = 0 then
+        if DoMatch(ti + 1, si, EndSi) then Exit(True);
+    end;
+    Result := False;
+  end;
+
+var
+  EndSi: Integer;
+begin
+  EndSi := Start;
+  Result := DoMatch(0, Start, EndSi);
+  if Result then
+    MatchLen := EndSi - Start
+  else
+    MatchLen := 0;
+end;
+
+{-----------------------------------------------------------------------------
+  ExtractTags : Extrait toutes les occurrences non chevauchantes du pattern
+  dans la ligne S et les ajoute au dictionnaire Dict (tag -> count).
+  -----------------------------------------------------------------------------}
+procedure ExtractTags(const Pat: TTagPattern; const S: string; Dict: TTagDict);
+var
+  i, ML: Integer;
+  Tag: string;
+  C: Int64;
+begin
+  i := 1;
+  while i <= Length(S) do
+  begin
+    if MatchTagAt(Pat, S, i, ML) and (ML > 0) then
+    begin
+      Tag := Copy(S, i, ML);
+      if Dict.TryGetValue(Tag, C) then
+        Dict[Tag] := C + 1
+      else
+        Dict.Add(Tag, 1);
+      Inc(i, ML);
+    end
+    else
+      Inc(i);
+  end;
+end;
+
+{-----------------------------------------------------------------------------
+  QuickSortTags / PruneTags / BuildTags : tri, borne mémoire et conversion
+  (mêmes sémantiques que QuickSortTopLines / PruneTopLines / BuildTopLines).
+  -----------------------------------------------------------------------------}
+procedure QuickSortTags(var A: TTagFreqArray; L, R: Integer);
+var
+  I, J: Integer;
+  P, T: TTagFreq;
+begin
+  if L >= R then Exit;
+  I := L; J := R;
+  P := A[(L + R) div 2];
+  repeat
+    while (A[I].Count > P.Count) or
+          ((A[I].Count = P.Count) and (CompareStr(A[I].Tag, P.Tag) < 0)) do Inc(I);
+    while (A[J].Count < P.Count) or
+          ((A[J].Count = P.Count) and (CompareStr(A[J].Tag, P.Tag) > 0)) do Dec(J);
+    if I <= J then
+    begin
+      T := A[I]; A[I] := A[J]; A[J] := T;
+      Inc(I); Dec(J);
+    end;
+  until I > J;
+  if L < J then QuickSortTags(A, L, J);
+  if I < R then QuickSortTags(A, I, R);
+end;
+
+procedure PruneTags(Dict: TTagDict; Keep: Integer);
+var
+  Arr: TTagFreqArray;
+  Pair: TWordPair;
+  i: Integer;
+begin
+  if Keep <= 0 then Exit;
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Tag := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortTags(Arr, 0, High(Arr));
+  if Length(Arr) > Keep then SetLength(Arr, Keep);
+  Dict.Clear;
+  for i := 0 to High(Arr) do
+    Dict.Add(Arr[i].Tag, Arr[i].Count);
+end;
+
+procedure BuildTags(Dict: TTagDict; TopK: Integer; var OutArr: TTagFreqArray);
+var
+  Arr: TTagFreqArray;
+  i, Limit: Integer;
+  Pair: TWordPair;
+begin
+  SetLength(Arr, Dict.Count);
+  i := 0;
+  for Pair in Dict do
+  begin
+    Arr[i].Tag := Pair.Key;
+    Arr[i].Count := Pair.Value;
+    Inc(i);
+  end;
+  QuickSortTags(Arr, 0, High(Arr));
+  Limit := Length(Arr);
+  if (TopK > 0) and (Limit > TopK) then Limit := TopK;
+  SetLength(OutArr, Limit);
+  for i := 0 to Limit - 1 do
+  begin
+    OutArr[i].Tag := Arr[i].Tag;
+    OutArr[i].Count := Arr[i].Count;
+  end;
+end;
+
+{=============================================================================
   ANALYSE PRINCIPALE - CŒUR DU PROGRAMME
   =============================================================================
   Objectif : Analyser un fichier et remplir la structure TStats
   Performance : Utilisation de dictionnaires hashés pour O(1) par opération
   Sécurité : Gestion robuste des erreurs de lecture, validation UTF-8 stricte
-  =============================================================================}
+  ============================================================================}
 
 // v2.7.0 : abréviations protégées par --sentence-mode=smart. Liste en
 // minuscules — le mot courant est comparé après LowerCase. Chaque motif
@@ -1609,7 +2497,8 @@ end;
 procedure AnalyzeData(const Path: string; Stream: TStream; out Stats: TStats;
                       OptAll: Boolean; WordMode: TWordMode; CaseFoldMode: TCaseFold;
                       SentenceMode: TSentenceMode; MaxUnique: Int64;
-                      const SOpts: TStructureOptions);
+                      const SOpts: TStructureOptions;
+                      const LOpts: TLogOptions);
 var
   Buffer: array[0..BUF_SIZE - 1] of Byte;
   ReadBytes, Pos, Used, i: Integer;
@@ -1625,17 +2514,23 @@ var
   DotPending: Boolean;       // Point précédé d'un chiffre en attente de décision (v2.6.1)
   LastChars: string;         // Fenêtre des 8 derniers caractères du flux (v2.7.0 : règle URL)
   W: string;                 // Mot courant en minuscules (v2.7.0 : test d'abréviation smart)
-  
+
   // Dictionnaires hashés pour accumulation O(1) - CLÉ DE PERFORMANCE
   CharDict: TCharDict;
   WordDict: TWordDict;
   NGramDict: TNGramDict;     // Comptes des n-grams (C2-B, alloué si NGramSize > 0)
+  LineDict: TLineDict;       // Comptes des lignes identiques (C3-A, alloué si TopLinesLimit > 0)
+  TagDict: TTagDict;         // Comptes des tags extraits (C3-C, alloué si RegexTag <> '')
+  TagPat: TTagPattern;       // Pattern tag parsé (C3-C)
   LineTokens: TStringArray;  // Tokens de la ligne courante (flux n-gram, C2-B)
   SentenceWords: Int64;      // Mots de la phrase courante (words_per_sentence, C2-B)
   PairC: TCharPair;
   PairW: TWordPair;
   Count: Int64;
   MaxLines: Integer;  // 0 = mode --all, sinon limite Top N
+  // C3-A : traitement des patterns / top-lignes à chaque fin de ligne
+  pi: Integer;               // index de boucle sur les patterns
+  LineOcc: Int64;            // occurrences du pattern dans la ligne courante
 
   // Clôture le token courant : mise à jour des fréquences (sous la borne
   // --max-unique) et des compteurs. Un token jamais stocké compte quand même
@@ -1701,6 +2596,26 @@ begin
   NGramDict := nil;
   if SOpts.NGramSize > 0 then
     NGramDict := TNGramDict.Create;
+  // C3-A : dictionnaire des lignes identiques (top-lines)
+  LineDict := nil;
+  if LOpts.TopLinesLimit > 0 then
+    LineDict := TLineDict.Create;
+  // C3-C : dictionnaire des tags + pattern parsé
+  TagDict := nil;
+  SetLength(TagPat, 0);
+  if LOpts.RegexTag <> '' then
+  begin
+    if not ParseTagPattern(LOpts.RegexTag, TagPat) then
+    begin
+      CharDict.Free;
+      WordDict.Free;
+      if NGramDict <> nil then NGramDict.Free;
+      if LineDict <> nil then LineDict.Free;
+      WriteLn(ErrOutput, 'Erreur: --regex-tag : pattern invalide - ', LOpts.RegexTag);
+      Halt(1);
+    end;
+    TagDict := TTagDict.Create;
+  end;
 
   // Initialisation des compteurs et états
   Stats.LineCount := 0;
@@ -1727,6 +2642,25 @@ begin
     Stats.HistCounts[i] := 0;
   for i := 0 to CC_CLASS_COUNT - 1 do
     Stats.CharClasses[i] := 0;
+  // C3-A : état des sections log
+  Stats.TopLinesDupEnabled := LOpts.TopLinesLimit > 0;
+  Stats.Redact := LOpts.Redact;
+  // C3-B : niveaux de log
+  Stats.LogLevelsEnabled := LOpts.LogLevels;
+  Stats.FilterLevels := LOpts.FilterLevels;
+  for i := Ord(Low(TLogLevel)) to Ord(High(TLogLevel)) do
+    Stats.LogLevels[TLogLevel(i)] := 0;
+  // C3-C : tags
+  Stats.TagsEnabled := LOpts.RegexTag <> '';
+  SetLength(Stats.Tags, 0);
+  SetLength(Stats.PatternResults, Length(LOpts.Patterns));
+  for i := 0 to High(LOpts.Patterns) do
+  begin
+    Stats.PatternResults[i].Pattern := LOpts.Patterns[i];
+    Stats.PatternResults[i].Matches := 0;
+    Stats.PatternResults[i].Lines := 0;
+  end;
+  SetLength(Stats.TopLinesDup, 0);
   SentenceWords := 0;
   SetLength(LineTokens, 0);
   FirstChar := True;
@@ -1890,6 +2824,41 @@ begin
           if SOpts.HistogramKind = hkLineLength then
             Inc(Stats.HistCounts[HistogramIndex(hkLineLength, LineLen)]);
           
+          // C3-B : détection du niveau de log sur la ligne courante
+          if LOpts.LogLevels then
+            Inc(Stats.LogLevels[DetectLogLevel(CurrentLine)]);
+
+          // C3-C : extraction des tags sur la ligne courante
+          if TagDict <> nil then
+          begin
+            ExtractTags(TagPat, CurrentLine, TagDict);
+            if (LOpts.TopTagsLimit > 0) and (TagDict.Count > TOPLINES_PRUNE_THRESHOLD) and
+               (TagDict.Count > LOpts.TopTagsLimit * 8) then
+              PruneTags(TagDict, LOpts.TopTagsLimit);
+          end;
+
+          // C3-A : patterns et top-lignes sur la ligne courante (avant reset)
+          if Length(LOpts.Patterns) > 0 then
+            for pi := 0 to High(LOpts.Patterns) do
+            begin
+              LineOcc := CountPatternOccurrences(LOpts.Patterns[pi], CurrentLine);
+              if LineOcc > 0 then
+              begin
+                Inc(Stats.PatternResults[pi].Matches, LineOcc);
+                Inc(Stats.PatternResults[pi].Lines);
+              end;
+            end;
+          if LineDict <> nil then
+          begin
+            if LineDict.TryGetValue(CurrentLine, Count) then
+              LineDict[CurrentLine] := Count + 1
+            else
+              LineDict.Add(CurrentLine, 1);
+            if (LOpts.TopLinesLimit > 0) and (LineDict.Count > TOPLINES_PRUNE_THRESHOLD) and
+               (LineDict.Count > LOpts.TopLinesLimit * 8) then
+              PruneTopLines(LineDict, LOpts.TopLinesLimit);
+          end;
+
           // Réinitialisation pour la prochaine ligne
           CurrentLine := '';
           LineLen := 0;
@@ -1974,6 +2943,36 @@ begin
       SetLength(LineTokens, 0);
     end;
 
+    // C3-A : patterns et top-lignes sur la dernière ligne (si non vide)
+    if LineLen > 0 then
+    begin
+      // C3-B : niveau de log de la dernière ligne
+      if LOpts.LogLevels then
+        Inc(Stats.LogLevels[DetectLogLevel(CurrentLine)]);
+
+      // C3-C : tags sur la dernière ligne
+      if TagDict <> nil then
+        ExtractTags(TagPat, CurrentLine, TagDict);
+
+      if Length(LOpts.Patterns) > 0 then
+        for pi := 0 to High(LOpts.Patterns) do
+        begin
+          LineOcc := CountPatternOccurrences(LOpts.Patterns[pi], CurrentLine);
+          if LineOcc > 0 then
+          begin
+            Inc(Stats.PatternResults[pi].Matches, LineOcc);
+            Inc(Stats.PatternResults[pi].Lines);
+          end;
+        end;
+      if LineDict <> nil then
+      begin
+        if LineDict.TryGetValue(CurrentLine, Count) then
+          LineDict[CurrentLine] := Count + 1
+        else
+          LineDict.Add(CurrentLine, 1);
+      end;
+    end;
+
     // v2.6.1 : un point en attente en fin de fichier (ex. « 3.14 » en fin de
     // flux sans caractère suivant) clôt la phrase — même règle que la clôture
     // différée (le point final « 3. » reste une vraie fin de phrase).
@@ -2020,12 +3019,22 @@ begin
     if SOpts.NGramSize > 0 then
       BuildNGrams(NGramDict, SOpts.TopNgramsLimit, Stats.NGrams);
 
+    // C3-A : conversion du dictionnaire des lignes identiques en top-K
+    if LineDict <> nil then
+      BuildTopLines(LineDict, LOpts.TopLinesLimit, Stats.TopLinesDup);
+
+    // C3-C : conversion du dictionnaire des tags en top-K
+    if TagDict <> nil then
+      BuildTags(TagDict, LOpts.TopTagsLimit, Stats.Tags);
+
   finally
     // Nettoyage obligatoire des ressources (mémoire ; le flux d'entrée est
     // fermé par l'appelant : AnalyzeFile/AnalyzeStdin)
     CharDict.Free;
     WordDict.Free;
     if NGramDict <> nil then NGramDict.Free;
+    if LineDict <> nil then LineDict.Free;
+    if TagDict <> nil then TagDict.Free;
   end;
 
   // Calcul de la moyenne de longueur de ligne (protection division par zéro)
@@ -2062,14 +3071,15 @@ end;
 procedure AnalyzeFile(const Path: string; out Stats: TStats; OptAll: Boolean;
                       WordMode: TWordMode; CaseFoldMode: TCaseFold;
                       SentenceMode: TSentenceMode; MaxUnique: Int64;
-                      const SOpts: TStructureOptions);
+                      const SOpts: TStructureOptions;
+                      const LOpts: TLogOptions);
 var
   FS: TFileStream;
 begin
   FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
   try
     AnalyzeData(Path, FS, Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
-                MaxUnique, SOpts);
+                MaxUnique, SOpts, LOpts);
   finally
     FS.Free;
   end;
@@ -2083,17 +3093,116 @@ end;
 procedure AnalyzeStdin(out Stats: TStats; OptAll: Boolean;
                        WordMode: TWordMode; CaseFoldMode: TCaseFold;
                        SentenceMode: TSentenceMode; MaxUnique: Int64;
-                       const SOpts: TStructureOptions);
+                       const SOpts: TStructureOptions;
+                       const LOpts: TLogOptions);
 var
   HS: THandleStream;
 begin
   HS := THandleStream.Create(StdInputHandle);
   try
     AnalyzeData('stdin', HS, Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
-                MaxUnique, SOpts);
+                MaxUnique, SOpts, LOpts);
   finally
     HS.Free;
   end;
+end;
+
+{=============================================================================
+  CIBLE 3-D — WATCH : surveillance périodique d'un fichier log (polling)
+  =============================================================================
+  --watch / --follow + --interval=N (défaut 2 s, min 1 s). Boucle infinie :
+  à chaque tick, ré-analyse COMPLÈTE du fichier (v1 — l'incrémental octets
+  n'est pas implémenté, documenté) et affiche une ligne de statut ASCII :
+    [timestamp] lines=N (+delta) words=N chars=N sentences=N [niveaux] size=N
+  Le delta est vs le tick précédent. Si le fichier a rétréci (troncature),
+  un message "truncated" est affiché (la ré-analyse repart de zéro de toute
+  façon). Fichier absent au départ → exit 1. Fichier illisible en cours de
+  route → message stderr, on continue. Ctrl+C → arrêt propre, exit 0.
+  =============================================================================}
+procedure WatchFile(const Path: string; IntervalSec: Integer; OptAll: Boolean;
+                    WordMode: TWordMode; CaseFoldMode: TCaseFold;
+                    SentenceMode: TSentenceMode; MaxUnique: Int64;
+                    const SOpts: TStructureOptions; const LOpts: TLogOptions);
+var
+  Stats: TStats;
+  PrevLines, PrevWords, PrevChars, PrevSentences: Int64;
+  PrevSize: Int64;
+  FirstTick: Boolean;
+  CurSize: Int64;
+  Delta: Int64;
+  S: string;
+  Waited, Step: Integer;
+begin
+  if not FileExists(Path) then
+  begin
+    WriteLn(ErrOutput, 'Erreur: fichier introuvable pour --watch - ', Path);
+    Halt(1);
+  end;
+  InstallWatchHandler;
+  WriteLn('Watching: ', Path, ' (every ', IntervalSec, 's, Ctrl+C to stop)');
+  Flush(Output);
+  PrevLines := -1; PrevWords := -1; PrevChars := -1; PrevSentences := -1;
+  PrevSize := -1;
+  FirstTick := True;
+  while not WatchStop do
+  begin
+    try
+      AnalyzeFile(Path, Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
+                  MaxUnique, SOpts, LOpts);
+      CurSize := Stats.CharCount;  // approx : caractères lus = taille approx
+      // Taille réelle via FileSize
+      // (FileSize renvoie Int64 en FPC 3.2.2 via overload)
+      S := '';
+      S := S + '[' + CurrentStamp + '] ';
+      if FirstTick then
+      begin
+        S := S + 'lines=' + IntToStr(Stats.LineCount) +
+                 ' words=' + IntToStr(Stats.WordCount) +
+                 ' chars=' + IntToStr(Stats.CharCount) +
+                 ' sentences=' + IntToStr(Stats.SentenceCount);
+        FirstTick := False;
+      end
+      else
+      begin
+        Delta := Stats.LineCount - PrevLines;
+        if Delta >= 0 then
+          S := S + 'lines=' + IntToStr(Stats.LineCount) + ' (+' + IntToStr(Delta) + ')'
+        else
+          S := S + 'lines=' + IntToStr(Stats.LineCount) + ' (' + IntToStr(Delta) + ')';
+        S := S + ' words=' + IntToStr(Stats.WordCount) +
+                 ' chars=' + IntToStr(Stats.CharCount) +
+                 ' sentences=' + IntToStr(Stats.SentenceCount);
+      end;
+      // Niveaux si --log-level
+      if LOpts.LogLevels then
+        S := S + ' | error=' + IntToStr(Stats.LogLevels[llError]) +
+                 ' warn=' + IntToStr(Stats.LogLevels[llWarn]) +
+                 ' info=' + IntToStr(Stats.LogLevels[llInfo]) +
+                 ' none=' + IntToStr(Stats.LogLevels[llNone]);
+      // Troncature détectée (taille a rétréci)
+      if (PrevSize >= 0) and (CurSize < PrevSize) then
+        S := S + ' [TRUNCATED]';
+      WriteLn(S);
+      Flush(Output);
+      PrevLines := Stats.LineCount;
+      PrevWords := Stats.WordCount;
+      PrevChars := Stats.CharCount;
+      PrevSentences := Stats.SentenceCount;
+      PrevSize := CurSize;
+    except
+      on E: Exception do
+        WriteLn(ErrOutput, '[' + CurrentStamp + '] erreur lecture: ', E.Message);
+    end;
+    // Sleep par petits pas pour réagir vite au Ctrl+C
+    Waited := 0;
+    Step := 200;
+    while (Waited < IntervalSec * 1000) and (not WatchStop) do
+    begin
+      Sleep(Step);
+      Inc(Waited, Step);
+    end;
+  end;
+  WriteLn('Stopped.');
 end;
 
 {=============================================================================
@@ -3082,7 +4191,7 @@ procedure PrintStats(const Stats: TStats; ShowChars, ShowWords, ShowLines, ShowA
                      TopWordsLimit, TopCharsLimit: Integer;
                      const CheckResults: TCheckResultArray);
 var
-  i, Limit, Total, RankW: Integer;
+  i, j, Limit, Total, RankW: Integer;
   Title, Preview: string;
   Lx: TLexicalStats;
   Rd: TReadabilityStats;
@@ -3327,17 +4436,99 @@ begin
     if Limit > Length(Stats.TopLines) then
       Limit := Length(Stats.TopLines);
 
+    j := 0;  // compteur de lignes affichées (renumérotation si filtre C3-B)
     for i := 0 to Limit - 1 do
     begin
+      { C3-B : filtre par niveau (affichage seulement, compteurs sur le brut) }
+      if (Stats.FilterLevels <> []) and
+         (not (DetectLogLevel(Stats.TopLines[i].Text) in Stats.FilterLevels)) then
+        Continue;
+      Inc(j);
       Preview := Stats.TopLines[i].Text;
+      { C3-A : redaction appliquée aux sorties seulement }
+      if Stats.Redact <> [] then
+        Preview := RedactString(Preview, Stats.Redact);
       { Préview tronquée à ~60 caractères UTF-8 sans couper une séquence
         multi-octets (UTF8SafeCopy), suffixée de "..." si tronquée }
       if UTF8Length(Preview) > 60 then
         Preview := UTF8SafeCopy(Preview, 57) + '...';
-      WriteLn('  ', i + 1:RankW, '  ',
+      WriteLn('  ', j:RankW, '  ',
               Format('%6d', [Stats.TopLines[i].Len]), '  ',
               Preview);
     end;
+    WriteLn;
+  end;
+
+  { Section Patterns (C3-A) — affichée si au moins un --pattern est défini.
+    Rang, pattern, nombre de lignes matchées et nombre total d'occurrences. }
+  if Length(Stats.PatternResults) > 0 then
+  begin
+    Title := 'Patterns';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn('  ', UTF8PadRight('Pattern', 24), '  ', 'Lines', '  ', 'Matches');
+    for i := 0 to High(Stats.PatternResults) do
+      WriteLn('  ', UTF8PadRight(QuotedStr(Stats.PatternResults[i].Pattern), 24), '  ',
+              Format('%5d', [Stats.PatternResults[i].Lines]), '  ',
+              Format('%7d', [Stats.PatternResults[i].Matches]));
+    WriteLn;
+  end;
+
+  { Section Top Lines (C3-A) — lignes identiques les plus fréquentes (--top-lines).
+    Redaction appliquée à l'exemple affiché. }
+  if Stats.TopLinesDupEnabled and (Length(Stats.TopLinesDup) > 0) then
+  begin
+    Title := SectionTitle('Top Lines', EffectiveLimit(Length(Stats.TopLinesDup), ShowAll, TopLinesDupLimit),
+                          Length(Stats.TopLinesDup));
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn('  #  Count  Line');
+    Limit := EffectiveLimit(Length(Stats.TopLinesDup), ShowAll, TopLinesDupLimit);
+    j := 0;
+    for i := 0 to Limit - 1 do
+    begin
+      { C3-B : filtre par niveau }
+      if (Stats.FilterLevels <> []) and
+         (not (DetectLogLevel(Stats.TopLinesDup[i].Line) in Stats.FilterLevels)) then
+        Continue;
+      Inc(j);
+      Preview := Stats.TopLinesDup[i].Line;
+      if Stats.Redact <> [] then
+        Preview := RedactString(Preview, Stats.Redact);
+      if UTF8Length(Preview) > 60 then
+        Preview := UTF8SafeCopy(Preview, 57) + '...';
+      WriteLn('  ', j:2, '  ', Format('%5d', [Stats.TopLinesDup[i].Count]), '  ', Preview);
+    end;
+    WriteLn;
+  end;
+
+  { Section Log Levels (C3-B) — affichée avec --log-level. Somme = lines. }
+  if Stats.LogLevelsEnabled then
+  begin
+    Title := 'Log Levels';
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn(SummaryLine('Error:', Stats.LogLevels[llError]));
+    WriteLn(SummaryLine('Warn:', Stats.LogLevels[llWarn]));
+    WriteLn(SummaryLine('Info:', Stats.LogLevels[llInfo]));
+    WriteLn(SummaryLine('Debug:', Stats.LogLevels[llDebug]));
+    WriteLn(SummaryLine('Trace:', Stats.LogLevels[llTrace]));
+    WriteLn(SummaryLine('None:', Stats.LogLevels[llNone]));
+    WriteLn;
+  end;
+
+  { Section Tags (C3-C) — affichée avec --regex-tag / --mode=alarm. }
+  if Stats.TagsEnabled and (Length(Stats.Tags) > 0) then
+  begin
+    Title := SectionTitle('Tags', EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit),
+                          Length(Stats.Tags));
+    WriteLn(AnsiColor(36), Title, AnsiReset);
+    WriteLn(RepeatString('-', Length(Title)));
+    WriteLn('  #  Count  Tag');
+    Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit);
+    for i := 0 to Limit - 1 do
+      WriteLn('  ', i + 1:2, '  ', Format('%5d', [Stats.Tags[i].Count]), '  ',
+              Stats.Tags[i].Tag);
     WriteLn;
   end;
 end;
@@ -3550,7 +4741,69 @@ begin
   WriteLn;
   WriteLn('  ],');
 
-  // Longest Lines
+  // C3-A : bloc patterns (si au moins un --pattern) — inséré avant longest_lines
+  if Length(Stats.PatternResults) > 0 then
+  begin
+    WriteLn('  "patterns": [');
+    for i := 0 to High(Stats.PatternResults) do
+    begin
+      if i > 0 then WriteLn(',');
+      Write('    {"pattern": "', JsonEscape(Stats.PatternResults[i].Pattern),
+            '", "lines": ', Stats.PatternResults[i].Lines,
+            ', "matches": ', Stats.PatternResults[i].Matches, '}');
+    end;
+    WriteLn;
+    WriteLn('  ],');
+  end;
+
+  // C3-A : bloc top_lines (lignes identiques, --top-lines)
+  if Stats.TopLinesDupEnabled and (Length(Stats.TopLinesDup) > 0) then
+  begin
+    WriteLn('  "top_lines": [');
+    Limit := EffectiveLimit(Length(Stats.TopLinesDup), ShowAll, TopLinesDupLimit) - 1;
+    for i := 0 to Limit do
+    begin
+      if i > 0 then WriteLn(',');
+      Write('    {"rank": ', i + 1, ', "count": ', Stats.TopLinesDup[i].Count, ', "line": "');
+      if Stats.Redact <> [] then
+        Write(JsonEscape(RedactString(Stats.TopLinesDup[i].Line, Stats.Redact)))
+      else
+        Write(JsonEscape(Stats.TopLinesDup[i].Line));
+      Write('"}');
+    end;
+    WriteLn;
+    WriteLn('  ],');
+  end;
+
+  // C3-B : bloc log_levels (--log-level)
+  if Stats.LogLevelsEnabled then
+  begin
+    WriteLn('  "log_levels": {');
+    WriteLn('    "error": ', Stats.LogLevels[llError], ',');
+    WriteLn('    "warn": ', Stats.LogLevels[llWarn], ',');
+    WriteLn('    "info": ', Stats.LogLevels[llInfo], ',');
+    WriteLn('    "debug": ', Stats.LogLevels[llDebug], ',');
+    WriteLn('    "trace": ', Stats.LogLevels[llTrace], ',');
+    WriteLn('    "none": ', Stats.LogLevels[llNone]);
+    WriteLn('  },');
+  end;
+
+  // C3-C : bloc tags (--regex-tag / --mode=alarm)
+  if Stats.TagsEnabled and (Length(Stats.Tags) > 0) then
+  begin
+    WriteLn('  "tags": [');
+    Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit) - 1;
+    for i := 0 to Limit do
+    begin
+      if i > 0 then WriteLn(',');
+      Write('    {"rank": ', i + 1, ', "tag": "', JsonEscape(Stats.Tags[i].Tag),
+            '", "count": ', Stats.Tags[i].Count, '}');
+    end;
+    WriteLn;
+    WriteLn('  ],');
+  end;
+
+  // Longest Lines (C3-A : redaction appliquée au contenu exporté) — DERNIER bloc, pas de virgule
   Write('  "longest_lines": [');
   Limit := EffectiveLimit(Length(Stats.TopLines), ShowAll, DEFAULT_TOP_LIMIT) - 1;
   for i := 0 to Limit do
@@ -3559,7 +4812,10 @@ begin
     WriteLn;
     Write('    {"rank": ', i+1, ', ');
     Write('"length": ', Stats.TopLines[i].Len, ', ');
-    Write('"content": "', JsonEscape(Stats.TopLines[i].Text), '"}');
+    if Stats.Redact <> [] then
+      Write('"content": "', JsonEscape(RedactString(Stats.TopLines[i].Text, Stats.Redact)), '"}')
+    else
+      Write('"content": "', JsonEscape(Stats.TopLines[i].Text), '"}');
   end;
   WriteLn;
   WriteLn('  ]');
@@ -3634,6 +4890,30 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
+  BuildTopLinesJSONRedact : Comme BuildTopLinesJSON mais applique la redaction
+  C3-A au contenu de chaque ligne si Stats.Redact <> [].
+  -----------------------------------------------------------------------------}
+function BuildTopLinesJSONRedact(const Stats: TStats; ShowAll: Boolean): string;
+var
+  i, Limit: Integer;
+  Content: string;
+begin
+  Limit := EffectiveLimit(Length(Stats.TopLines), ShowAll, DEFAULT_TOP_LIMIT) - 1;
+  Result := '[';
+  for i := 0 to Limit do
+  begin
+    if i > 0 then Result := Result + ',';
+    Content := Stats.TopLines[i].Text;
+    if Stats.Redact <> [] then
+      Content := RedactString(Content, Stats.Redact);
+    Result := Result + '{"rank": ' + IntToStr(i + 1) +
+      ', "length": ' + IntToStr(Stats.TopLines[i].Len) +
+      ', "content": "' + JsonEscape(Content) + '"}';
+  end;
+  Result := Result + ']';
+end;
+
+{-----------------------------------------------------------------------------
   BuildHistogramJSON : Objet JSON compact de l'histogramme (--histogram, C2-B).
   -----------------------------------------------------------------------------}
 function BuildHistogramJSON(const Stats: TStats): string;
@@ -3684,7 +4964,7 @@ function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: B
                           const CheckResults: TCheckResultArray): string;
 var
   S: string;
-  i: Integer;
+  i, Limit: Integer;
   Lx: TLexicalStats;
   Rd: TReadabilityStats;
 begin
@@ -3763,7 +5043,62 @@ begin
     S := S + ', "ngrams": ' + BuildNGramsJSON(Stats, ShowAll, TopNgramsLimit);
   S := S + ', "top_characters": ' + BuildTopCharsJSON(Stats, ShowAll, TopCharsLimit);
   S := S + ', "top_words": ' + BuildTopWordsJSON(Stats, ShowAll, TopWordsLimit);
-  S := S + ', "longest_lines": ' + BuildTopLinesJSON(Stats, ShowAll);
+  // C3-A : blocs patterns et top_lines (avant longest_lines)
+  if Length(Stats.PatternResults) > 0 then
+  begin
+    S := S + ', "patterns": [';
+    for i := 0 to High(Stats.PatternResults) do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"pattern": "' + JsonEscape(Stats.PatternResults[i].Pattern) +
+        '", "lines": ' + IntToStr(Stats.PatternResults[i].Lines) +
+        ', "matches": ' + IntToStr(Stats.PatternResults[i].Matches) + '}';
+    end;
+    S := S + ']';
+  end;
+  if Stats.TopLinesDupEnabled and (Length(Stats.TopLinesDup) > 0) then
+  begin
+    S := S + ', "top_lines": [';
+    Limit := EffectiveLimit(Length(Stats.TopLinesDup), ShowAll, TopLinesDupLimit) - 1;
+    for i := 0 to Limit do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"rank": ' + IntToStr(i + 1) +
+        ', "count": ' + IntToStr(Stats.TopLinesDup[i].Count) +
+        ', "line": "';
+      if Stats.Redact <> [] then
+        S := S + JsonEscape(RedactString(Stats.TopLinesDup[i].Line, Stats.Redact))
+      else
+        S := S + JsonEscape(Stats.TopLinesDup[i].Line);
+      S := S + '"}';
+    end;
+    S := S + ']';
+  end;
+  // C3-B : bloc log_levels
+  if Stats.LogLevelsEnabled then
+  begin
+    S := S + ', "log_levels": {"error": ' + IntToStr(Stats.LogLevels[llError]) +
+      ', "warn": ' + IntToStr(Stats.LogLevels[llWarn]) +
+      ', "info": ' + IntToStr(Stats.LogLevels[llInfo]) +
+      ', "debug": ' + IntToStr(Stats.LogLevels[llDebug]) +
+      ', "trace": ' + IntToStr(Stats.LogLevels[llTrace]) +
+      ', "none": ' + IntToStr(Stats.LogLevels[llNone]) + '}';
+  end;
+  // C3-C : bloc tags
+  if Stats.TagsEnabled and (Length(Stats.Tags) > 0) then
+  begin
+    S := S + ', "tags": [';
+    Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit) - 1;
+    for i := 0 to Limit do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(Stats.Tags[i].Tag) +
+        '", "count": ' + IntToStr(Stats.Tags[i].Count) + '}';
+    end;
+    S := S + ']';
+  end;
+  // C3-A : redaction dans longest_lines
+  S := S + ', "longest_lines": ' + BuildTopLinesJSONRedact(Stats, ShowAll);
   S := S + '}';
   Result := S;
 end;
@@ -3776,6 +5111,7 @@ function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean;
                           Readability: Boolean): string;
 var
   S: string;
+  i: Integer;
   Lx: TLexicalStats;
   Rd: TReadabilityStats;
 begin
@@ -3828,6 +5164,58 @@ begin
     S := S + ', "avg_word_chars": ' + FormatFloatTrim(Rd.AvgWordChars, 6);
     S := S + ', "pct_long_words": ' + FormatFloatTrim(Rd.PctLongWords, 6);
     S := S + ', "readability_score": ' + FormatFloatTrim(Rd.Score, 6);
+  end;
+  // C3-A : patterns et top_lines en clés plates (tableaux JSON compacts)
+  if Length(Stats.PatternResults) > 0 then
+  begin
+    S := S + ', "patterns": [';
+    for i := 0 to High(Stats.PatternResults) do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"pattern": "' + JsonEscape(Stats.PatternResults[i].Pattern) +
+        '", "lines": ' + IntToStr(Stats.PatternResults[i].Lines) +
+        ', "matches": ' + IntToStr(Stats.PatternResults[i].Matches) + '}';
+    end;
+    S := S + ']';
+  end;
+  if Stats.TopLinesDupEnabled and (Length(Stats.TopLinesDup) > 0) then
+  begin
+    S := S + ', "top_lines": [';
+    for i := 0 to EffectiveLimit(Length(Stats.TopLinesDup), True, TopLinesDupLimit) - 1 do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"rank": ' + IntToStr(i + 1) +
+        ', "count": ' + IntToStr(Stats.TopLinesDup[i].Count) +
+        ', "line": "';
+      if Stats.Redact <> [] then
+        S := S + JsonEscape(RedactString(Stats.TopLinesDup[i].Line, Stats.Redact))
+      else
+        S := S + JsonEscape(Stats.TopLinesDup[i].Line);
+      S := S + '"}';
+    end;
+    S := S + ']';
+  end;
+  // C3-B : clés plates log_levels (--log-level)
+  if Stats.LogLevelsEnabled then
+  begin
+    S := S + ', "log_levels": {"error": ' + IntToStr(Stats.LogLevels[llError]) +
+      ', "warn": ' + IntToStr(Stats.LogLevels[llWarn]) +
+      ', "info": ' + IntToStr(Stats.LogLevels[llInfo]) +
+      ', "debug": ' + IntToStr(Stats.LogLevels[llDebug]) +
+      ', "trace": ' + IntToStr(Stats.LogLevels[llTrace]) +
+      ', "none": ' + IntToStr(Stats.LogLevels[llNone]) + '}';
+  end;
+  // C3-C : clé plate tags
+  if Stats.TagsEnabled and (Length(Stats.Tags) > 0) then
+  begin
+    S := S + ', "tags": [';
+    for i := 0 to EffectiveLimit(Length(Stats.Tags), True, TopTagsLimit) - 1 do
+    begin
+      if i > 0 then S := S + ',';
+      S := S + '{"rank": ' + IntToStr(i + 1) + ', "tag": "' + JsonEscape(Stats.Tags[i].Tag) +
+        '", "count": ' + IntToStr(Stats.Tags[i].Count) + '}';
+    end;
+    S := S + ']';
   end;
   S := S + '}';
   Result := S;
@@ -3936,6 +5324,43 @@ begin
           WriteLn(CsvEscape(Stats.Path), ',summary,,pct_long_words,,', FormatFloatTrim(Rd.PctLongWords, 6), ',');
           WriteLn(CsvEscape(Stats.Path), ',summary,,readability_score,,', FormatFloatTrim(Rd.Score, 6), ',');
         end;
+        // C3-A : lignes pattern (value = pattern, count = matches, length = lines)
+        for i := 0 to High(Stats.PatternResults) do
+          WriteLn(CsvEscape(Stats.Path), ',pattern,,',
+                  CsvEscape(Stats.PatternResults[i].Pattern), ',,',
+                  Stats.PatternResults[i].Matches, ',',
+                  Stats.PatternResults[i].Lines);
+        // C3-A : lignes topline (rank, value = ligne redactée, count)
+        if Stats.TopLinesDupEnabled then
+        begin
+          Limit := EffectiveLimit(Length(Stats.TopLinesDup), ShowAll, TopLinesDupLimit);
+          for i := 0 to Limit - 1 do
+          begin
+            if Stats.Redact <> [] then
+              WriteLn(CsvEscape(Stats.Path), ',topline,', i + 1, ',',
+                      CsvEscape(RedactString(Stats.TopLinesDup[i].Line, Stats.Redact)), ',,',
+                      Stats.TopLinesDup[i].Count, ',')
+            else
+              WriteLn(CsvEscape(Stats.Path), ',topline,', i + 1, ',',
+                      CsvEscape(Stats.TopLinesDup[i].Line), ',,',
+                      Stats.TopLinesDup[i].Count, ',');
+          end;
+        end;
+        // C3-B : lignes loglevel (value = nom du niveau, count = lignes)
+        if Stats.LogLevelsEnabled then
+          for i := Ord(Low(TLogLevel)) to Ord(High(TLogLevel)) do
+            WriteLn(CsvEscape(Stats.Path), ',loglevel,,',
+                    LogLevelName(TLogLevel(i)), ',,',
+                    Stats.LogLevels[TLogLevel(i)], ',');
+        // C3-C : lignes tag (rank, value = tag, count)
+        if Stats.TagsEnabled then
+        begin
+          Limit := EffectiveLimit(Length(Stats.Tags), ShowAll, TopTagsLimit);
+          for i := 0 to Limit - 1 do
+            WriteLn(CsvEscape(Stats.Path), ',tag,', i + 1, ',',
+                    CsvEscape(Stats.Tags[i].Tag), ',,',
+                    Stats.Tags[i].Count, ',');
+        end;
       end;
     ckChars:
       begin
@@ -4010,6 +5435,29 @@ begin
   WriteLn(Out, '  --readability     Metriques de lisibilite + score 0-100');
   WriteLn(Out, '                    (sans syllabes, inspire de Flesch)');
   WriteLn(Out);
+  WriteLn(Out, 'Log Sentinel (Cible 3-A/B) :');
+  WriteLn(Out, '  --pattern=TEXTE   Compte les occurrences du pattern dans chaque');
+  WriteLn(Out, '                    ligne (litteral + | alternance + * ? wildcards,');
+  WriteLn(Out, '                    insensible a la casse) ; repetable');
+  WriteLn(Out, '  --top-lines=N     Top N des lignes identiques (def. 10, 0 = tous,');
+  WriteLn(Out, '                    desactive si l''option est absente)');
+  WriteLn(Out, '  --redact=LISTE    email,ipv4,url (virgules) : remplace par *** dans');
+  WriteLn(Out, '                    les sorties seulement (compteurs sur le brut)');
+  WriteLn(Out, '  --log-level       Compte les lignes par niveau (ERROR>WARN>INFO>');
+  WriteLn(Out, '                    DEBUG>TRACE, mot entier insensible a la casse)');
+  WriteLn(Out, '  --filter=LISTE    error,warn,info,debug,trace,none (virgules) :');
+  WriteLn(Out, '                    filtre l''affichage des lignes (Top Lines,');
+  WriteLn(Out, '                    Longest Lines) ; compteurs sur tout le fichier');
+  WriteLn(Out, '  --regex-tag=PAT   Extrait et compte les tags (mini-moteur : litteral');
+  WriteLn(Out, '                    + [classes] + quantifieurs ? * + ; ex. PLC[0-9]+)');
+  WriteLn(Out, '  --top-tags=N      Limite du top des tags (def. 10, 0 = tous)');
+  WriteLn(Out, '  --mode=alarm      Raccourci : --log-level + --top-lines + --regex-tag');
+  WriteLn(Out, '                    (tag par defaut [A-Z]+[0-9]+ : PLC1, TAG007...)');
+  WriteLn(Out, '  --watch           Surveille un fichier (polling) : resume toutes les');
+  WriteLn(Out, '                    --interval secondes jusqu''au Ctrl+C ; 1 fichier seul');
+  WriteLn(Out, '  --follow          Alias de --watch');
+  WriteLn(Out, '  --interval=N      Periode du watch en secondes (def. 2, min 1)');
+  WriteLn(Out);
   WriteLn(Out, 'Checks et comparaison (v2.6.0) :');
   WriteLn(Out, '  --check           Mode check : gate CI (exit 2/3)');
   WriteLn(Out, '  --fail-if=SPEC    Check bloquant : METRIQUE OPERATEUR SEUIL');
@@ -4081,6 +5529,19 @@ var
   HistogramKindOpt: THistogramKind; // --histogram=...
   OptCharClasses: Boolean;     // --char-classes
   SOpts: TStructureOptions;    // Options structure transmises à l'analyse
+  // Cible 3-A : options log (patterns, top-lines, redaction)
+  LOpts: TLogOptions;
+  Patterns: TStringList;       // --pattern=... (répétable, résolu en LOpts)
+  RedactModes: TRedactSet;     // --redact=email,ipv4,url
+  // Cible 3-B : niveaux de log
+  OptLogLevel: Boolean;        // --log-level
+  FilterLevels: TLogLevelSet;  // --filter=ERROR,WARN
+  // Cible 3-C : alarm / tags
+  RegexTag: string;            // --regex-tag=PATTERN
+  OptModeAlarm: Boolean;       // --mode=alarm
+  // Cible 3-D : watch
+  OptWatch: Boolean;           // --watch / --follow
+  WatchInterval: Integer;      // --interval=N (défaut 2, min 1)
   // Totaux agrégés (--json-mode=aggregate, C2-B) : char_classes et histogramme
   // sont sommés classe par classe ; les n-grams ne sont PAS agrégés (limitation
   // documentée : présents par fichier uniquement).
@@ -4104,6 +5565,7 @@ var
   DeltaThr: Double;
   IsWarnCheck: Boolean;
   OpToken: string;
+  CheckLL: TLogLevel;          // valeur temporaire de parsing de --filter
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -4165,6 +5627,26 @@ begin
   StopWordMode := swNone;
   HistogramKindOpt := hkNone;
   OptCharClasses := False;
+  // Cible 3-A : défauts = sections log désactivées
+  TopLinesDupLimit := DEFAULT_TOP_LIMIT;
+  RedactModes := [];
+  SetLength(LOpts.Patterns, 0);
+  LOpts.TopLinesLimit := 0;   // --top-lines non passé = désactivé
+  LOpts.Redact := [];
+  // Cible 3-B : défauts
+  OptLogLevel := False;
+  FilterLevels := [];
+  LOpts.LogLevels := False;
+  LOpts.FilterLevels := [];
+  // Cible 3-C : défauts
+  RegexTag := '';
+  OptModeAlarm := False;
+  TopTagsLimit := DEFAULT_TOP_LIMIT;
+  LOpts.RegexTag := '';
+  LOpts.TopTagsLimit := DEFAULT_TOP_LIMIT;
+  // Cible 3-D : défauts
+  OptWatch := False;
+  WatchInterval := 2;
   // C2 (v2.6.0) : défauts du moteur de checks
   OptCheck := False;
   CheckMode := False;
@@ -4184,6 +5666,7 @@ begin
   IncludePatterns := TStringList.Create;  // --include=PATTERN (répétable)
   ExcludePatterns := TStringList.Create;  // --exclude=PATTERN (répétable)
   JsonParts := TStringList.Create;        // JSON compacts (array/aggregate)
+  Patterns := TStringList.Create;          // --pattern=... (C3-A)
 
   try
     {=========================================================================
@@ -4517,6 +6000,205 @@ begin
       else if Param = '--char-classes' then
         OptCharClasses := True
 
+      // Cible 3-A : --pattern=TEXTE (répétable ; aussi --pattern TEXTE)
+      else if (Param = '--pattern') or (Copy(Param, 1, 10) = '--pattern=') or
+              (Copy(Param, 1, 10) = '--pattern:') then
+      begin
+        if (Copy(Param, 1, 10) = '--pattern=') or (Copy(Param, 1, 10) = '--pattern:') then
+          V := Copy(ParamOrig, 11, Length(ParamOrig))
+        else
+        begin
+          if i >= ParamCount then
+          begin
+            WriteLn(ErrOutput, 'Erreur: --pattern : valeur manquante (TEXTE)');
+            Halt(1);
+          end;
+          Inc(i);
+          V := ParamStr(i);
+        end;
+        if V = '' then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --pattern : valeur vide');
+          Halt(1);
+        end;
+        Patterns.Add(V);
+      end
+
+      // Cible 3-A : --top-lines=N (0 = désactivé, défaut 10 si --top-lines seul)
+      else if (Param = '--top-lines') or (Copy(Param, 1, 12) = '--top-lines=') or
+              (Copy(Param, 1, 12) = '--top-lines:') then
+      begin
+        if (Copy(Param, 1, 12) = '--top-lines=') or (Copy(Param, 1, 12) = '--top-lines:') then
+          V := Copy(ParamOrig, 13, Length(ParamOrig))
+        else
+        begin
+          if i >= ParamCount then
+            V := IntToStr(DEFAULT_TOP_LIMIT)
+          else
+          begin
+            Inc(i);
+            V := ParamStr(i);
+          end;
+        end;
+        Val(V, TopLinesDupLimit, Code);
+        if (Code <> 0) or (TopLinesDupLimit < 0) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --top-lines attend un entier >= 0 (reçu "', V, '")');
+          Halt(1);
+        end;
+        LOpts.TopLinesLimit := TopLinesDupLimit;
+      end
+
+      // Cible 3-A : --redact=email,ipv4,url (séparés par virgule, répétable)
+      else if (Copy(Param, 1, 9) = '--redact=') or (Copy(Param, 1, 9) = '--redact:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 10, Length(ParamOrig)));
+        while V <> '' do
+        begin
+          k := Pos(',', V);
+          if k > 0 then
+          begin
+            if Copy(V, 1, k - 1) = 'email' then RedactModes := RedactModes + [rmEmail]
+            else if Copy(V, 1, k - 1) = 'ipv4' then RedactModes := RedactModes + [rmIPv4]
+            else if Copy(V, 1, k - 1) = 'url' then RedactModes := RedactModes + [rmURL]
+            else
+            begin
+              WriteLn(ErrOutput, 'Erreur: --redact attend "email", "ipv4" ou "url" (reçu "', Copy(V, 1, k - 1), '")');
+              Halt(1);
+            end;
+            V := Copy(V, k + 1, Length(V));
+          end
+          else
+          begin
+            if V = 'email' then RedactModes := RedactModes + [rmEmail]
+            else if V = 'ipv4' then RedactModes := RedactModes + [rmIPv4]
+            else if V = 'url' then RedactModes := RedactModes + [rmURL]
+            else if V <> '' then
+            begin
+              WriteLn(ErrOutput, 'Erreur: --redact attend "email", "ipv4" ou "url" (reçu "', V, '")');
+              Halt(1);
+            end;
+            V := '';
+          end;
+        end;
+        LOpts.Redact := RedactModes;
+      end
+
+      // Cible 3-B : --log-level (flag)
+      else if Param = '--log-level' then
+      begin
+        OptLogLevel := True;
+        LOpts.LogLevels := True;
+      end
+
+      // Cible 3-B : --filter=ERROR,WARN,INFO,... (séparés par virgule)
+      else if (Copy(Param, 1, 9) = '--filter=') or (Copy(Param, 1, 9) = '--filter:') then
+      begin
+        V := LowerCase(Copy(ParamOrig, 10, Length(ParamOrig)));
+        while V <> '' do
+        begin
+          k := Pos(',', V);
+          if k > 0 then
+          begin
+            if not ParseLogLevelName(Copy(V, 1, k - 1), CheckLL) then
+            begin
+              WriteLn(ErrOutput, 'Erreur: --filter attend "error", "warn", "info", "debug", "trace" ou "none" (reçu "', Copy(V, 1, k - 1), '")');
+              Halt(1);
+            end;
+            FilterLevels := FilterLevels + [CheckLL];
+            V := Copy(V, k + 1, Length(V));
+          end
+          else
+          begin
+            if V <> '' then
+            begin
+              if not ParseLogLevelName(V, CheckLL) then
+              begin
+                WriteLn(ErrOutput, 'Erreur: --filter attend "error", "warn", "info", "debug", "trace" ou "none" (reçu "', V, '")');
+                Halt(1);
+              end;
+              FilterLevels := FilterLevels + [CheckLL];
+            end;
+            V := '';
+          end;
+        end;
+        LOpts.FilterLevels := FilterLevels;
+      end
+
+      // Cible 3-C : --regex-tag=PATTERN (mini-moteur : littéral + [classes] + ? * +)
+      else if (Copy(Param, 1, 12) = '--regex-tag=') or (Copy(Param, 1, 12) = '--regex-tag:') then
+      begin
+        V := Copy(ParamOrig, 13, Length(ParamOrig));
+        if V = '' then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --regex-tag : pattern vide');
+          Halt(1);
+        end;
+        RegexTag := V;
+      end
+      else if Param = '--regex-tag' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --regex-tag=PATTERN');
+        Halt(1);
+      end
+
+      // Cible 3-C : --top-tags=N (borne du top des tags, défaut 10, 0 = tous)
+      else if (Copy(Param, 1, 11) = '--top-tags=') or (Copy(Param, 1, 11) = '--top-tags:') then
+      begin
+        V := Copy(ParamOrig, 12, Length(ParamOrig));
+        Val(V, TopTagsLimit, Code);
+        if (Code <> 0) or (TopTagsLimit < 0) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --top-tags attend un entier >= 0 (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--top-tags' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --top-tags=N (0 = tous)');
+        Halt(1);
+      end
+
+      // Cible 3-C : --mode=alarm (raccourci = --log-level + --top-lines + --regex-tag)
+      else if (Param = '--mode=alarm') or (Param = '--mode:alarm') then
+      begin
+        OptModeAlarm := True;
+        OptLogLevel := True;
+        if LOpts.TopLinesLimit = 0 then
+        begin
+          TopLinesDupLimit := DEFAULT_TOP_LIMIT;
+          LOpts.TopLinesLimit := DEFAULT_TOP_LIMIT;
+        end;
+        if RegexTag = '' then
+          RegexTag := '[A-Z]+[0-9]+';  // défaut : identifiants type TAG123, PLC1
+      end
+      else if Copy(Param, 1, 7) = '--mode=' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: --mode attend "alarm" (reçu "', Copy(ParamOrig, 8, Length(ParamOrig)), '")');
+        Halt(1);
+      end
+
+      // Cible 3-D : --watch / --follow (surveillance périodique)
+      else if (Param = '--watch') or (Param = '--follow') then
+        OptWatch := True
+
+      // Cible 3-D : --interval=N (secondes, défaut 2, min 1)
+      else if (Copy(Param, 1, 11) = '--interval=') or (Copy(Param, 1, 11) = '--interval:') then
+      begin
+        V := Copy(ParamOrig, 12, Length(ParamOrig));
+        Val(V, WatchInterval, Code);
+        if (Code <> 0) or (WatchInterval < 1) then
+        begin
+          WriteLn(ErrOutput, 'Erreur: --interval attend un entier >= 1 (reçu "', V, '")');
+          Halt(1);
+        end;
+      end
+      else if Param = '--interval' then
+      begin
+        WriteLn(ErrOutput, 'Erreur: utilisez --interval=N (secondes, min 1)');
+        Halt(1);
+      end
+
       // C2 (v2.6.0) : moteur de checks — --check, --fail-if, --warn-if,
       // --compare et --fail-on-delta. --fail-if/--warn-if/--compare/
       // --fail-on-delta activent aussi le mode check (mode implicite).
@@ -4769,6 +6451,38 @@ begin
       DedupeSorted(Files);
     end;
 
+    // Cible 3-D : --watch exige exactement 1 fichier, pas de stdin
+    if OptWatch then
+    begin
+      if UseStdin then
+      begin
+        WriteLn(ErrOutput, 'Erreur: --watch ne fonctionne pas avec l''entrée standard (-).');
+        Halt(1);
+      end;
+      if Files.Count <> 1 then
+      begin
+        WriteLn(ErrOutput, 'Erreur: --watch attend exactement UN fichier (reçu ', Files.Count, ').');
+        Halt(1);
+      end;
+      SOpts.NGramSize := NGramSize;
+      SOpts.TopNgramsLimit := TopNgramsLimit;
+      SOpts.StopWordMode := StopWordMode;
+      SOpts.HistogramKind := HistogramKindOpt;
+      SOpts.CharClasses := OptCharClasses;
+      SetLength(LOpts.Patterns, Patterns.Count);
+      for k := 0 to Patterns.Count - 1 do
+        LOpts.Patterns[k] := Patterns[k];
+      LOpts.TopLinesLimit := TopLinesDupLimit;
+      LOpts.Redact := RedactModes;
+      LOpts.LogLevels := OptLogLevel;
+      LOpts.FilterLevels := FilterLevels;
+      LOpts.RegexTag := RegexTag;
+      LOpts.TopTagsLimit := TopTagsLimit;
+      WatchFile(Files[0], WatchInterval, OptAll, WordMode, CaseFoldMode,
+                SentenceMode, MaxUnique, SOpts, LOpts);
+      Halt(0);
+    end;
+
     // C2 (v2.6.0) : mode check implicite — --fail-if, --warn-if, --compare et
     // --fail-on-delta activent le mode check sans --check explicite.
     CheckMode := OptCheck or (Length(Checks) > 0) or (CompareFile <> '');
@@ -4865,6 +6579,16 @@ begin
     SOpts.StopWordMode := StopWordMode;
     SOpts.HistogramKind := HistogramKindOpt;
     SOpts.CharClasses := OptCharClasses;
+    // Cible 3-A : options log regroupées pour l'analyse
+    SetLength(LOpts.Patterns, Patterns.Count);
+    for k := 0 to Patterns.Count - 1 do
+      LOpts.Patterns[k] := Patterns[k];
+    LOpts.TopLinesLimit := TopLinesDupLimit;
+    LOpts.Redact := RedactModes;
+    LOpts.LogLevels := OptLogLevel;
+    LOpts.FilterLevels := FilterLevels;
+    LOpts.RegexTag := RegexTag;
+    LOpts.TopTagsLimit := TopTagsLimit;
 
     // Totaux agrégés des sections structure (C2-B) : remis à zéro
     for k := 0 to CC_CLASS_COUNT - 1 do TotalCharClasses[k] := 0;
@@ -4875,10 +6599,10 @@ begin
       try
         // Analyse du fichier courant (ou de l'entrée standard)
         if Files[i] = 'stdin' then
-          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, SentenceMode, MaxUnique, SOpts)
+          AnalyzeStdin(Stats, OptAll, WordMode, CaseFoldMode, SentenceMode, MaxUnique, SOpts, LOpts)
         else
           AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
-                      MaxUnique, SOpts);
+                      MaxUnique, SOpts, LOpts);
 
         // C2 (v2.6.0) : évaluation des checks APRÈS l'analyse, sur les
         // compteurs TStats — le streaming et la mémoire bornée ne sont pas
@@ -5061,6 +6785,7 @@ begin
   finally
     // Libération des ressources (garantie même en cas d'exception)
     JsonParts.Free;
+    Patterns.Free;
     ExcludePatterns.Free;
     IncludePatterns.Free;
     RecursiveDirs.Free;

@@ -1,0 +1,8 @@
+2026-01-15 11:00:01 INFO PLC1 cycle started
+2026-01-15 11:00:02 WARN PLC1 temperature high 78C
+2026-01-15 11:00:03 ERROR MOTOR23 overload trip
+2026-01-15 11:00:04 ERROR PLC1 communication lost
+2026-01-15 11:00:05 INFO PLC1 cycle finished
+2026-01-15 11:00:06 WARN MOTOR23 current spike
+2026-01-15 11:00:07 ERROR PLC2 sensor fault SENSOR7
+2026-01-15 11:00:08 INFO PLC1 cycle started

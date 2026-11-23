@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.7.0 · Free Pascal (mode objfpc) · MIT
+Version 2.11.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -48,6 +48,7 @@ fstats --json mon-fichier.txt   # export JSON
 | **Répétitions** | n-grammes (1 à 5 mots), avec filtrage des mots vides (français/anglais) |
 | **Distribution** | histogrammes (longueur de ligne, de mot, mots par phrase), classes de caractères |
 | **Lisibilité** | mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7), score 0-100 (sans syllabes) |
+| **Log Sentinel** | patterns (`--pattern`), top lignes (`--top-lines`), redaction (`--redact`), niveaux (`--log-level`), filtre (`--filter`), tags (`--regex-tag`), mode alarm (`--mode=alarm`), watch (`--watch`) |
 | **Export** | console alignée ASCII pur, JSON (objet / NDJSON / tableau / agrégat), CSV |
 
 ## Utilisation
@@ -81,6 +82,21 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 | `--stopwords=fr\|en\|none` | Retire les mots vides du flux n-gramme uniquement |
 | `--histogram=M` | `line_length` \| `word_length` \| `words_per_sentence` (barres ASCII) |
 | `--char-classes` | Classe chaque caractère : lettres, chiffres, blancs, ponctuation, contrôle, autre |
+
+### Log Sentinel (Cible 3-A/B/C/D)
+
+| Option | Effet |
+|---|---|
+| `--pattern=TEXTE` | Compte les occurrences du pattern dans chaque ligne (répétable). Littéral + `\|` (alternance) + `*`/`?` (wildcards), insensible à la casse. Sous CMD, échapper `\|` : `--pattern="ERROR\|WARN"` |
+| `--top-lines=N` | Top N des lignes identiques (défaut 10 ; absent = désactivé ; `0` = tous). Mémoire bornée comme les n-grams |
+| `--redact=LISTE` | `email,ipv4,url` (séparés par virgule) : remplace par `***` dans les **sorties seulement** (console/JSON/CSV) ; les compteurs restent calculés sur le texte brut |
+| `--log-level` | Compte les lignes par niveau : priorité `ERROR` > `WARN` > `INFO` > `DEBUG` > `TRACE` (mot entier, insensible à la casse, n'importe où dans la ligne) + `none`. Somme = `lines` |
+| `--filter=LISTE` | `error,warn,info,debug,trace,none` (virgules) : filtre l'**affichage** des lignes (`Top Lines`, `Longest Lines`) ; les compteurs globaux restent sur tout le fichier |
+| `--regex-tag=PAT` | Extrait et compte les tags (mini-moteur : littéral + classes `[0-9]`/`[a-z]`… + quantifieurs `?` `*` `+`). Ex. `PLC[0-9]+` → `PLC1`, `PLC23` |
+| `--top-tags=N` | Limite du top des tags (défaut 10 ; `0` = tous). Mémoire bornée comme les n-grams |
+| `--mode=alarm` | Raccourci SCADA/PLC : active `--log-level` + `--top-lines` + `--regex-tag` (tag par défaut `[A-Z]+[0-9]+` : `PLC1`, `TAG007`…) |
+| `--watch`, `--follow` | Surveille **un** fichier en polling : ré-affiche le résumé toutes les `--interval` secondes jusqu'au Ctrl+C (exit 0). Interdit avec stdin ou plusieurs fichiers |
+| `--interval=N` | Période du watch en secondes (défaut 2, min 1) |
 
 ### Checks et comparaison (CI)
 
@@ -132,6 +148,15 @@ fstats --histogram=line_length --histogram=word_length rapport.txt
 fstats --char-classes --json corpus.txt
 fstats --readability rapport.txt
 fstats --readability --word-mode=ascii --summary-json corpus.txt
+fstats --pattern='ERROR|WARN' --top-lines=10 app.log
+fstats --pattern='*timeout*' --json app.log
+fstats --redact=email,ipv4,url --json app.log
+fstats --log-level app.log
+fstats --log-level --filter=error,warn --top-lines=5 app.log
+fstats --mode=alarm alarms.log
+fstats --regex-tag='PLC[0-9]+' --top-tags=10 alarms.log --json
+fstats --watch --interval=2 --log-level app.log      # Ctrl+C pour arrêter
+echo -e "ERROR x\nINFO ok\nERROR y" | fstats - --pattern=ERROR --summary-json
 fstats docs/**/*.md --check --fail-if max_line_length>120 --fail-if non_utf8>0
 fstats app.log - --check --fail-if max_line_length>500       # via stdin
 fstats --summary-json docs/*.md > baseline.ndjson            # capture
@@ -143,11 +168,12 @@ fstats --help
 
 - **Console** : sections alignées en ASCII pur (`Summary`, `Checks`, `Quality`, `Lexical`,
   `Readability`, `Top Characters/Words`, `Longest Lines`, `N-grams`,
-  `Histogram`, `Character Classes`), sans séquence ANSI — sûre pour les
-  scripts et pipes.
+  `Histogram`, `Character Classes`, `Patterns`, `Top Lines`, `Log Levels`, `Tags`),
+  sans séquence ANSI — sûre pour les scripts et pipes.
 - **JSON** : champs de traçabilité (`tool`, `version`, `schema_version`,
   `generated`) + `statistics`, `quality`, et blocs additifs (`checks`, `lexical`,
-  `readability`, `ngrams`, `histogram`, `char_classes`) selon les options.
+  `readability`, `ngrams`, `histogram`, `char_classes`, `patterns`, `top_lines`,
+  `log_levels`, `tags`) selon les options.
 - **CSV v2** : en-tête fixe `file,type,rank,value,code_point,count,length`,
   trois sous-formats (`summary`, `words`, `chars`).
 
@@ -170,20 +196,21 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 
 | Fichier | Contenu |
 |---|---|
+| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.11.0) |
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
 | [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée : A v2.2.0, B+C v2.6.0) |
 | [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
-| [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » |
+| [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » — **complète** (C3-A v2.8.0 … C3-D v2.11.0 : patterns, top-lines, redaction, log-level, filter, alarm, watch) |
 | [doc/ROADMAPFULL.md](doc/ROADMAPFULL.md) | Vision d'ensemble et roadmaps complètes |
 | [doc/README.md](doc/README.md) | Index de la documentation |
 
 ## Tests automatisés
 
 - `tests\run.bat` (Windows / CMD) et `tests\run.sh` (Linux / Git Bash) :
-  compilation + 59 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C) avec
-  validation JSON via node et vérification des codes de retour.
+  compilation + 100 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C, Cible 3 A/B/C/D)
+  avec validation JSON via node et vérification des codes de retour.
 - Prérequis : `fpc` et `node` sur le PATH.
 - La CI GitHub Actions exécute les deux suites sur `windows-latest` et
   `ubuntu-latest` à chaque push sur `main` et chaque `pull_request`.
@@ -218,6 +245,13 @@ fstats/
 - Le score de lisibilité (`--readability`) est une approximation **sans
   syllabes** : ce n'est pas un Flesch-Kincaid exact (la formule est figée dans
   la spécification technique).
+- `--regex-tag` est un **mini-moteur** (littéral + classes `[...]` + `? * +`),
+  pas une regex complète ; périmètre figé dans la spécification technique.
+- `--top-lines` et `--top-tags` : top-K **approximatif** sur très gros logs
+  (dictionnaire borné comme les n-grams).
+- `--watch` (v1) **ré-analyse le fichier en entier** à chaque tick (l'incrémental
+  octet à octet n'est pas implémenté) ; suffisant pour des logs de taille
+  raisonnable, documenté.
 
 Toutes les sémantiques sont détaillées et figées dans la
 [spécification technique](doc/SEMANTIQUE.md).
