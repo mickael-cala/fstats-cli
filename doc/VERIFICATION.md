@@ -61,6 +61,42 @@ Perimetre : increment A de ROADMAP-CIBLE1.md (stdin, glob interne,
 recursivite, JSON multi-fichiers valide NDJSON/array/aggregate, `--summary-json`,
 compteurs qualite). Les compteurs historiques sont inchanges vs v2.1.
 
+## v2.13.0 — compagnon fcmd / --interactive (2026-11-23)
+
+### 1. Compilation
+
+`fpc -O2 -Mobjfpc -FE. src/fstats.pas` : exit=0 (1875 lignes)
+`fpc -O2 -Mobjfpc -FE. src/fcmd.pas` : exit=0 (113 lignes)
+`--version` = `fstats 2.13.0` ; `fcmd --help` = aide du compagnon.
+
+### 2. Parité (hors --interactive)
+
+22 commandes comparées vs binaire v2.11.0 (sortie + exit code, hors
+`--help` qui gagne une ligne) : **toutes identiques** — golden test_fr.txt
+3/13/72/3, JSON/CSV/aggregate, sentinel (alarm, pattern, redact, log-level,
+regex-tag), checks+baseline, watch=0, recursive, glob, stdin, erreurs.
+
+### 3. Wizard en pipe (tests 101-107 de run.sh/run.bat, rejoués ici)
+
+- `fcmd --help` → exit 0, contient « compagnon ».
+- `printf '2\n0\n' | fcmd --dry-run` → `fstats --mode=alarm --top-lines=10 --redact=email,ipv4,url`.
+- `printf '4\n1\nf\ntests/fixtures/app.log\n2\n15\n2,3\n0\n' | fcmd --dry-run`
+  → `fstats tests/fixtures/app.log --ngrams=2,3`.
+- `printf '' | fcmd --dry-run` → exit 1 (EOF).
+- `printf '3\n1\nf\ntests/fixtures/test_fr.txt\n0\nn\n' | fstats --interactive`
+  → exit 0, commande affichée avec `--check`.
+- `printf '3\n1\nf\ntests/fixtures/test_fr.txt\n5\n40\nwords>5\n0\no\n' | fstats --interactive`
+  → **exit 2 propagé** (fail-if words>5 sur 13 mots).
+- `printf '2\n1\nf\ntests/fixtures/alarms.log\n0\n' | fcmd --exec`
+  → exit 0, fstats exécuté (sortie « Lines: »).
+
+### 4. Dogfood
+
+`fstats --check --fail-if non_utf8>0 --fail-if bom>0 --fail-if nonprintable>0
+README.md CHANGELOG.md doc/*.md src/*.pas` → exit 0.
+
+---
+
 ## 1. Compilation
 
 `fpc -O2 -Mobjfpc fstats.pas` : exit=0

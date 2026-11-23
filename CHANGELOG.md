@@ -6,6 +6,37 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.13.0] — 2026-11-23 — Compagnon générateur de ligne de commande (fcmd / --interactive)
+
+### Ajouté
+- **`fstats --interactive`** (alias `--wizard`) : wizard intégré qui pose les
+  questions (3 profils : corpus / log / gate, puis toutes les options par
+  catégorie), affiche la commande générée et, sur confirmation, se ré-exécute
+  avec cette commande en **propageant le exit code** (utile en CI).
+- **`fcmd`** : binaire compagnon séparé (`src/fcmd.pas`) avec la même logique :
+  `fcmd` (wizard + confirmation), `fcmd --dry-run` (affiche seulement la
+  commande, copier-coller), `fcmd --exec` (exécute sans demander),
+  `fcmd --profil=N`, `fcmd --help`. Le wizard se pilote en pipe
+  (`printf '2\n0\n' | fcmd --dry-run`).
+- **`src/fstats_cmdgen.pas`** : logique partagée (table des 50 options,
+  profils, génération quotée shell, exécution fils cross-plateforme).
+- 7 nouveaux tests d'acceptation (101-107) dans `tests/run.sh` / `run.bat` :
+  107 tests au total.
+
+### Modifié
+- `wbld.bat` compile les deux binaires ; CI : smoke test de compilation de
+  `fcmd.pas` en plus de `fstats.pas`.
+- `--help` documente `--interactive`.
+
+### Vérifié
+- Parité : sans `--interactive`, fstats v2.13.0 est identique au binaire
+  v2.11.0 sur 22 commandes (sortie + exit code ; seul `--help` diffère, ligne
+  ajoutée).
+- Wizard testé en pipe : profils, édition d'options, EOF (exit 1),
+  exécution avec propagation du exit code (fail-if `words>5` → exit 2).
+
+---
+
 ## [2.12.0] — 2026-11-23 — Split interne en unités (comportement inchangé)
 
 ### Modifié

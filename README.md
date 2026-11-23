@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.12.0 · Free Pascal (mode objfpc) · MIT
+Version 2.13.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -23,10 +23,12 @@ Compilation depuis la racine du dépôt :
 
 ```
 fpc -O2 -Mobjfpc -FE. src\fstats.pas
+fpc -O2 -Mobjfpc -FE. src\fcmd.pas
 ```
 
-L'exécutable `fstats.exe` est créé à la racine (`wbld.bat` fait pareil sous
-Windows ; `wclr.bat` nettoie les artefacts de compilation).
+Deux exécutables sont créés à la racine : `fstats.exe` et le compagnon
+`fcmd.exe` (la deuxième ligne compile `src\fcmd.pas` ; `wbld.bat` fait pareil
+sous Windows, `wclr.bat` nettoie les artefacts de compilation).
 
 Premières analyses :
 
@@ -35,6 +37,27 @@ fstats mon-fichier.txt          # statistiques complètes à l'écran
 fstats "**/*.md"                # tous les .md du dossier (glob interne)
 echo "un deux trois." | fstats - --summary-json   # depuis l'entrée standard
 fstats --json mon-fichier.txt   # export JSON
+```
+
+## Compagnon : générer la ligne de commande (v2.13.0)
+
+Pas envie de retenir les 50 options ? Deux façons équivalentes :
+
+```
+fstats --interactive     # wizard intégré à fstats
+fcmd                     # binaire compagnon séparé
+```
+
+Le wizard propose **3 profils** (1=corpus, 2=log, 3=gate), puis **toutes les
+options par catégorie** (fichiers, analyse, affichage, sentinel, checks,
+export, divers), affiche la commande générée et demande si vous voulez
+l'exécuter — **le exit code est propagé** (utile en CI). Pilotable en pipe :
+
+```
+printf '2\n0\n' | fcmd --dry-run
+# affiche : fstats --mode=alarm --top-lines=10 --redact=email,ipv4,url
+fcmd --exec              # exécute sans demander
+fcmd --profil=log        # pré-sélectionne le profil
 ```
 
 ## Ce que fstats sait faire
@@ -128,6 +151,7 @@ ou `--fail-if "lines>5"`.)
 | `--quiet` | Pas de confirmation console avec `--out` |
 | `--color`, `--no-color` | Coloriage minimal des titres (console uniquement) |
 | `--version`, `--help`, `-h` | Version / aide |
+| `--interactive`, `--wizard` | Wizard de génération de la ligne de commande (v2.13.0) ; compagnon séparé : `fcmd` |
 
 ### Exemples
 
@@ -196,7 +220,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 
 | Fichier | Contenu |
 |---|---|
-| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.12.0) |
+| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.13.0) |
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
@@ -229,6 +253,8 @@ fstats/
 ├── src/fstats_lex.pas        # Tokenisation, n-grams, patterns/redaction, log-level, regex-tag
 ├── src/fstats_analyzer.pas   # Analyse (fichier/stdin) + watch C3-D + handlers Ctrl+C
 ├── src/fstats_checks.pas     # Quality gate : checks, baseline NDJSON, --fail-on-delta
+├── src/fstats_cmdgen.pas     # Wizard partagé (génération de commande, v2.13.0)
+├── src/fcmd.pas              # Compagnon fcmd : génère la ligne de commande
 └── src/fstats_output.pas     # Sorties : console, JSON, CSV, usage
 ├── tests/                    # Suites de tests + fixtures
 ├── LICENSE                   # Licence MIT

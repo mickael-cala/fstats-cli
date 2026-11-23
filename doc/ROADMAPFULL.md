@@ -1378,6 +1378,10 @@ Pour garder le projet maintenable.
 > `fstats_checks`, `fstats_output`, et `fstats.pas` (main seul).
 > La commande de compilation reste `fpc -O2 -Mobjfpc src\fstats.pas`.
 > Parité vérifiée vs v2.11.0 sur 50 commandes (voir VERIFICATION.md).
+>
+> **v2.13.0** ajoute le compagnon générateur de ligne de commande :
+> `src/fcmd.pas` (binaire `fcmd`) + `src/fstats_cmdgen.pas` (logique partagée),
+> exposé aussi via `fstats --interactive`.
 
 ## Structure suggérée, espérée
 
