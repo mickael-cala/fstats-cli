@@ -65,11 +65,12 @@
                     compagnon aussi disponible en binaire séparé : fcmd
   
   SÉCURITÉ :
-  - Validation stricte des chemins de fichiers (anti-path traversal)
   - Échappement rigoureux des caractères de contrôle en JSON/CSV
   - Gestion d'erreurs sans fuite d'informations sensibles
-  - Protection contre les injections via les paramètres
   - Utilisation de try/finally pour la gestion mémoire
+  - Limites connues documentées dans doc/AUDIT-SECURITE.md
+    (les anciennes mentions « anti-path traversal » ont été retirées en
+    v2.13.1 : aucune fonction ne les implémentait — cf. audit, leçon 4)
   
   COMPATIBILITÉ :
   - Windows (CP65001 UTF-8 forcé) et Linux/Mac (UTF-8 natif)
@@ -146,9 +147,9 @@ end;
   =============================================================================
   Objectif : Parser les arguments, orchestrer l'analyse, gérer les exports
   Sécurité :
-    - Validation des chemins de fichiers (anti-path traversal)
     - Gestion d'erreurs sans fuite d'informations sensibles
     - Redirection propre de la sortie avec gestion des ressources
+    - Registre des risques : doc/AUDIT-SECURITE.md
   =============================================================================}
 var
   i: Integer;

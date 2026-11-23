@@ -12,6 +12,7 @@ Index de la documentation de `fstats`.
 | [ROADMAP-CIBLE2.md](ROADMAP-CIBLE2.md) | Cible 2 — « Corpus Profiler » (validée : C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [ROADMAP-CIBLE3.md](ROADMAP-CIBLE3.md) | Cible 3 — « Log Sentinel » — **complète** (v2.11.0, 100 tests : patterns, top-lines, redaction, log-level, filter, alarm, watch) |
 | [VERIFICATION.md](VERIFICATION.md) | Journal de validation (sorties réelles, historique des vérifications) |
+| [AUDIT-SECURITE.md](AUDIT-SECURITE.md) | Registre de sécurité/qualité : menaces, constats corrigés (P0), en cours (P1), backlog (P2) et décisions assumées — à lire avant d'analyser des fichiers tiers |
 
 ## Parcours de lecture conseillé
 

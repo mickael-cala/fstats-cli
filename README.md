@@ -224,6 +224,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
+| [doc/AUDIT-SECURITE.md](doc/AUDIT-SECURITE.md) | Registre de sécurité : menaces, risques corrigés/en cours/backlog — **à lire avant d'analyser des fichiers fournis par des tiers** |
 | [doc/ROADMAP-CIBLE1.md](doc/ROADMAP-CIBLE1.md) | Cible 1 « CI / Text Quality Gate » (validée : A v2.2.0, B+C v2.6.0) |
 | [doc/ROADMAP-CIBLE2.md](doc/ROADMAP-CIBLE2.md) | Cible 2 « Corpus Profiler » (C2-A v2.3.0, C2-B v2.4.0, C2-C v2.5.0) |
 | [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » — **complète** (C3-A v2.8.0 … C3-D v2.11.0 : patterns, top-lines, redaction, log-level, filter, alarm, watch) |
