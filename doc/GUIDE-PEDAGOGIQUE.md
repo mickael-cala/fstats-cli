@@ -558,6 +558,12 @@ fstats --readability --summary-json test.txt
 | **JSON** (`--json`, `--summary-json`) | traiter les résultats avec des scripts / outils |
 | **CSV** (`--csv`) | importer dans un tableur, faire des graphiques |
 
+> **Sécurité (v2.14.1)** : une ligne de log qui commence par `=`, `+`, `-`
+> ou `@` pourrait être interprétée comme une **formule** par Excel ou
+> LibreOffice à l'ouverture (un vrai piège d'attaques). fstats préfixe ces
+> cellules d'une apostrophe pour les neutraliser : `"=cmd|..."` devient
+> `"'=cmd|..."`. Si tu vois cette apostrophe dans un export, c'est voulu.
+
 Les détails techniques des schémas (champs exacts, modes `ndjson`/`array`/
 `aggregate`, CSV `summary`/`words`/`chars`) sont dans la
 [spécification technique](SEMANTIQUE.md).

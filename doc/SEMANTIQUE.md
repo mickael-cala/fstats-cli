@@ -198,6 +198,16 @@ Trois sous-formats (`--csv` seul = `summary`) :
 | `--csv=words` | Top mots (`rank`, `value` = mot, `count` = fréquence, `length` = code points) | toutes |
 | `--csv=chars` | Top caractères (`rank`, `value` = caractère, `code_point` = U+XXXX, `count`, `length` = 1) | toutes |
 
+**Échappement de cellules (v2.14.1)** : les caractères de contrôle LF, CR et
+TAB sont d'abord remplacés par les littéraux `\n`, `\r`, `\t` (aucune cellule
+ne peut casser la ligne une) ; ensuite guillemets doublés (`"` → `""`) quand
+la cellule contient virgule ou guillemet, comme la RFC 4180.
+**Neutralisation de formules** : toute cellule commençant par `=`, `+`, `-`
+ou `@` est préfixée d'une apostrophe `'` (`=cmd|…` devient `'=cmd|…`) —
+défense contre l'injection de formules Excel/LibreOffice (DDE) au moment où
+un humain ouvre l'export. L'apostrophe fait partie de la donnée exportée ; ce
+n'est **pas** un marqueur qu'un outil tiers doit retirer.
+
 Exemple `--csv` (summary, métriques du fichier) :
 
 ```
@@ -244,6 +254,12 @@ fichier. Ils sont exposés dans la section console `Quality`, dans le bloc JSON
   invalide est remplacée par U+FFFD et comptée pour **1** ; le caractère de
   remplacement compte dans les caractères mais agit comme **séparateur de mots**
   (il ne fait jamais partie d'un mot).
+  **Frontière de blocs (v2.14.1)** : la lecture se fait par blocs de 64 Kio
+  avec **zone tampon** — un caractère multi-octets à cheval sur deux blocs
+  est reconstitué, jamais compté comme invalide ; un orphelin en toute fin
+  de fichier (séquence tronquée par le EOF, pas par la frontière) compte
+  pour 1. La longueur totale vérifiée = taille du fichier + 1 (sentinelle),
+  chaque position n'est visitée qu'une fois.
 - **bom** : booléen ; **vrai si U+FEFF est le tout premier caractère du flux**.
   Le BOM n'est **pas retiré** du contenu : il reste compté comme un caractère
   (lignes, mots, longueurs) et est préservé tel quel dans les exports (octets
@@ -482,6 +498,10 @@ Mode check activé par `--check` **ou implicitement** par `--fail-if`,
 
 - Statut d'un check : `ok` | `warn` | `fail` (comparaison numérique stricte).
 - Multi-fichiers : le pire statut cumulé gagne (fail > warn > ok).
+- `--check` **sans aucun check défini** (`--fail-if`/`--warn-if`/
+  `--fail-on-delta`) : avertissement explicite sur stderr
+  (« mode check actif sans aucun check defini… »), exit **0** inchangé —
+  la gate no-op est visible, jamais silencieuse (v2.14.1).
 - Exit : 0 = tous ok (ou aucun check défini) ; 1 = erreur fatale (prime) ;
   2 = au moins un fail ; 3 = aucun fail mais au moins un warn.
 
@@ -617,9 +637,11 @@ assumée et documentée dans le code).
 ### Niveaux de log (`--log-level`)
 
 - Détection par **mot entier** insensible à la casse, n'importe où dans la
-  ligne : `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`. Un « mot entier » est
-  délimité par des caractères non-alphanumériques ASCII ou les bords de
-  chaîne (`ERRORS` ne matche pas `ERROR` ; `ERROR:` oui).
+  ligne : `ERROR`, `WARN` (et **`WARNING`**, v2.14.1 — log4j, Python),
+  `INFO`, `DEBUG`, `TRACE`. Un « mot entier » est délimité par des caractères
+  non-alphanumériques ASCII ou les bords de chaîne (`ERRORS` ne matche pas
+  `ERROR` ; `ERROR:` oui). `WARNING` compte dans le niveau `warn` (il n'y a
+  pas de niveau « warning » distinct).
 - **Priorité figée** : `ERROR` > `WARN` > `INFO` > `DEBUG` > `TRACE` — le
   premier trouvé dans cet ordre gagne, même si un niveau plus bas est aussi
   présent (`WARN then ERROR` → `error`).

@@ -122,6 +122,17 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
    d'alors décrivait cette fuite comme la spec. Corrigé en couvrant les
    *émissions de texte* une par une (11 points) ; testé par « l'objet interdit
    ne doit apparaître dans AUCUNE sortie » (test 109).
+8. **Un outil qui lit par blocs doit être testé à sa frontière interne.**
+   v2.14.1 : un caractère multi-octets à cheval sur deux blocs de 64 Ko était
+   compté `invalid_utf8` — la gate CI accusait un fichier sain d'être cassé
+   selon sa taille, pas son contenu. Le test 111 fait glisser le même
+   caractère multi-octets sur 6 positions autour de la frontière : un
+   compteur correct ne dépend jamais de la position de la coupure.
+9. **Un export destiné à Excel est une entrée d'attaque.** v2.14.1 : une
+   ligne de log `=cmd|'/c calc'!` ressortait dans le CSV comme une formule
+   prête à s'exécuter à l'ouverture. Exporter, c'est émettre du code
+   potentiel dans un interpréteur inconnu — neutraliser (`'` préfixe OWASP)
+   et tester (test 112).
 
 ## 8. Journal des audits
 
@@ -129,3 +140,4 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
 |---|---|---|---|
 | 2026-11-23 | v2.13.0 | dev × cyber × UX (3 agents + re-vérif manuelle) | P0 → v2.13.1 ; ce registre ; P1 lancé |
 | 2026-11-23 | v2.14.0 | — | P1-1/2/3 corrigés + tests 109/110 ; restes notés au §5/P2 |
+| 2026-11-23 | v2.14.1 | — | P2 vague 1 corrigée (6 fixes + code mort) ; tests 111-113 ; backlog §5 |
