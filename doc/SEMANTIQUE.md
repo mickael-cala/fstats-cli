@@ -1,6 +1,6 @@
 # Spécification technique — sémantique figée et formats de sortie
 
-> Document de référence de `fstats` (v2.11.0). La sémantique décrite ici est
+> Document de référence de `fstats` (v2.12.0). La sémantique décrite ici est
 > **figée** : elle ne changera pas dans les versions futures sans annonce
 > explicite. Pour la prise en main, voir le
 > [guide pédagogique](GUIDE-PEDAGOGIQUE.md) ; pour la vue d'ensemble, le
@@ -101,7 +101,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -138,8 +138,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.12.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.12.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -160,7 +160,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -173,7 +173,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.11.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.12.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Avec `--lexical-stats`, `--summary-json` ajoute (toujours à plat) les clés

@@ -39,6 +39,23 @@ inconnue (exit 1), fichier absent (exit 1).
 
 `--version` = `fstats 2.12.0`.
 
+### 4. Doc croisée avec le code (2026-11-23)
+
+- 47 options du `--help` : toutes présentes dans README.md et SEMANTIQUE.md.
+- Métriques du gate (code `CanonMetricFailIf` = README : `lines`, `words`,
+  `sentences`, `max_line_length`, `avg_words_per_sentence`/`avg_sentence_words`,
+  `non_utf8`/`invalid_utf8`, `bom`, `crlf`, `tabs`, `nonprintable`).
+- Exit codes 0/1/2/3 (`Halt(0..3)` dans le main = doc).
+- 100 tests dans `tests/run.sh`/`run.bat` = CHANGELOG v2.11.0.
+- Commande de compilation inchangée et valide partout (`wbld.bat`,
+  `tests/run.*`, CI smoke, `doc/README.md`, GUIDE).
+- Versions courantes passées à 2.12.0 dans README, `doc/README.md`,
+  `doc/GUIDE-PEDAGOGIQUE.md`, `doc/SEMANTIQUE.md` (exemples `--version` et
+  `"version"` des JSON d'exemple).
+- Dogfood local (comme la CI) : `fstats --check --fail-if non_utf8>0
+  --fail-if bom>0 --fail-if nonprintable>0 README.md CHANGELOG.md doc/*.md
+  src/*.pas` → exit 0.
+
 Genere le : 2026-08-26 11:56 - executable : `fstats.exe` (`fstats 2.2.0`)
 Perimetre : increment A de ROADMAP-CIBLE1.md (stdin, glob interne,
 recursivite, JSON multi-fichiers valide NDJSON/array/aggregate, `--summary-json`,

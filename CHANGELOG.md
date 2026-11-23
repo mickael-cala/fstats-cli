@@ -32,6 +32,9 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
   `--help`, cas d'erreur).
 - Empreinte binaire identique : 394 272 octets de code, 19 828 octets de données.
 - `--version` = `fstats 2.12.0`.
+- Docs : versions courantes mises à jour en 2.12.0 (README, `doc/README.md`,
+  `doc/GUIDE-PEDAGOGIQUE.md`, `doc/SEMANTIQUE.md`) ; références historiques
+  (sections datées de VERIFICATION.md, roadmaps) laissées telles quelles.
 
 ---
 

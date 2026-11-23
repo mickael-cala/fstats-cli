@@ -196,7 +196,7 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 
 | Fichier | Contenu |
 |---|---|
-| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.11.0) |
+| [CHANGELOG.md](CHANGELOG.md) | Historique des versions (v2.2.0 → v2.12.0) |
 | [doc/GUIDE-PEDAGOGIQUE.md](doc/GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon |
 | [doc/SEMANTIQUE.md](doc/SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [doc/VERIFICATION.md](doc/VERIFICATION.md) | Journal de validation (sorties réelles, historique) |
