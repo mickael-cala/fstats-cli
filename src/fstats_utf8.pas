@@ -29,6 +29,7 @@ function VisualChar(CP: UInt32): string;
 function UnicodeCode(CP: UInt32): string;
 function DecodeUTF8(const Buf: PByte; Len: Integer; out CP: UInt32; out Used: Integer): Boolean;
 procedure AddLine(var Arr: TLineArray; const S: string; Len: Int64; MaxLines: Integer);
+function FormatFloatTrim(V: Double; Decimals: Integer): string;
 
 implementation
 
@@ -471,6 +472,32 @@ begin
     Arr[i].Text := S;
     Arr[i].Len := Len;
   end;
+end;
+
+{-----------------------------------------------------------------------------
+  FormatFloatTrim : Formate un Double avec au plus Decimals décimales, en
+  tronquant les zéros de fin, avec '.' comme séparateur décimal — indépendant
+  de la locale (JSON valide, console ASCII). Ex. : 0.9230769 -> "0.923077".
+  -----------------------------------------------------------------------------}
+function FormatFloatTrim(V: Double; Decimals: Integer): string;
+var
+  Scale, IVal, IntP, FracP: Int64;
+  FracS: string;
+  k: Integer;
+begin
+  if V = 0 then Exit('0');
+  if V < 0 then V := -V;   // Les métriques lexicales sont non négatives
+  Scale := 1;
+  for k := 1 to Decimals do Scale := Scale * 10;
+  IVal := Round(V * Scale);
+  IntP := IVal div Scale;
+  FracP := IVal mod Scale;
+  FracS := IntToStr(FracP);
+  while Length(FracS) < Decimals do FracS := '0' + FracS;
+  while (Length(FracS) > 0) and (FracS[Length(FracS)] = '0') do
+    Delete(FracS, Length(FracS), 1);
+  Result := IntToStr(IntP);
+  if FracS <> '' then Result := Result + '.' + FracS;
 end;
 
 
