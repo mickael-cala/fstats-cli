@@ -45,8 +45,15 @@ begin
       else if Param = '--exec' then Exec := True
       else if (Copy(Param, 1, 9) = '--profil=') then
       begin
-        V := Copy(Param, 10, MaxInt);
-        if not TryStrToInt(V, Profil) then Profil := 0;
+        V := LowerCase(Copy(Param, 10, MaxInt));
+        if not TryStrToInt(V, Profil) then
+        begin
+          // v2.13.1 : les noms promis par le README sont acceptés
+          if V = 'corpus' then Profil := 1
+          else if V = 'log' then Profil := 2
+          else if V = 'gate' then Profil := 3
+          else Profil := 0;
+        end;
       end;
     end;
 

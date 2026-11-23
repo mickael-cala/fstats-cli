@@ -23,8 +23,8 @@ uses
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
-  CMDGEN_VERSION = '2.13.0';
-  OPT_COUNT = 50;   // dont 1 entrée spéciale '' = fichiers positionnels
+  CMDGEN_VERSION = '2.13.1';
+  OPT_COUNT = 49;   // dont 1 entrée spéciale '' = fichiers positionnels
 
 type
   TOptKind = (okFlag, okValue);
@@ -91,10 +91,10 @@ const
     '--top-words|2|V|--top-words=N :',
     '--top-chars|2|V|--top-chars=N :',
     '--top-lines|2|V|--top-lines=N :',
-    '--ngrams|2|V|--ngrams=N ou N,M (ex. 2,3) :',
+    '--ngrams|2|V|--ngrams=N (entier 1-5) :',
     '--top-ngrams|2|V|--top-ngrams=K :',
     '--char-classes|2|F|--char-classes ?',
-    '--histogram|2|V|--histogram=line_length|word_length|sentence_words :',
+    '--histogram|2|V|--histogram=line_length|word_length|words_per_sentence :',
     '--lexical-stats|2|F|--lexical-stats ?',
     '--readability|2|F|--readability ?',
     '--all|3|F|--all (tout exporter, pas de limite Top 10) ?',
@@ -123,8 +123,7 @@ const
     '--json|6|F|--json ?',
     '--json-mode|6|V|--json-mode=ndjson|array|aggregate :',
     '--summary-json|6|F|--summary-json ?',
-    '--csv|6|F|--csv ?',
-    '--csv-kind|6|V|--csv-kind=summary|full :',
+    '--csv|6|V|--csv=summary|words|chars :',
     '--version|7|F|--version ?',
     '--help|7|F|--help ?'
   );
@@ -283,7 +282,7 @@ begin
     if (Tokens[i] <> '') and (Tokens[i][1] = '-') then Tokens.Delete(i);
   case Profil of
     1: begin  // corpus : analyse de textes
-         SetOpt(Tokens, OPTS[15], '2,3');            // --ngrams=2,3
+         SetOpt(Tokens, OPTS[15], '2');             // --ngrams=2 (1..5, un seul N)
          SetOpt(Tokens, OPTS[19], '1');               // --lexical-stats
          SetOpt(Tokens, OPTS[20], '1');               // --readability
          SetOpt(Tokens, OPTS[44], '1');               // --json

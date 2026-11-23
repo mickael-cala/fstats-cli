@@ -597,7 +597,11 @@ begin
   EndSi := Start;
   Result := DoMatch(1, Start, EndSi);
   if Result then
-    MatchLen := EndSi - Start + 1
+    // EndSi pointe APRES le dernier caractère consommé : la longueur du
+    // match est EndSi - Start (sans +1 — cf. MatchTagAt, même convention ;
+    // v2.13.1 : corrige le décalage qui faisait perdre les occurrences
+    // adjacentes, ex. "errorerrorerror" comptait 2 au lieu de 3).
+    MatchLen := EndSi - Start
   else
     MatchLen := 0;
 end;

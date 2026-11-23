@@ -133,8 +133,16 @@ if errorlevel 1 (set /a FAIL+=1&echo FAIL: sortie console pipee : aucune sequenc
 :after11
 
 rem --- 12. Version ---------------------------------------------------------------
-"%FSTATS%" --version | findstr /C:"2.11.0" >nul
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche 2.11.0) else (set /a PASS+=1&echo PASS: --version affiche 2.11.0)
+rem v2.13.1 : version attendue DERIVEE de src\fstats_types.pas (jamais figee :
+rem le test restait rouge apres les bumps 2.12.0/2.13.0).
+set "RAW_VER="
+for /f "tokens=2 delims== " %%V in ('findstr /C:"FSTATS_VERSION =" src\fstats_types.pas') do set "RAW_VER=%%V"
+set "EXPECT_VER=%RAW_VER:'=%"
+set "EXPECT_VER=%EXPECT_VER:;=%"
+if "%EXPECT_VER%"=="" (set /a FAIL+=1&echo FAIL: extraction version depuis fstats_types.pas) else (
+  "%FSTATS%" --version | findstr /C:"fstats %EXPECT_VER%" >nul
+  if errorlevel 1 (set /a FAIL+=1&echo FAIL: --version affiche fstats %EXPECT_VER%) else (set /a PASS+=1&echo PASS: --version affiche fstats %EXPECT_VER%)
+)
 
 rem --- 13. word-mode=ascii (corpus EN, ponctuation) ------------------------------
 "%FSTATS%" --summary-json --word-mode=ascii tests\fixtures\corpus_en.txt > "%TMPD%\ascii.json" 2>nul
@@ -1021,10 +1029,15 @@ rem --- 102. fcmd --dry-run profil log -----------------------------------------
 if errorlevel 1 (set C102_OK=0) else (findstr /C:"--mode=alarm" "%TMPD%\\c102.txt" >nul && findstr /C:"--top-lines=10" "%TMPD%\\c102.txt" >nul && set C102_OK=1 || set C102_OK=0)
 if "%C102_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10)
 
-rem --- 103. fcmd --dry-run édition fichiers + option ----------------------------
-(echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2,3&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c103.txt" 2>nul
-findstr /C:"--ngrams=2,3" "%TMPD%\\c103.txt" >nul && findstr /C:"app.log" "%TMPD%\\c103.txt" >nul && set C103_OK=1 || set C103_OK=0
-if "%C103_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run édition -^> app.log + --ngrams=2,3) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run édition -^> app.log + --ngrams=2,3)
+rem --- 103. fcmd --dry-run édition fichiers + option (commande exécutable) --------
+(echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c103.txt" 2>nul
+findstr /C:"--ngrams=2" "%TMPD%\\c103.txt" >nul && findstr /C:"app.log" "%TMPD%\\c103.txt" >nul && set C103_OK=1 || set C103_OK=0
+if "%C103_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run édition -^> app.log + --ngrams=2) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run édition -^> app.log + --ngrams=2)
+
+rem --- 103b. la même commande générée S'EXÉCUTE (v2.13.1) --------------------------
+(echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2&echo 0) | "%FCMD%" --exec > "%TMPD%\\c103b.txt" 2>nul
+if errorlevel 1 (set C103B_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c103b.txt" >nul && set C103B_OK=1 || set C103B_OK=0)
+if "%C103B_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --exec même édition -^> exit 0) else (set /a FAIL+=1&echo FAIL: fcmd --exec même édition -^> exit 0)
 
 rem --- 104. fcmd EOF immédiat -> exit 1 -----------------------------------------
 type nul | "%FCMD%" --dry-run >nul 2>nul
@@ -1045,6 +1058,17 @@ rem --- 107. fcmd --exec lance fstats ------------------------------------------
 (echo 2&echo 1&echo f&echo tests\\fixtures\\alarms.log&echo 0) | "%FCMD%" --exec > "%TMPD%\\c107.txt" 2>nul
 if errorlevel 1 (set C107_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c107.txt" >nul && set C107_OK=1 || set C107_OK=0)
 if "%C107_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --exec profil log -^> fstats exécuté) else (set /a FAIL+=1&echo FAIL: fcmd --exec profil log -^> fstats exécuté)
+
+rem --- 108. v2.13.1 : occurrences ADJACENTES de --pattern (off-by-one corrigé) ---
+echo aaaa > "%TMPD%\\adj.txt"
+"%FSTATS%" --pattern=aa --summary-json "%TMPD%\\adj.txt" > "%TMPD%\\adj.json" 2>nul
+findstr /C:"\"matches\": 2" "%TMPD%\\adj.json" >nul && set C108_OK=1 || set C108_OK=0
+if "%C108_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern=aa sur aaaa -^> 2 matches) else (set /a FAIL+=1&echo FAIL: --pattern=aa sur aaaa -^> 2 matches)
+
+echo errorerrorerror > "%TMPD%\\adj2.txt"
+"%FSTATS%" --pattern=error --summary-json "%TMPD%\\adj2.txt" > "%TMPD%\\adj2.json" 2>nul
+findstr /C:"\"matches\": 3" "%TMPD%\\adj2.json" >nul && set C108B_OK=1 || set C108B_OK=0
+if "%C108B_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern=error x3 adjacents -^> 3 matches) else (set /a FAIL+=1&echo FAIL: --pattern=error x3 adjacents -^> 3 matches)
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"

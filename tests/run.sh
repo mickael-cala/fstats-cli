@@ -139,8 +139,14 @@ if grep -q $'\x1b' "$TMPDIR/console.txt"; then OK=1; else OK=0; fi
 report "sortie console pipee : aucune sequence ANSI (ESC)" $OK
 
 # --- 12. Version ---------------------------------------------------------------
-"$FSTATS" --version | grep -q "2.11.0"
-report "--version affiche 2.11.0" $?
+# v2.13.1 : la version attendue est DÉRIVÉE de src/fstats_types.pas, jamais
+# figée en dur ici (le test restait rouge après les bumps 2.12.0/2.13.0).
+EXPECT_VER=$(grep -oE "FSTATS_VERSION = '[0-9.]+'" "$ROOT/src/fstats_types.pas" | grep -oE "[0-9.]+[0-9]")
+if [ -z "$EXPECT_VER" ]; then report "extraction version depuis fstats_types.pas" 1
+else
+  "$FSTATS" --version | grep -q "fstats $EXPECT_VER"
+  report "--version affiche fstats $EXPECT_VER (derivation auto)" $?
+fi
 
 # --- 13. word-mode=ascii (corpus EN, ponctuation) ---------------------------
 "$FSTATS" --summary-json --word-mode=ascii tests/fixtures/corpus_en.txt > "$TMPDIR/ascii.json" 2>/dev/null
@@ -967,10 +973,14 @@ printf '2\n0\n' | "$FCMD" --dry-run > "$TMPDIR/c102.txt" 2>/dev/null
 if [ $? -eq 0 ] && grep -q -- "--mode=alarm" "$TMPDIR/c102.txt" && grep -q -- "--top-lines=10" "$TMPDIR/c102.txt"; then OK=0; else OK=1; fi
 report "fcmd --dry-run profil log -> commande avec --mode=alarm --top-lines=10" $OK
 
-# --- 103. fcmd --dry-run édition fichiers + option ------------------------------
-printf '4\n1\nf\ntests/fixtures/app.log\n2\n15\n2,3\n0\n' | "$FCMD" --dry-run > "$TMPDIR/c103.txt" 2>/dev/null
-if grep -q -- "--ngrams=2,3" "$TMPDIR/c103.txt" && grep -q "app.log" "$TMPDIR/c103.txt"; then OK=0; else OK=1; fi
-report "fcmd --dry-run édition -> fstats tests/fixtures/app.log --ngrams=2,3" $OK
+# --- 103. fcmd --dry-run édition fichiers + option (la commande générée doit
+# être EXÉCUTABLE — v2.13.1 : le test figeait --ngrams=2,3, refusé par fstats)
+printf '4\n1\nf\ntests/fixtures/app.log\n2\n15\n2\n0\n' | "$FCMD" --dry-run > "$TMPDIR/c103.txt" 2>/dev/null
+if grep -q -- "--ngrams=2" "$TMPDIR/c103.txt" && grep -q "app.log" "$TMPDIR/c103.txt"; then OK=0; else OK=1; fi
+report "fcmd --dry-run édition -> fstats tests/fixtures/app.log --ngrams=2" $OK
+printf '4\n1\nf\ntests/fixtures/app.log\n2\n15\n2\n0\n' | "$FCMD" --exec > "$TMPDIR/c103b.txt" 2>/dev/null
+if [ $? -eq 0 ] && grep -q "Lines:" "$TMPDIR/c103b.txt"; then OK=0; else OK=1; fi
+report "fcmd --exec même édition -> commande exécutable (exit 0)" $OK
 
 # --- 104. fcmd EOF immédiat -> exit 1 -------------------------------------------
 printf '' | "$FCMD" --dry-run > /dev/null 2>&1
@@ -991,6 +1001,17 @@ report "fstats --interactive --fail-if=words>5 exécuté -> exit 2 propagé" $OK
 printf '2\n1\nf\ntests/fixtures/alarms.log\n0\n' | "$FCMD" --exec > "$TMPDIR/c107.txt" 2>/dev/null
 if [ $? -eq 0 ] && grep -q "Lines:" "$TMPDIR/c107.txt"; then OK=0; else OK=1; fi
 report "fcmd --exec profil log -> fstats exécuté, sortie 'Lines:'" $OK
+
+# --- 108. v2.13.1 : occurrences ADJACENTES de --pattern (off-by-one corrigé) ----
+printf 'aaaa\n' > "$TMPDIR/adj.txt"
+"$FSTATS" --pattern=aa --summary-json "$TMPDIR/adj.txt" > "$TMPDIR/adj.json" 2>/dev/null
+if grep -q '"matches": 2' "$TMPDIR/adj.json"; then OK=0; else OK=1; fi
+report "--pattern=aa sur 'aaaa' -> 2 matches adjacents (off-by-one corrige)" $OK
+
+printf 'errorerrorerror\n' > "$TMPDIR/adj2.txt"
+"$FSTATS" --pattern=error --summary-json "$TMPDIR/adj2.txt" > "$TMPDIR/adj2.json" 2>/dev/null
+if grep -q '"matches": 3' "$TMPDIR/adj2.json"; then OK=0; else OK=1; fi
+report "--pattern=error sur 'errorerrorerror' -> 3 matches" $OK
 
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"

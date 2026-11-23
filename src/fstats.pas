@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.13.0 (compagnon fcmd + --interactive : genere la ligne de commande)
+  Version    : 2.13.1 (P0 : off-by-one pattern, wizard conforme parseur, test version derive)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   

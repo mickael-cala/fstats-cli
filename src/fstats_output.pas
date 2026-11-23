@@ -1511,7 +1511,7 @@ begin
   WriteLn(Out, '  --no-color        Pas de couleur (defaut)');
   WriteLn(Out, '  --version         Affiche la version et quitte');
   WriteLn(Out, '  --help, -h        Affiche cette aide et quitte');
-  WriteLn(Out, '  --interactive     Wizard de génération de la ligne de commande (v2.13.0)');
+  WriteLn(Out, '  --interactive     Wizard de generation de ligne de commande (v2.13.0)');
   WriteLn(Out);
   WriteLn(Out, 'Codes de retour : 0 si succes, 1 en cas d''erreur (fichier');
   WriteLn(Out, 'introuvable, glob sans correspondance, option invalide,');
