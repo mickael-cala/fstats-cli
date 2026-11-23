@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.12.0 (split interne en unites — comportement inchange)
+  Version    : 2.13.0 (compagnon fcmd + --interactive : genere la ligne de commande)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -61,6 +61,8 @@
   --fail-on-delta=SPEC : Check de dérive METRIQUE>X (X en %, répétable)
   --help, -h      : Afficher l'aide et quitter
   --version       : Afficher la version et quitter
+  --interactive   : Wizard de génération de la ligne de commande (v2.13.0),
+                    compagnon aussi disponible en binaire séparé : fcmd
   
   SÉCURITÉ :
   - Validation stricte des chemins de fichiers (anti-path traversal)
@@ -96,13 +98,13 @@ program fstats;
   // Windows : besoin de Windows API pour la gestion de la console UTF-8
   uses
     fstats_types, fstats_utf8, fstats_glob, fstats_lex,
-    fstats_analyzer, fstats_checks, fstats_output,
+    fstats_analyzer, fstats_checks, fstats_output, fstats_cmdgen,
     SysUtils, Classes, Windows, Generics.Collections, Generics.Defaults;
 {$ELSE}
   // Linux/Mac : pas besoin d'API spécifique, UTF-8 natif
   uses
     fstats_types, fstats_utf8, fstats_glob, fstats_lex,
-    fstats_analyzer, fstats_checks, fstats_output,
+    fstats_analyzer, fstats_checks, fstats_output, fstats_cmdgen,
     SysUtils, Classes, BaseUnix, Generics.Collections, Generics.Defaults;
 {$ENDIF}
 
@@ -215,6 +217,10 @@ var
   IsWarnCheck: Boolean;
   OpToken: string;
   CheckLL: TLogLevel;          // valeur temporaire de parsing de --filter
+  // v2.13.0 : compagnon --interactive (générateur de ligne de commande)
+  WizTokens: TStringList;
+  WizCmd: string;
+  WizAns: string;
 begin
   {===========================================================================
   CONFIGURATION INITIALE
@@ -385,6 +391,31 @@ begin
       begin
         WriteLn('fstats ', FSTATS_VERSION);
         Halt(0);
+      end
+
+      // v2.13.0 : compagnon — wizard interactif de génération de commande.
+      // Pilotable en pipe ; si l'utilisateur confirme, on se ré-exécute
+      // (ParamStr(0) + commande générée) et on propage le exit code.
+      else if (Param = '--interactive') or (Param = '--wizard') then
+      begin
+        WizTokens := TStringList.Create;
+        try
+          if not RunWizard('fstats', WizTokens, 0) then
+            Halt(1);
+          Write('Exécuter cette commande ? [o/N] : ');
+          if EOF(Input) then
+            Halt(0);  // mode non interactif (pipe) : on affiche seulement
+          ReadLn(Input, WizAns);
+          if LowerCase(Trim(WizAns)) = 'o' then
+          begin
+            WizCmd := BuildCmd(ParamStr(0), WizTokens);
+            WriteLn('Exécution : ', WizCmd);
+            Halt(RunAndWait(WizCmd));
+          end;
+          Halt(0);
+        finally
+          WizTokens.Free;
+        end;
       end
 
       // Option de redirection de sortie (supporte --out= et --out:)
