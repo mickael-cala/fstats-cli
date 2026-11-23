@@ -4,7 +4,7 @@ Index de la documentation de `fstats`.
 
 | Fichier | Contenu |
 |---|---|
-| [CHANGELOG.md](../CHANGELOG.md) | Historique des versions (v2.2.0 → v2.13.0) |
+| [CHANGELOG.md](../CHANGELOG.md) | Historique des versions (v2.2.0 → v2.13.1) |
 | [GUIDE-PEDAGOGIQUE.md](GUIDE-PEDAGOGIQUE.md) | **Guide simple** : comprendre et utiliser fstats sans jargon, exemples commentés |
 | [SEMANTIQUE.md](SEMANTIQUE.md) | Spécification technique : sémantique figée des compteurs, formats JSON/CSV détaillés |
 | [ROADMAPFULL.md](ROADMAPFULL.md) | Vision globale : positionnement produit et roadmaps complètes (Markdown, toutes cibles) |

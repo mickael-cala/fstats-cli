@@ -6,6 +6,39 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.13.1] — 2026-11-23 — Corrections P0 (audit dev × cyber × UX)
+
+Corrections issues de l'audit croisé à trois auditeurs indépendants
+(architecture/security/UX), chaque constat re-vérifié à l'exécution.
+
+### Corrigé
+- **Off-by-one `--pattern`** (`fstats_lex.pas`, `WildcardMatchAt`) :
+  `MatchLen` comptait un caractère de trop, les occurrences **adjacentes**
+  étaient perdues (`errorerrorerror` + `--pattern=error` → 2 au lieu de 3).
+  Convention alignée sur le moteur de tags (`EndSi - Start`). Nouveaux tests
+  golden 108/108b (`aaaa`/`aa` → 2, `error`×3 → 3). Aucune fixture existante
+  n'a d'occurrences adjacentes : aucun compteur existant ne change.
+- **Wizard conforme au parseur** (`fstats_cmdgen.pas`) : le profil corpus ne
+  génère plus `--ngrams=2,3` (refusé par fstats) mais `--ngrams=2` ;
+  `--csv-kind` (option inexistante) remplacé par `--csv=summary|words|chars` ;
+  `--histogram` : prompt corrigé en `line_length|word_length|words_per_sentence`.
+  Le test 103 ne fige plus la chaîne : la commande générée est **exécutée**
+  (103b, exit 0 attendu).
+- **Test de version auto-dérivé** (`tests/run.sh` + `run.bat`) : la suite
+  était **structurellement rouge** depuis v2.12.0 (`grep "2.11.0"` figé).
+  La version attendue est maintenant extraite de `src/fstats_types.pas`.
+  Vérifié sous sh et cmd.exe (`PASS: --version affiche fstats 2.13.1`).
+- **`fcmd --profil=log|corpus|gate`** : les noms promis par le README sont
+  acceptés (pas seulement les numéros).
+- **`--help` : promesse « ASCII pur » tenue** (« génération » sans accent).
+
+### Vérifié
+- Parité : les compteurs restent identiques au binaire v2.11.0 sur 16
+  commandes couvrant tous les sous-systèmes (l'off-by-one ne change que les
+  occurrences adjacentes, absentes des fixtures).
+
+---
+
 ## [2.13.0] — 2026-11-23 — Compagnon générateur de ligne de commande (fcmd / --interactive)
 
 ### Ajouté

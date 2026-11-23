@@ -3,6 +3,44 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.13.1 — corrections P0 de l'audit croisé (2026-11-23)
+
+Audit croisé dev × cyber × UX (trois auditeurs indépendants, constats
+re-testés un par un). Corrections P0 vérifiées :
+
+### 1. Off-by-one `--pattern` (fstats_lex.pas)
+
+Avant : `fstats --pattern=error` sur `errorerrorerror` → `"matches": 2`.
+Après : `"matches": 3` (convention `EndSi - Start`, alignée sur `MatchTagAt`).
+Aucune occurrence adjacente dans les fixtures : tests golden existants
+(matches=4/5/3/9) inchangés, parité 16/16 vs v2.11.0 confirmée.
+
+### 2. Wizard générant des commandes refusées par fstats
+
+Avant : profil corpus → `--ngrams=2,3` → `Erreur: --ngrams attend un entier
+de 1 a 5` ; prompts `--csv-kind`/`--histogram=sentence_words` inexistants.
+Après : profil corpus → `fstats --ngrams=2 --lexical-stats --readability
+--json` — **exécutée** (exit 0). Prompt histogram corrigé en
+`words_per_sentence`, `--csv-kind` → `--csv=summary|words|chars`.
+Le test 103 exécute désormais la commande générée (103b).
+
+### 3. Suite de tests structurellement rouge (depuis v2.12.0)
+
+`run.sh:142`/`run.bat:136` grepaient `"2.11.0"` en dur. La version attendue
+est maintenant **dérivée** de `src/fstats_types.pas` :
+- sh : `PASS: --version affiche fstats 2.13.1 (derivation auto)`
+- cmd.exe (bloc exact du run.bat rejoué) : `PASS: --version affiche fstats 2.13.1`
+
+### 4. Divers
+
+- `fcmd --profil=log|corpus|gate` accepté (le README le promettait).
+- `--help` sans accents (promesse « ASCII pur »).
+- Nouveaux tests : 103b (commande générée exécutée), 108/108b (occurrences
+  adjacentes). Total : 110 vérifications dans run.sh (2 compiles + 108
+  tests), équivalent dans run.bat.
+
+`--version` = `fstats 2.13.1`. Dogfood : exit 0.
+
 ## v2.12.0 — split interne en unités (2026-11-23)
 
 ### 1. Compilation
