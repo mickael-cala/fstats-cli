@@ -3,6 +3,42 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.12.0 — split interne en unités (2026-11-23)
+
+### 1. Compilation
+
+`fpc -O2 -Mobjfpc -FE. src/fstats.pas` : exit=0
+
+```
+7081 lines compiled, 2.0 sec, 394272 bytes code, 19828 bytes data
+```
+
+Empreinte **identique** au mono-fichier v2.11.0 (394 272 / 19 828 octets).
+
+### 2. Structure
+
+`src/` = 8 unités à plat : `fstats.pas` (main seul, 1 444 lignes) +
+`fstats_types` (338) + `fstats_utf8` (504) + `fstats_glob` (394) +
+`fstats_lex` (1 229) + `fstats_analyzer` (820) + `fstats_checks` (829) +
+`fstats_output` (1 523). La commande de compilation est inchangée : fpc
+retrouve les unités dans `src/`.
+
+### 3. Parité vs binaire pré-split (v2.11.0)
+
+50 commandes comparées (sortie standard/err + exit code) : **toutes
+identiques** — golden `test_fr.txt` (lignes 3, mots 13, caractères 72,
+phrases 3), `--json` (ndjson/array/aggregate), `--summary-json`, `--csv`,
+`--all`/`--char`/`--word`/`--line`, `--top-words`/`--top-chars`, `--ngrams`,
+`--char-classes`, `--readability`, `--lexical-stats`, `--sentence-mode`,
+`--word-mode`, `--case-fold`, `--max-unique`, `--mode=alarm`, `--pattern`,
+`--top-lines`, `--redact`, `--log-level`, `--filter`, `--regex-tag`,
+`--check`/`--fail-if`/`--warn-if` (exit 0/2/3), `--compare`/`--fail-on-delta`,
+`--watch=0`, `--recursive`/`--include`/`--exclude`, glob direct `*.txt`,
+`--no-color`/`--color`, `--quiet --out`, `--stdin`, `--help`, option
+inconnue (exit 1), fichier absent (exit 1).
+
+`--version` = `fstats 2.12.0`.
+
 Genere le : 2026-08-26 11:56 - executable : `fstats.exe` (`fstats 2.2.0`)
 Perimetre : increment A de ROADMAP-CIBLE1.md (stdin, glob interne,
 recursivite, JSON multi-fichiers valide NDJSON/array/aggregate, `--summary-json`,

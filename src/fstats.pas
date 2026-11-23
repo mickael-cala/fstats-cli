@@ -3,7 +3,7 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.11.0 (Cible 3-D : watch/follow en polling — Cible 3 complète)
+  Version    : 2.12.0 (split interne en unites — comportement inchange)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   

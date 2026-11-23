@@ -6,6 +6,35 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.12.0] — 2026-11-23 — Split interne en unités (comportement inchangé)
+
+### Modifié
+- `src/fstats.pas` (6 795 lignes, mono-fichier) éclaté en **8 unités à plat**
+  dans `src/` — même binaire, zéro dépendance ajoutée, commande de
+  compilation inchangée (`fpc -O2 -Mobjfpc src\fstats.pas`) :
+  - `fstats_types.pas`    : constantes, globales, types (`TStats`, options…)
+  - `fstats_utf8.pas`     : UTF-8, `VisualChar`, tris, couleurs ANSI, `FormatFloatTrim`
+  - `fstats_glob.pas`     : moteur de glob interne (`*`, `**`, `?`), `--recursive`
+  - `fstats_lex.pas`      : tokenisation, n-grams, patterns/redaction, log-level, regex-tag
+  - `fstats_analyzer.pas` : `AnalyzeData/File/Stdin`, `WatchFile` (C3-D), handlers Ctrl+C
+  - `fstats_checks.pas`   : moteur de checks, baseline NDJSON, `--compare`/`--fail-on-delta`
+  - `fstats_output.pas`   : stats lexicales/lisibilité, console, JSON, CSV, usage
+  - `fstats.pas`          : programme principal seul (parsing CLI, orchestration)
+- `FormatFloatTrim` remonté dans `fstats_utf8` pour éviter une dépendance
+  circulaire `checks` ↔ `output`.
+
+### Vérifié
+- Parité avec le binaire mono-fichier v2.11.0 : **50 commandes** comparées,
+  sortie + exit code identiques (golden `test_fr.txt` 3/13/72/3, JSON
+  ndjson/array/aggregate, `--summary-json`, CSV, glob, `--recursive`,
+  `--watch`, `--mode=alarm`, `--redact`, `--log-level`/`--filter`,
+  `--regex-tag`, checks + baseline `--compare`/`--fail-on-delta`, `--stdin`,
+  `--help`, cas d'erreur).
+- Empreinte binaire identique : 394 272 octets de code, 19 828 octets de données.
+- `--version` = `fstats 2.12.0`.
+
+---
+
 ## [2.11.0] — 2026-11-23 — Cible 3-D : watch
 
 ### Ajouté

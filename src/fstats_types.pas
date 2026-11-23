@@ -28,7 +28,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.11.0';
+  FSTATS_VERSION = '2.12.0';
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;

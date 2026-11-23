@@ -3,7 +3,7 @@
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
-Version 2.11.0 · Free Pascal (mode objfpc) · MIT
+Version 2.12.0 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
@@ -222,7 +222,14 @@ fstats/
 ├── .github/workflows/ci.yml  # CI GitHub Actions (Windows + Linux)
 ├── doc/                      # Documentation (guide, spec, roadmaps, validation)
 ├── examples/demo.obm         # Fichier de démonstration
-├── src/fstats.pas            # Code source unique (Free Pascal)
+├── src/fstats.pas            # Programme principal (point d'entrée, parsing CLI)
+├── src/fstats_types.pas      # Constantes, globales, types (TStats, options…)
+├── src/fstats_utf8.pas       # UTF-8, VisualChar, tris, couleurs ANSI, FormatFloatTrim
+├── src/fstats_glob.pas       # Moteur de glob interne (*, **, ?) et --recursive
+├── src/fstats_lex.pas        # Tokenisation, n-grams, patterns/redaction, log-level, regex-tag
+├── src/fstats_analyzer.pas   # Analyse (fichier/stdin) + watch C3-D + handlers Ctrl+C
+├── src/fstats_checks.pas     # Quality gate : checks, baseline NDJSON, --fail-on-delta
+└── src/fstats_output.pas     # Sorties : console, JSON, CSV, usage
 ├── tests/                    # Suites de tests + fixtures
 ├── LICENSE                   # Licence MIT
 └── README.md

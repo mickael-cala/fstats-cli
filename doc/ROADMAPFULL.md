@@ -1371,6 +1371,14 @@ C’est souvent comme ça qu’un petit outil devient indispensable.
 
 Pour garder le projet maintenable.
 
+> **Réalisé en v2.12.0 sous forme aplatie** : le mono-fichier a été éclaté en
+> 8 unités **à plat** dans `src/` (sans sous-dossiers `core/`, `analyzers/`,
+> `output/` — un seul niveau suffit à ~7 000 lignes) : `fstats_types`,
+> `fstats_utf8`, `fstats_glob`, `fstats_lex`, `fstats_analyzer`,
+> `fstats_checks`, `fstats_output`, et `fstats.pas` (main seul).
+> La commande de compilation reste `fpc -O2 -Mobjfpc src\fstats.pas`.
+> Parité vérifiée vs v2.11.0 sur 50 commandes (voir VERIFICATION.md).
+
 ## Structure suggérée, espérée
 
 ```text
