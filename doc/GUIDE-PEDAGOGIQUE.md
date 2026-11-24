@@ -55,8 +55,11 @@ cd fstats-cli
 3. compiler, depuis la racine du dépôt :
 
 ```
-fpc -O2 -Mobjfpc -FE. src\fstats.pas
+fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas
 ```
+
+(-Sg est requis : le matcheur wildcards utilise GOTO/LABEL ; il est implicite
+dans les fpc.cfg officiels, pas dans un fpc.cfg minimal.)
 
 L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 

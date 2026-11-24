@@ -38,6 +38,25 @@ justification.
   périmètre d'un outil de statistiques ; les compteurs qualité
   (nonprintable, invalid_utf8) restent vrais sur ce qu'ils mesurent.
 
+### CI (2026-11-24, premier push post-v2.7.0) : -Sg explicite + test 105
+- **test-windows échouait à la compilation** : le matcheur wildcards
+  (fstats_lex.pas, v2.15.0) utilise GOTO/LABEL ; les fpc.cfg officiels
+  embarquent `-Sgic` (vert local/Linux), pas le fpc.cfg régénéré de la CI.
+  Reproduction locale exacte (config minimale + cache ppu vidé).
+  Correctif : **`-Sg` explicite** dans ci.yml (2 smoke), run.sh (2),
+  run.bat (2) + commande canonique des documents (README, doc/README,
+  GUIDE, ROADMAPFULL, VERIFICATION, header fstats.pas).
+- **test-linux, test 105** (--interactive profil gate) échouait sur un
+  grep á accents (« Commande générée ») : l'encodage console de la
+  sortie wizard dépend du code page hérité au lancement (« mojibake
+  NON DÉTERMINISTE », documenté dans fstats.pas) — le jumeau bat, lui,
+  grep sans accents et n'a jamais échoué. Correctif : sh aligné sur sa
+  jumelle ; l'assertion porte sur le contenu (exit 0 + « Commande » +
+  « --check »). Tests 105 sh/bat instrumentés : si échec, la sortie et
+  l'exit code s'impriment dans le journal CI.
+- VERIFICATION §5 : journal de l'incident complet (inclus le fantôme
+  local à code page hérité — binaire identique, sorties différentes).
+
 ### Comptage
 - Tests 122 (recursive), 123 (tie-break). Batch : **70 PASS / 0 FAIL**.
   run.sh : 62 réussis / 65 échecs node-dépendants (machine sans node).

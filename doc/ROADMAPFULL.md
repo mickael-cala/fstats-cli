@@ -1383,7 +1383,10 @@ Pour garder le projet maintenable.
 > `output/` — un seul niveau suffit à ~7 000 lignes) : `fstats_types`,
 > `fstats_utf8`, `fstats_glob`, `fstats_lex`, `fstats_analyzer`,
 > `fstats_checks`, `fstats_output`, et `fstats.pas` (main seul).
-> La commande de compilation reste `fpc -O2 -Mobjfpc src\fstats.pas`.
+> La commande de compilation reste `fpc -Sg -O2 -Mobjfpc src\fstats.pas`
+> (-Sg explicite depuis le premier push CI, 2026-11-24 — le matcheur
+> v2.15.0 utilise GOTO/LABEL ; les fpc.cfg officiels l'embarquent, pas
+> les minimaux).
 > Parité vérifiée vs v2.11.0 sur 50 commandes (voir VERIFICATION.md).
 >
 > **v2.13.0** ajoute le compagnon générateur de ligne de commande :

@@ -22,9 +22,14 @@ du compilateur Free Pascal pour le construire.
 Compilation depuis la racine du dépôt :
 
 ```
-fpc -O2 -Mobjfpc -FE. src\fstats.pas
-fpc -O2 -Mobjfpc -FE. src\fcmd.pas
+fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas
+fpc -Sg -O2 -Mobjfpc -FE. src\fcmd.pas
 ```
+
+`-Sg` est **requis** (le matcheur wildcards `fstats_lex.pas` utilise
+`GOTO`/`LABEL`) ; les `fpc.cfg` officiels l'embarquent par défaut (`-Sgic`),
+mais un `fpc.cfg` minimal ne l'a pas — d'où le switch explicite (vu en CI
+au push v2.16.2).
 
 Deux exécutables sont créés à la racine : `fstats.exe` et le compagnon
 `fcmd.exe` (la deuxième ligne compile `src\fcmd.pas` ; `wbld.bat` fait pareil

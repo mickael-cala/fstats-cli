@@ -7,7 +7,7 @@
               tests --recursive/--include/--exclude/--max-depth,
               homoglyphes/RTL : limites documentées)
   License    : MIT
-  Compilation: fpc -O2 -Mobjfpc fstats.pas
+  Compilation: fpc -Sg -O2 -Mobjfpc fstats.pas   (-Sg requis : GOTO/LABEL)
   
   FONCTIONNALITÉS :
   - Analyse UTF-8 stricte de fichiers texte et de l'entrée standard (-/--stdin)

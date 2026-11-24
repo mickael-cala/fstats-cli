@@ -200,6 +200,16 @@ de maintenance est le prix de deux environnements natifs).
     forme à 3 arguments, testée elle, fonctionnait. Cinq versions de
     « vérifié » n'ont jamais testé ce que l'utilisateur tape en lisant le
     help. Un test par option documentée, avec sa syntaxe documentée.
+13. **Un build qui dépend des réglages cachés de la machine n'est pas
+    reproductible.** (2026-11-24, premier push CI). Le matcheur v2.15.0
+    utilise GOTO/LABEL ; cinq versions de « ça compile chez moi »
+    reposaient sur le `-Sgic` du fpc.cfg officiel — invisible dans la
+    ligne de commande. Première machine au fpc.cfg différent (la CI le
+    régénère minimal) : build rouge. Les switches qui conditionnent le
+    build appartiennent à la commande, pas à l'environnement. Et pour
+    reproduire un échec de compilation : vider le cache (.ppu/.o) — FPC
+    réutilise les unités déjà compilées et un goto déjà compilé ne
+    rejette plus rien.
 
 ## 8. Journal des audits
 
@@ -213,3 +223,4 @@ de maintenance est le prix de deux environnements natifs).
 | 2026-11-24 | v2.16.1 | — | P2 vague 4 corrigée (options honnêtes, help véridique) ; tests 120-121 (68 PASS) |
 | 2026-11-24 | v2.16.2 | — | P2 vague 5 corrigée (tie-break, tests recursive) ; backlog P2 VIDE ; tests 122-123 (70 PASS) |
 | 2026-11-24 | v2.16.2 | — | Rattrapage node : 127/127 en sh ET bat (254 vérifications) ; 2 tests jumeaux périmés alignés sur la sémantique figée (56 : ids +sha256 v2.16.0 ; 71 : match nul 0/0 v2.15.0) ; 3e occurrence de la leçon 11 (harnais jamais tourné jusqu'au bout) |
+| 2026-11-24 | v2.16.2 | — | Premier push CI : échec -Sg (Windows, compilation) + test 105 (Linux) ; -Sg rendu explicite partout (leçon 13) ; test 105 instrumenté (preuve auto-imprimée en CI) |

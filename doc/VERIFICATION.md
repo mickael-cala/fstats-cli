@@ -1,7 +1,9 @@
 # fstats - journal de verification (sorties reelles)
 
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
-> racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
+> racine : `fpc -Sg -O2 -Mobjfpc src\fstats.pas` (-Sg explicite depuis le
+> premier push CI — le matcheur utilise GOTO/LABEL, absent des fpc.cfg
+> minimaux).
 
 ## v2.16.2 — P2 vague 5 (2026-11-24) — P2 terminé
 
@@ -60,6 +62,41 @@ la sémantique figée, aucun comportement changé :
 Vérif parano du diagnostic : les 62 autres ex-node-dépendants sont passés
 sans retoucher le code — les 2 échecs étaient bien des tests obsolètes,
 pas des régressions.
+
+### 5. Premier push CI (2026-11-24) : échec -Sg (Windows) + test 105 (Linux)
+
+Premier push du dépôt depuis la v2.7.0 (29 commits) → premier run réel de
+la CI sur le code des cibles 2-3 + compagnon + durcissement P0/P1/P2.
+**Deux échecs, deux causes indépendantes, reproduits avant correction :**
+
+- **test-windows, étape de compilation smoke** :
+  `fstats_lex.pas(581,3) GOTO and LABEL are not supported (use switch -Sg)`.
+  Cause racine : le matcheur wildcards (v2.15.0) utilise `goto`/`label` ;
+  les `fpc.cfg` **officiels** embarquent `-Sgic` (d'où le vert local et
+  Linux), mais la CI régénère un `fpc.cfg` minimal (seulement les `-Fu`) —
+  le switch caché disparaissait. Reproduction locale EXACTE (mêmes lignes
+  581/606) : config minimale + `-n` + **nettoyage des .ppu/.o résiduels**
+  (sans quoi FPC réutilise les unités déjà compilées et le goto n'est
+  plus visité — leçon : une reproduction n'est propre qu'à cache vidé).
+  Correctif : **`-Sg` explicite** sur les 2 compilations smoke (ci.yml),
+  les 2 de run.sh, les 2 de run.bat, et la commande canonique de tous
+  les documents (un build ne doit pas dépendre du fpc.cfg de la machine).
+- **test-linux, test 105** (`--interactive` profil gate, 'n') : échec
+  sans trappe — le harnais ne livrait aucune preuve. Enquête locale : le
+  grep portait sur « Commande générée » — **avec accents** — or
+  l'encodage console de la sortie wizard dépend du code page hérité au
+  lancement (le code documente lui-même « mojibake NON DÉTERMINISTE
+  sous pipes », fstats.pas) : le même binaire a produit ici, à dix
+  minutes d'intervalle, un « générée » NFC propre et une variante
+  dégradée — fantôme vu par trois suites locales d'affilée, puis
+  disparu. **Le jumeau bat n'a jamais eu le problème : il grep
+  « Commande » SANS accents.** Correctif : le sh aligné sur sa jumelle
+  (grep « Commande » + « --check ») — l'assertion porte sur le contenu,
+  pas la typographie ; tests 105 sh/bat instrumentés (dump de la sortie
+  + exit code dans le journal CI au moment de l'échec).
+
+Suivi : ré-observation du run suivant — si 105 récidive en CI, la preuve
+auto-imprimée décidera du correctif final, sans moulinette à l'aveugle.
 
 ---
 

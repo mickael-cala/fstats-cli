@@ -27,4 +27,5 @@ Index de la documentation de `fstats`.
 
 > **Note (post-restructuration)** : les documents ont été déplacés de la racine
 > du dépôt vers `doc/` ; la compilation se fait depuis la racine :
-> `fpc -O2 -Mobjfpc src\fstats.pas`.
+> `fpc -Sg -O2 -Mobjfpc src\fstats.pas` (`-Sg` explicite : GOTO/LABEL du
+> matcheur, sinon le build dépend du fpc.cfg de la machine).
