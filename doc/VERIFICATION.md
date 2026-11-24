@@ -3,6 +3,35 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.16.1 — P2 vague 4 (2026-11-24)
+
+### 1. Options trompeuses : avant/après vérifiés
+
+AVANT : `fstats --redact f.txt` → `Erreur: Fichier inaccessible ou
+introuvable - --redact` (l'option traitée comme un fichier inexistant ;
+l'utilisateur cherchait une panne disque). `--patern=x` (typo) : même
+message. APRÈS : `l'option --redact exige une valeur (écriture :
+--redact=VALEUR)` / `option inconnue : --patern=x [...] préfixez-le :
+./--patern=x` — exit 1 dans les deux cas (vérifié).
+
+### 2. Help top-lines : la vérité du code
+
+`--top-lines=0` sur app.log : aucune section Top Lines (désactivée) ;
+`--top-lines=3` : section à 3 lignes. Le help disait « 0 = tous » depuis la
+v2.8.0 : corrigé dans le help ET dans SEMANTIQUE (qui répétait l'erreur).
+
+### 3. Régressions
+
+Fichiers normaux analysés sans `--` : inchangés (exit 0, `fstats fstats.exe`
+fonctionne toujours — un fichier nommé `--x` DOIT désormais être préfixé,
+rupture documentée). Vrai-faux positifs passés en revue : `--top-lines`
+nu (légal, défaut 10), `-` (stdin), `--` jamais atteint car Length > 2.
+
+Comptage : batch **68 PASS / 0 FAIL** ; run.sh 60 réussis / 65 échecs
+node-dépendants (machine sans node, inchangé depuis la v2.14.1).
+
+---
+
 ## v2.16.0 — P2 vague 3 (2026-11-24)
 
 ### 1. SHA-256 : implémentation validée à trois niveaux

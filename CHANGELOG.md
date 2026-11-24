@@ -6,6 +6,32 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.16.1] — 2026-11-24 — P2 (vague 4) : messages d'options honnêtes, help véridique
+
+### Corrigé
+- **Option inconnue / valeur manquante** : `--patern=x` (typo) ou `--redact`
+  (nu) étaient traités comme des NOMS DE FICHIERS — l'utilisateur recevait
+  « Fichier inaccessible ou introuvable - --redact », qui l'orientait vers
+  le disque au lieu de sa ligne de commande. Désormais : `option inconnue :
+  --xxx` / `l'option --redact exige une valeur` + exit 1. Un fichier
+  réellement nommé `--x` se préfixe `./--x` (le message le dit).
+- **Help `--top-lines` mensonger** : le help disait « 0 = tous » depuis la
+  v2.8.0, le code répond « 0 = section désactivée » (et SEMANTIQUE
+  répétait l'erreur). Help + SEMANTIQUE corrigés sur la vérité du code :
+  `0 = désactivé`, option absente = désactivée.
+
+### Accepté-documenté
+- `%VAR%` développé par cmd.exe au collage (wizard) : aucune échapperie
+  fiable n'existe pour `%` en cmd interactif — limitation documentée
+  ( GUIDE§/SEMANTIQUE), la commande générée n'introduit jamais de `%`
+  elle-même.
+
+### Tests
+- 120 (option inconnue), 121 (valeur manquante) en sh et bat.
+  Windows : **68 PASS / 0 FAIL**.
+
+---
+
 ## [2.16.0] — 2026-11-24 — P2 (vague 3) : intégrité baseline SHA-256, verdict CI, --fail-on-delta inline
 
 Troisième vague P2 : le **verdict du gate CI**. Deux découvertes en route :

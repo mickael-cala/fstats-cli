@@ -1,10 +1,25 @@
 # Spécification technique — sémantique figée et formats de sortie
 
-> Document de référence de `fstats` (v2.16.0). La sémantique décrite ici est
+> Document de référence de `fstats` (v2.16.1). La sémantique décrite ici est
 > **figée** : elle ne changera pas dans les versions futures sans annonce
 > explicite. Pour la prise en main, voir le
 > [guide pédagogique](GUIDE-PEDAGOGIQUE.md) ; pour la vue d'ensemble, le
 > [README](../README.md).
+
+## Options inconnues / valeurs manquantes (v2.16.1)
+
+- Un argument commençant par `--` qui ne correspond à **aucune** option de
+  la grammaire produit `Erreur: option inconnue : --xxx` (exit 1) — et non
+  plus « Fichier inaccessible ou introuvable » (l'ancien comportement
+  l'ajoutait aux fichiers).
+- Une option dont la forme **nue** exige une valeur (`--redact`,
+  `--mode`, `--out`, `--word-mode`, `--casefold`, `--histogram`, …) produit
+  `Erreur: l'option --xxx exige une valeur` (exit 1). La liste exacte
+  est figée dans `KNOWN_VALUE_OPTS` (fstats.pas) ; les options dont la
+  forme nue est légale (`--check`, `--json`, `--top-lines` = défaut 10,
+  `--compare VALEUR`, …) ont leur branche propre dans le parseur.
+- Un fichier réellement nommé `--quelquechose` doit être préfixé :
+  `fstats ./--fichier.txt` (le message le rappelle).
 
 ## Formats de sortie
 
@@ -101,7 +116,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.16.0",
+  "version": "2.16.1",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -138,8 +153,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.16.1", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.16.1", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -160,7 +175,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.16.0",
+  "version": "2.16.1",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -173,7 +188,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "sha256": "<64 hex>", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "sha256": "<64 hex>", "tool": "fstats", "version": "2.16.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 **`sha256`** (v2.16.0, P2 vague 3) : empreinte SHA-256 (FIPS 180-4) du
@@ -673,9 +688,11 @@ assumée et documentée dans le code).
 ### Top lignes identiques (`--top-lines=N`)
 
 - Regroupe les lignes **identiques** (comparaison exacte de la chaîne interne)
-  et conserve les N plus fréquentes (défaut 10 ; `0` = tous ; option absente =
-  section désactivée). Tri décroissant par fréquence, puis alphabétique pour
-  les égalités (déterminisme).
+  et conserve les N plus fréquentes (défaut 10 si l'option est passée sans
+  valeur ; **`0` = section désactivée**, option absente = désactivée —
+  v2.16.1 : le help et cette doc disaient auparavant « 0 = tous », faux).
+  Tri décroissant par fréquence, puis alphabétique pour les égalités
+  (déterminisme).
 - **Mémoire bornée** comme les n-grams : quand le dictionnaire dépasse
   `max(8×N, 64)` entrées, il est réduit au top-N (les lignes rares écartées en
   cours de route sont perdues — approximation documentée, exacte sur les petits

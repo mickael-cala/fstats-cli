@@ -58,7 +58,7 @@ décennies de durcissement des bibliothèques éprouvées.
 | P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
 | P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
-## 5. Statut P2 — vagues 1-3 corrigées (v2.14.1 → v2.16.0), reste au backlog 📋
+## 5. Statut P2 — vagues 1-4 corrigées (v2.14.1 → v2.16.1), reste au backlog 📋
 
 **Corrigés en v2.14.1** (tests 111-113 + wizard rejoué) : frontière 64 Ko
 (invalid_utf8 faux positif à l'alignement — bug métrique CI), `WARNING`
@@ -88,16 +88,21 @@ traitée comme nom de fichier), et l'exit 2 d'un check injecté était
 ignoré. **Delta négatif requalifié ACCEPTÉ** (§6) : le gate protège
 contre l'explosion, la décroissance n'est pas une anomalie CI.
 
+**Corrigés en v2.16.1** (tests 120-121) : **options trompeuses** — une
+option inconnue (`--patern=x`, typo) ou à valeur manquante (`--redact` nu)
+était traitée comme un NOM DE FICHIER : « Fichier inaccessible ou
+introuvable » orientait vers le disque au lieu de la ligne de commande ;
+message honnête + exit 1 (fichier préfixable `./--x`). **Help --top-lines
+mensonger** (« 0 = tous » depuis la v2.8.0, le code désactive la section)
+: help + SEMANTIQUE corrigés sur la vérité du code. **`%VAR%` au collage
+cmd (wizard) requalifié ACCEPTÉ** : aucune échapperie fiable n'existe
+pour `%` en cmd interactif ; la commande générée n'introduit jamais de `%`.
+
 **Reste au backlog** (par vagues suivantes) :
 
 - **Détournements sémantiques**
   - Homoglyphes (`ЕRROR` cyrillique) invisibles aux compteurs ;
     caractères RTL invisibles dans les previews.
-- **UX**
-  - Option inconnue → « Fichier inaccessible ou introuvable » ;
-    `--redact`/`--mode` nus → analyse sans protection.
-  - `--top-lines=0` : le help dit « tous », le code dit « désactivé ».
-  - `%VAR%` développé par cmd.exe au collage de la commande affichée.
 - **Hygiène dev**
   - `Halt()` dans les couches basses (try..finally non déroulé).
   - `--recursive`/`--include`/`--exclude`/`--max-depth` : **zéro test**.
@@ -178,3 +183,4 @@ contre l'explosion, la décroissance n'est pas une anomalie CI.
 | 2026-11-23 | v2.14.1 | — | P2 vague 1 corrigée (6 fixes + code mort) ; tests 111-113 ; backlog §5 |
 | 2026-11-24 | v2.15.0 | — | P2 vague 2 corrigée (matchers linéaires, hang match nul, bornes stockage) ; tests 114-116 ; harnais Windows réparé (63 PASS) |
 | 2026-11-24 | v2.16.0 | — | P2 vague 3 corrigée (SHA-256 baseline, verdict CI, hors-baseline visible, fail-on-delta inline) ; tests 117-119 (66 PASS) |
+| 2026-11-24 | v2.16.1 | — | P2 vague 4 corrigée (options honnêtes, help véridique) ; tests 120-121 (68 PASS) |
