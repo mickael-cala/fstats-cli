@@ -1186,17 +1186,19 @@ if "%C119_OK%"=="1" (set /a PASS+=1&echo PASS: baseline sha256 = Get-FileHash, f
 
 rem --- 120. v2.16.1 (P2 vague 4) : option inconnue = message honnete ------------
 "%FSTATS%" --patern=error tests\fixtures\test_fr.txt >nul 2> "%TMPD%\v4unknown.err"
+set C120_ST=%ERRORLEVEL%
 set C120_OK=0
-if errorlevel 1 if not errorlevel 2 set C120_OK=1
+if %C120_ST% GEQ 1 if %C120_ST% LSS 2 set C120_OK=1
 findstr /C:"option inconnue : --patern=error" "%TMPD%\v4unknown.err" >nul || set C120_OK=0
-if "%C120_OK%"=="1" (set /a PASS+=1&echo PASS: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable)
+if "%C120_OK%"=="1" (set /a PASS+=1&echo PASS: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable&echo --- DIAG test 120 : exit=%C120_ST%, stderr ---&type "%TMPD%\v4unknown.err"&echo --- fin DIAG test 120 ---)
 
 rem --- 121. v2.16.1 (P2 vague 4) : valeur manquante = dit laquelle --------------
 "%FSTATS%" --redact tests\fixtures\test_fr.txt >nul 2> "%TMPD%\v4bare.err"
+set C121_ST=%ERRORLEVEL%
 set C121_OK=0
-if errorlevel 1 if not errorlevel 2 set C121_OK=1
+if %C121_ST% GEQ 1 if %C121_ST% LSS 2 set C121_OK=1
 findstr /C:"l'option --redact exige une valeur" "%TMPD%\v4bare.err" >nul || set C121_OK=0
-if "%C121_OK%"=="1" (set /a PASS+=1&echo PASS: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable)
+if "%C121_OK%"=="1" (set /a PASS+=1&echo PASS: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable&echo --- DIAG test 121 : exit=%C121_ST%, stderr ---&type "%TMPD%\v4bare.err"&echo --- fin DIAG test 121 ---)
 
 rem --- 122. v2.16.2 (P2 vague 5) : --recursive/--include/--exclude/--max-depth -
 mkdir "%TMPD%\v5tree\sub\deep" 2>nul
