@@ -1021,22 +1021,22 @@ if "%C100_OK%"=="1" (set /a PASS+=1&echo PASS: --interval=0 -^> exit 1 + stderr)
 
 rem --- 101. v2.13.0 : fcmd --help ------------------------------------------------
 "%FCMD%" --help > "%TMPD%\\c101.txt" 2>nul
-if errorlevel 1 (set C101_OK=0) else (findstr /C:"compagnon" "%TMPD%\\c101.txt" >nul && set C101_OK=1 || set C101_OK=0)
+if errorlevel 1 (set C101_OK=0) else (findstr /C:"compagnon" "%TMPD%\\c101.txt" >nul && set "C101_OK=1" || set "C101_OK=0")
 if "%C101_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --help -^> exit 0 + compagnon) else (set /a FAIL+=1&echo FAIL: fcmd --help -^> exit 0 + compagnon)
 
 rem --- 102. fcmd --dry-run profil log -------------------------------------------
 (echo 2&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c102.txt" 2>nul
-if errorlevel 1 (set C102_OK=0) else (findstr /C:"--mode=alarm" "%TMPD%\\c102.txt" >nul && findstr /C:"--top-lines=10" "%TMPD%\\c102.txt" >nul && set C102_OK=1 || set C102_OK=0)
+if errorlevel 1 (set C102_OK=0) else (findstr /C:"--mode=alarm" "%TMPD%\\c102.txt" >nul && findstr /C:"--top-lines=10" "%TMPD%\\c102.txt" >nul && set "C102_OK=1" || set "C102_OK=0")
 if "%C102_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run profil log -^> --mode=alarm --top-lines=10)
 
 rem --- 103. fcmd --dry-run édition fichiers + option (commande exécutable) --------
 (echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2&echo 0) | "%FCMD%" --dry-run > "%TMPD%\\c103.txt" 2>nul
-findstr /C:"--ngrams=2" "%TMPD%\\c103.txt" >nul && findstr /C:"app.log" "%TMPD%\\c103.txt" >nul && set C103_OK=1 || set C103_OK=0
+findstr /C:"--ngrams=2" "%TMPD%\\c103.txt" >nul && findstr /C:"app.log" "%TMPD%\\c103.txt" >nul && set "C103_OK=1" || set C103_OK=0
 if "%C103_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run édition -^> app.log + --ngrams=2) else (set /a FAIL+=1&echo FAIL: fcmd --dry-run édition -^> app.log + --ngrams=2)
 
 rem --- 103b. la même commande générée S'EXÉCUTE (v2.13.1) --------------------------
 (echo 4&echo 1&echo f&echo tests\\fixtures\\app.log&echo 2&echo 15&echo 2&echo 0) | "%FCMD%" --exec > "%TMPD%\\c103b.txt" 2>nul
-if errorlevel 1 (set C103B_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c103b.txt" >nul && set C103B_OK=1 || set C103B_OK=0)
+if errorlevel 1 (set C103B_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c103b.txt" >nul && set "C103B_OK=1" || set "C103B_OK=0")
 if "%C103B_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --exec même édition -^> exit 0) else (set /a FAIL+=1&echo FAIL: fcmd --exec même édition -^> exit 0)
 
 rem --- 104. fcmd EOF immédiat -> exit 1 -----------------------------------------
@@ -1046,28 +1046,28 @@ if "%C104_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run EOF -^> exit 1) el
 
 rem --- 105. fstats --interactive 'n' -> exit 0 + commande affichée --------------
 (echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 0&echo n) | "%FSTATS%" --interactive > "%TMPD%\\c105.txt" 2>nul
-if errorlevel 1 (set C105_OK=0) else (findstr /C:"Commande" "%TMPD%\\c105.txt" >nul && findstr /C:"--check" "%TMPD%\\c105.txt" >nul && set C105_OK=1 || set C105_OK=0)
+if errorlevel 1 (set C105_OK=0) else (findstr /C:"Commande" "%TMPD%\\c105.txt" >nul && findstr /C:"--check" "%TMPD%\\c105.txt" >nul && set "C105_OK=1" || set "C105_OK=0")
 if "%C105_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive profil gate 'n' -^> exit 0 + commande) else (set /a FAIL+=1&echo FAIL: --interactive profil gate 'n' -^> exit 0 + commande)
 
 rem --- 106. fstats --interactive 'o' fail-if -> exit 2 propagé ------------------
-(echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 5&echo 40&echo words^>5&echo 0&echo o) | "%FSTATS%" --interactive >nul 2>nul
+(echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 5&echo 40&echo words^^^>5&echo 0&echo o) | "%FSTATS%" --interactive >nul 2>nul
 if errorlevel 3 (set C106_OK=0) else if errorlevel 2 (set C106_OK=1) else (set C106_OK=0)
 if "%C106_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive fail-if words^>5 exécuté -^> exit 2) else (set /a FAIL+=1&echo FAIL: --interactive fail-if words^>5 exécuté -^> exit 2)
 
 rem --- 107. fcmd --exec lance fstats --------------------------------------------
 (echo 2&echo 1&echo f&echo tests\\fixtures\\alarms.log&echo 0) | "%FCMD%" --exec > "%TMPD%\\c107.txt" 2>nul
-if errorlevel 1 (set C107_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c107.txt" >nul && set C107_OK=1 || set C107_OK=0)
+if errorlevel 1 (set C107_OK=0) else (findstr /C:"Lines:" "%TMPD%\\c107.txt" >nul && set "C107_OK=1" || set "C107_OK=0")
 if "%C107_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --exec profil log -^> fstats exécuté) else (set /a FAIL+=1&echo FAIL: fcmd --exec profil log -^> fstats exécuté)
 
 rem --- 108. v2.13.1 : occurrences ADJACENTES de --pattern (off-by-one corrigé) ---
 echo aaaa > "%TMPD%\\adj.txt"
 "%FSTATS%" --pattern=aa --summary-json "%TMPD%\\adj.txt" > "%TMPD%\\adj.json" 2>nul
-findstr /C:"\"matches\": 2" "%TMPD%\\adj.json" >nul && set C108_OK=1 || set C108_OK=0
+findstr /C:"\"matches\": 2" "%TMPD%\\adj.json" >nul && set "C108_OK=1" || set C108_OK=0
 if "%C108_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern=aa sur aaaa -^> 2 matches) else (set /a FAIL+=1&echo FAIL: --pattern=aa sur aaaa -^> 2 matches)
 
 echo errorerrorerror > "%TMPD%\\adj2.txt"
 "%FSTATS%" --pattern=error --summary-json "%TMPD%\\adj2.txt" > "%TMPD%\\adj2.json" 2>nul
-findstr /C:"\"matches\": 3" "%TMPD%\\adj2.json" >nul && set C108B_OK=1 || set C108B_OK=0
+findstr /C:"\"matches\": 3" "%TMPD%\\adj2.json" >nul && set "C108B_OK=1" || set C108B_OK=0
 if "%C108B_OK%"=="1" (set /a PASS+=1&echo PASS: --pattern=error x3 adjacents -^> 3 matches) else (set /a FAIL+=1&echo FAIL: --pattern=error x3 adjacents -^> 3 matches)
 
 rem --- 109. v2.14.0 (P1-3) : --redact ne fuit dans AUCUNE sortie ----------------
@@ -1097,7 +1097,7 @@ if "%C110_OK%"=="1" (set /a PASS+=1&echo PASS: --out = fichier analyse -^> exit 
 rem --- 111. v2.14.1 (P2) : frontiere 64 Ko — é à cheval = pas d'invalid_utf8 ----
 powershell -NoProfile -Command "$b=New-Object byte[] 65538; for($i=0;$i -lt 65535;$i++){$b[$i]=97}; $b[65535]=195; $b[65536]=169; $b[65537]=10; [IO.File]::WriteAllBytes('%TMPD%\utf8front.bin',$b)" >nul 2>nul
 "%FSTATS%" --summary-json "%TMPD%\utf8front.bin" > "%TMPD%\utf8front.json" 2>nul
-findstr /C:"\"invalid_utf8\": 0" "%TMPD%\utf8front.json" >nul && set C111_OK=1 || set C111_OK=0
+findstr /C:"\"invalid_utf8\": 0" "%TMPD%\utf8front.json" >nul && set "C111_OK=1" || set C111_OK=0
 if "%C111_OK%"=="1" (set /a PASS+=1&echo PASS: frontiere 64 Ko -^> invalid_utf8=0) else (set /a FAIL+=1&echo FAIL: frontiere 64 Ko -^> invalid_utf8=0)
 
 rem --- 112. v2.14.1 (P2) : formules CSV neutralisees -----------------------------
@@ -1115,8 +1115,34 @@ echo WARNING disk full > "%TMPD%\warn.log"
 echo WARN slow >> "%TMPD%\warn.log"
 echo ERROR bad >> "%TMPD%\warn.log"
 "%FSTATS%" --log-level "%TMPD%\warn.log" > "%TMPD%\warn113.txt" 2>nul
-findstr /R /C:"Warn:.*2" "%TMPD%\warn113.txt" >nul && set C113_OK=1 || set C113_OK=0
+findstr /R /C:"Warn:.*2" "%TMPD%\warn113.txt" >nul && set "C113_OK=1" || set C113_OK=0
 if "%C113_OK%"=="1" (set /a PASS+=1&echo PASS: WARNING + WARN -^> warn=2) else (set /a FAIL+=1&echo FAIL: WARNING + WARN -^> warn=2)
+
+rem --- 114. v2.15.0 (P2 vague 2) : pattern exponentiel sans match ne gele plus --
+rem AVANT : gel CPU infini (backtracking exponentiel). Le test tue apres 10 s.
+powershell -NoProfile -Command "$b=New-Object byte[] 1602; for($i=0;$i -lt 1600;$i++){$b[$i]=97}; $b[1600]=120; $b[1601]=10; [IO.File]::WriteAllBytes('%TMPD%\explen.log',$b)" >nul 2>nul
+powershell -NoProfile -Command "$p=Start-Process -FilePath '%FSTATS%' -ArgumentList '--summary-json','--pattern=*a*a*a*a*a*a*b','%TMPD%\explen.log' -NoNewWindow -RedirectStandardOutput '%TMPD%\explen.out' -RedirectStandardError '%TMPD%\explen.err' -PassThru; if(-not $p.WaitForExit(10000)){$p.Kill(); exit 1}; $t=[IO.File]::ReadAllText('%TMPD%\explen.out'); if($t.Contains('\"matches\": 0')){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 (set C114_OK=1) else (set C114_OK=0)
+if "%C114_OK%"=="1" (set /a PASS+=1&echo PASS: pattern exponentiel sans match -^> termine [etait gel]) else (set /a FAIL+=1&echo FAIL: pattern exponentiel sans match -^> termine [etait gel])
+
+rem --- 114b. match nul ('*') : compte 0, pas de boucle infinie ------------------
+"%FSTATS%" --json --pattern=* "%TMPD%\warn.log" > "%TMPD%\zero.json" 2>nul
+powershell -NoProfile -Command "$o=[IO.File]::ReadAllText('%TMPD%\zero.json'); if($o.Contains('\"pattern\": \"*\", \"lines\": 0, \"matches\": 0')){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 (set C114b_OK=1) else (set C114b_OK=0)
+if "%C114b_OK%"=="1" (set /a PASS+=1&echo PASS: match nul -^> compte 0, pas de hang) else (set /a FAIL+=1&echo FAIL: match nul -^> compte 0, pas de hang)
+
+rem --- 115. v2.15.0 (P2 vague 2) : tags imbriques = NFA lineaire, pas de gel ----
+powershell -NoProfile -Command "[IO.File]::WriteAllText('%TMPD%\taglong.log', ('a'*6299+'b'+[char]10))" >nul 2>nul
+powershell -NoProfile -Command "$p=Start-Process -FilePath '%FSTATS%' -ArgumentList '--regex-tag=a*a*a*b','--log-level','%TMPD%\taglong.log' -NoNewWindow -RedirectStandardOutput '%TMPD%\taglong.out' -RedirectStandardError '%TMPD%\taglong.err' -PassThru; if(-not $p.WaitForExit(10000)){$p.Kill(); exit 1}; exit 0" >nul 2>nul
+if not errorlevel 1 (set C115_OK=1) else (set C115_OK=0)
+if "%C115_OK%"=="1" (set /a PASS+=1&echo PASS: regex-tag imbrique -^> termine [NFA lineaire]) else (set /a FAIL+=1&echo FAIL: regex-tag imbrique -^> termine [NFA lineaire])
+
+rem --- 116. v2.15.0 (P2 vague 2) : ligne geante bornee, metriques exactes -------
+powershell -NoProfile -Command "[IO.File]::WriteAllText('%TMPD%\giant.log', ('q'*104000+[char]10))" >nul 2>nul
+"%FSTATS%" --summary-json "%TMPD%\giant.log" > "%TMPD%\giant.json" 2>nul
+powershell -NoProfile -Command "$o=[IO.File]::ReadAllText('%TMPD%\giant.json'); if($o.Contains('\"line_max\": 104000') -and $o.Contains('\"characters\": 104001') -and $o.Contains('\"words\": 1')){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 (set C116_OK=1) else (set C116_OK=0)
+if "%C116_OK%"=="1" (set /a PASS+=1&echo PASS: ligne 104 Ko -^> metriques exactes, stockage borne) else (set /a FAIL+=1&echo FAIL: ligne 104 Ko -^> metriques exactes, stockage borne)
 
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"

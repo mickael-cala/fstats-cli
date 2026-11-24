@@ -1055,6 +1055,40 @@ printf 'WARNING disk full\nWARN slow\nERROR bad\n' > "$TMPDIR/warn.log"
 if [ "$(grep -c 'Warn:' "$TMPDIR/warn.txt")" -ge 1 ] && grep -A1 'Warn:' "$TMPDIR/warn.txt" | grep -q '2'; then OK=0; else OK=1; fi
 report "--log-level : WARNING + WARN -> warn=2 (avant : 1)" $OK
 
+# --- 114. v2.15.0 (P2 vague 2) : patterns exponentiels ne gèlent plus --------
+# AVANT : '*a*a*a*a*a*a*b' sans match sur 1,6 Ko = gel CPU infini (v2.14.1
+# mesuré : tué à 20 s). Match nul ('*', '**', 'a||b') = boucle infinie.
+for i in $(seq 1 100); do printf 'aaaaaaaaaaaaaaax'; done > "$TMPDIR/explen.log"
+printf '\n' >> "$TMPDIR/explen.log"
+T114=$SECONDS
+if "$FSTATS" --pattern='*a*a*a*a*a*a*b' "$TMPDIR/explen.log" > /dev/null 2>&1 \
+   && [ $((SECONDS - T114)) -le 10 ]; then OK=0; else OK=1; fi
+report "--pattern='*a*a*a*a*a*a*b' sans match (1,6 Ko) : termine < 10 s (était gel)" $OK
+
+# Match de longueur nulle : pas compté, pas de boucle infinie (v2.15.0)
+"$FSTATS" --json --pattern='*' "$TMPDIR/warn.log" > "$TMPDIR/zero.json" 2>/dev/null
+if grep -q '"pattern": "\*", "lines": 0, "matches": 0' "$TMPDIR/zero.json"; then OK=0; else OK=1; fi
+report "--pattern='*' (match nul) : compte 0 et ne boucle pas (était hang)" $OK
+
+# --- 115. v2.15.0 (P2 vague 2) : tags imbriqués ne gèlent plus ---------------
+# AVANT : backtracking exponentiel du mini-moteur --regex-tag.
+for i in $(seq 1 200); do printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab'; done > "$TMPDIR/taglong.log"
+printf '\n' >> "$TMPDIR/taglong.log"
+T115=$SECONDS
+if "$FSTATS" --regex-tag='a*a*a*b' --log-level "$TMPDIR/taglong.log" > /dev/null 2>&1 \
+   && [ $((SECONDS - T115)) -le 10 ]; then OK=0; else OK=1; fi
+report "--regex-tag='a*a*a*b' sur ligne 6,3 Ko : termine < 10 s (NFA linéaire)" $OK
+
+# --- 116. v2.15.0 (P2 vague 2) : ligne géante bornée, métriques exactes ------
+# 104 Ko sur une ligne : métriques exactes, stockage borné (LINE_STORE_MAX).
+head -c 104000 /dev/zero | tr '\0' 'q' > "$TMPDIR/giant.log"
+printf '\n' >> "$TMPDIR/giant.log"
+"$FSTATS" --summary-json "$TMPDIR/giant.log" > "$TMPDIR/giant.json" 2>/dev/null
+if grep -q '"line_max": 104000' "$TMPDIR/giant.json" \
+   && grep -q '"characters": 104001' "$TMPDIR/giant.json" \
+   && grep -q '"words": 1' "$TMPDIR/giant.json"; then OK=0; else OK=1; fi
+report "ligne 104 Ko : line_max/characters exacts, mot stocké borné (LINE/WORD_STORE_MAX)" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

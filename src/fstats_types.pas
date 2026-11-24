@@ -28,7 +28,16 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.14.1';
+  FSTATS_VERSION = '2.15.0';
+
+  // v2.15.0 (P2 vague 2) : bornes de stockage par ligne/mot. Les MÉTRIQUES
+  // (lignes, mots, caractères, longueurs min/max/avg) restent EXACTES, seules
+  // les données stockées sont bornées : la ligne/mot conservé pour le
+  // matching (--pattern, --regex-tag, niveaux de log), le regroupement Top
+  // Lines et les previews est tronqué au-delà de ces bornes (approximation
+  // documentée : deux lignes identiques sur la borne partagent la même clé).
+  LINE_STORE_MAX = 65536;   // octets UTF-8 stockés par ligne
+  WORD_STORE_MAX = 1024;    // octets UTF-8 stockés par mot
 
   // Borne mémoire par défaut sur le nombre de mots uniques stockés (--max-unique)
   DEFAULT_MAX_UNIQUE = 100000;

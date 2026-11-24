@@ -119,6 +119,14 @@ var
   InWord: Boolean;
   IsWordChar: Boolean;
   CurrentWord, CurrentLine: string;
+  // v2.15.0 (P2 vague 2) : tampons a croissance geometrique (append O(1)
+  // amorti — l'ancien 'S := S + c' par caractere etait quasi-quadratique :
+  // 32 Mo sur une seule ligne = 18 s) + bornes LINE_STORE_MAX /
+  // WORD_STORE_MAX : la ligne/mot STOCKE est tronque au-dela (metriques
+  // exactes, approximation documentee).
+  LineBuf, WordBuf: string;
+  LineN, LineCap, WordN, WordCap: Integer;
+  LineTrunc, WordTrunc: Boolean;
   LineLen, TotalLen, NonEmpty: Int64;
   LastCPWasCR: Boolean;
   PendingSentence: Boolean;  // Contenu non-blanc depuis le dernier terminateur de phrase
@@ -145,6 +153,45 @@ var
   pi: Integer;               // index de boucle sur les patterns
   LineOcc: Int64;            // occurrences du pattern dans la ligne courante
 
+  // v2.15.0 (P2 vague 2) : append O(1) amorti au tampon ligne/mot (croissance
+  // geometrique) + borne_max : au-dela, on n'ecrit plus (Trunc = True) — les
+  // METRIQUES continuent de tout compter, seul le stocke est borne.
+  procedure AppendToBuf(var Buf: string; var N, Cap: Integer; var Trunc: Boolean;
+                        const VC: string; MaxStore: Integer);
+  begin
+    if N + Length(VC) > MaxStore then
+    begin
+      Trunc := True;
+      Exit;
+    end;
+    if N + Length(VC) > Cap then
+    begin
+      if Cap = 0 then Cap := 128 else Cap := Cap * 2;
+      while N + Length(VC) > Cap do Cap := Cap * 2;
+      SetLength(Buf, Cap);
+    end;
+    Move(VC[1], Buf[N + 1], Length(VC));
+    Inc(N, Length(VC));
+  end;
+
+  // Materialise le tampon dans CurrentLine / CurrentWord avant tout usage
+  // (matching, dictionnaires, lecture du mot par la regle smart '.').
+  procedure MaterializeLine;
+  begin
+    if LineN > 0 then
+      CurrentLine := Copy(LineBuf, 1, LineN)
+    else
+      CurrentLine := '';
+  end;
+
+  procedure MaterializeWord;
+  begin
+    if WordN > 0 then
+      CurrentWord := Copy(WordBuf, 1, WordN)
+    else
+      CurrentWord := '';
+  end;
+
   // Clôture le token courant : mise à jour des fréquences (sous la borne
   // --max-unique) et des compteurs. Un token jamais stocké compte quand même
   // dans WordCount et WordCharsTotal (sémantique documentée : unique_words
@@ -154,6 +201,7 @@ var
     C: Int64;
     WL: Integer;
   begin
+    MaterializeWord;
     if WordDict.TryGetValue(CurrentWord, C) then
       WordDict[CurrentWord] := C + 1
     else if WordDict.Count < MaxUnique then
@@ -178,6 +226,8 @@ var
       LineTokens[High(LineTokens)] := CurrentWord;
     end;
     CurrentWord := '';
+    WordN := 0;
+    WordTrunc := False;
     InWord := False;
   end;
 
@@ -285,6 +335,12 @@ begin
   DotPending := False;
   LastChars := '';
   CurrentLine := '';
+  LineN := 0;
+  LineCap := 0;
+  LineTrunc := False;
+  WordN := 0;
+  WordCap := 0;
+  WordTrunc := False;
   Stats.MinLen := High(Int64);  // Pour trouver le minimum
   Stats.MaxLen := 0;            // Pour trouver le maximum
   TotalLen := 0;
@@ -414,6 +470,7 @@ begin
         begin
           if SentenceMode = smSmart then
           begin
+            MaterializeWord;   // v2.15.0 : le mot vit dans WordBuf, le rendre lisible
             W := LowerCase(CurrentWord);
             if IsSmartAbbreviation(W) or (System.Pos('://', LastChars) > 0) then
             begin
@@ -446,6 +503,7 @@ begin
         if (CP = 10) or (CP = 13) then
         begin
           // Fin de ligne détectée
+          MaterializeLine;   // v2.15.0 : restituer la ligne stockée (bornée)
           Inc(Stats.LineCount);
           AddLine(Stats.TopLines, CurrentLine, LineLen, MaxLines);
           
@@ -499,6 +557,8 @@ begin
 
           // Réinitialisation pour la prochaine ligne
           CurrentLine := '';
+          LineN := 0;
+          LineTrunc := False;
           LineLen := 0;
           LastCPWasCR := (CP = 13);
 
@@ -518,7 +578,7 @@ begin
         begin
           // Caractère normal (pas un saut de ligne)
           LastCPWasCR := False;
-          CurrentLine := CurrentLine + VisualChar(CP);  // Ajouter à la ligne courante
+          AppendToBuf(LineBuf, LineN, LineCap, LineTrunc, VisualChar(CP), LINE_STORE_MAX);
           Inc(LineLen);
 
           // Détection des caractères de mot selon --word-mode ; tout le reste
@@ -540,7 +600,8 @@ begin
             // Caractère faisant partie d'un mot : repli de casse appliqué
             // AVANT l'encodage UTF-8 (--casefold)
             InWord := True;
-            CurrentWord := CurrentWord + VisualChar(FoldChar(CP, CaseFoldMode));
+            AppendToBuf(WordBuf, WordN, WordCap, WordTrunc,
+                        VisualChar(FoldChar(CP, CaseFoldMode)), WORD_STORE_MAX);
           end;
         end;
 
@@ -566,6 +627,7 @@ begin
     // Traitement de la dernière ligne si le fichier ne termine pas par un saut de ligne
     if LineLen > 0 then
     begin
+      MaterializeLine;   // v2.15.0 : restituer la ligne stockée (bornée)
       Inc(Stats.LineCount);
       AddLine(Stats.TopLines, CurrentLine, LineLen, MaxLines);
       Inc(NonEmpty);

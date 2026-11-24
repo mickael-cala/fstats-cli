@@ -47,8 +47,6 @@ function IsAlphaNum(C: Char): Boolean;
 function ContainsWord(const S, W: string): Boolean;
 function DetectLogLevel(const S: string): TLogLevel;
 function ParseTagPattern(const P: string; out Pat: TTagPattern): Boolean;
-function TokenMatchAt(const Tok: TTagToken; const S: string; si: Integer;
-                      out Rep: Integer): Boolean;
 function MatchTagAt(const Pat: TTagPattern; const S: string; Start: Integer;
                     out MatchLen: Integer): Boolean;
 procedure ExtractTags(const Pat: TTagPattern; const S: string; Dict: TTagDict);
@@ -482,45 +480,63 @@ end;
 
 {-----------------------------------------------------------------------------
   WildcardMatch : Vrai si S correspond au pattern P contenant '*' et '?'.
-  Algorithme récursif à deux indices, identique à GlobMatch mais sans la
-  notion de séparateur de chemin ('*' et '?' traversent tout ici).
-  Insensible à la casse (UpCase ASCII, comme CharEquals).
+  v2.15.0 (P2 vague 2) : algorithme greedy iteratif a DEUX reperes
+  (derniere etoile + position de reprise). L'ancienne version recursive
+  permettait un backtracking exponentiel (*a*a*a*b sur "aaaa...b" gelait).
+  Semantique inchangee : '*' = n'importe quelle sequence (y compris vide),
+  '?' = un caractere, litteraux insensibles a la casse (UpCase ASCII).
+  Complexite : O(len(P) x len(S)) au pire, aucune recursion (pile bornee).
   -----------------------------------------------------------------------------}
 function WildcardMatch(const P, S: string): Boolean;
-
-  function DoMatch(pi, si: Integer): Boolean;
-  var
-    pc: Char;
+var
+  pi, si, starPi, starSi: Integer;
+  m, n: Integer;
+begin
+  m := Length(P);
+  n := Length(S);
+  pi := 1;
+  si := 1;
+  starPi := 0;      // position (pattern) de la derniere etoile vue ; 0 = aucune
+  starSi := 0;      // position (texte) OU cette etoile a recommence a consommer
+  while si <= n do
   begin
-    while pi <= Length(P) do
+    if pi <= m then
     begin
-      pc := P[pi];
-      if pc = '*' then
+      if P[pi] = '*' then
       begin
-        if DoMatch(pi + 1, si) then Exit(True);
-        while si <= Length(S) do
-        begin
-          Inc(si);
-          if DoMatch(pi + 1, si) then Exit(True);
-        end;
-        Exit(False);
-      end;
-      if si > Length(S) then Exit(False);
-      if pc = '?' then
+        starPi := pi;
+        starSi := si;
+        Inc(pi);              // l'etoile essaie de consommer 0 caractere d'abord
+      end
+      else if (P[pi] = '?') or (UpCase(P[pi]) = UpCase(S[si])) then
       begin
-        Inc(pi); Inc(si);
+        Inc(pi);
+        Inc(si);
+      end
+      else if starPi > 0 then
+      begin
+        Inc(starSi);           // la derniere etoile consomme un caractere de plus
+        si := starSi;
+        pi := starPi + 1;
       end
       else
-      begin
-        if UpCase(pc) <> UpCase(S[si]) then Exit(False);
-        Inc(pi); Inc(si);
-      end;
-    end;
-    Result := si > Length(S);
+        Exit(False);           // mismatch sans etoile de repli : echec
+    end
+    else if starPi > 0 then
+    begin
+      // Pattern epuise mais texte restant : l'etoile doit absorber la suite
+      Inc(starSi);
+      si := starSi;
+      pi := starPi + 1;
+      if si > n then Break;    // absorbe tout : verifier la queue du pattern
+    end
+    else
+      Exit(False);             // pattern epuise, texte restant, pas d'etoile : echec
   end;
-
-begin
-  Result := DoMatch(1, 1);
+  // Texte epuise : le reste du pattern doit etre des etoiles (consomment vide)
+  while (pi <= m) and (P[pi] = '*') do
+    Inc(pi);
+  Result := pi > m;
 end;
 
 {-----------------------------------------------------------------------------
@@ -558,52 +574,50 @@ end;
   Retourne dans MatchLen la longueur du match (caractères de S consommés).
   -----------------------------------------------------------------------------}
 function WildcardMatchAt(const P, S: string; Start: Integer; out MatchLen: Integer): Boolean;
-
-  function DoMatch(pi, si: Integer; var EndSi: Integer): Boolean;
-  var
-    pc: Char;
+var
+  pi, si, starPi, starSi: Integer;
+  m, n: Integer;
+label
+  Mismatch;
+begin
+  m := Length(P);
+  n := Length(S);
+  pi := 1;
+  si := Start;
+  starPi := 0;
+  starSi := Start;
+  while True do
   begin
-    while pi <= Length(P) do
+    // Avancer tant que pattern et texte s'accordent
+    while pi <= m do
     begin
-      pc := P[pi];
-      if pc = '*' then
+      if P[pi] = '*' then
       begin
-        if DoMatch(pi + 1, si, EndSi) then Exit(True);
-        while si <= Length(S) do
-        begin
-          Inc(si);
-          if DoMatch(pi + 1, si, EndSi) then Exit(True);
-        end;
-        Exit(False);
-      end;
-      if si > Length(S) then Exit(False);
-      if pc = '?' then
+        starPi := pi;
+        starSi := si;
+        Inc(pi);              // l'etoile essaie 0 caractere d'abord (min-d'abord)
+      end
+      else if (si <= n) and ((P[pi] = '?') or (UpCase(P[pi]) = UpCase(S[si]))) then
       begin
-        Inc(pi); Inc(si);
+        Inc(pi);
+        Inc(si);
       end
       else
-      begin
-        if UpCase(pc) <> UpCase(S[si]) then Exit(False);
-        Inc(pi); Inc(si);
-      end;
+        goto Mismatch;
     end;
-    EndSi := si;
-    Result := True;  // tout le pattern consommé = match (préfixe de S)
+    // Pattern epuise = match d'un prefixe de S (semantique At, v2.13.1)
+    MatchLen := si - Start;
+    Exit(True);
+Mismatch:
+    // Retenter depuis la derniere etoile, un caractere de plus
+    if (starPi = 0) or (starSi > n) then
+      Break;                 // plus d'etoile ou etoile saturee : echec
+    Inc(starSi);
+    si := starSi;
+    pi := starPi + 1;
   end;
-
-var
-  EndSi: Integer;
-begin
-  EndSi := Start;
-  Result := DoMatch(1, Start, EndSi);
-  if Result then
-    // EndSi pointe APRES le dernier caractère consommé : la longueur du
-    // match est EndSi - Start (sans +1 — cf. MatchTagAt, même convention ;
-    // v2.13.1 : corrige le décalage qui faisait perdre les occurrences
-    // adjacentes, ex. "errorerrorerror" comptait 2 au lieu de 3).
-    MatchLen := EndSi - Start
-  else
-    MatchLen := 0;
+  Result := False;
+  MatchLen := 0;
 end;
 
 {-----------------------------------------------------------------------------
@@ -642,10 +656,20 @@ begin
       begin
         if WildcardMatchAt(Seg, S, i, SegLen) then
         begin
-          Inc(Result);
-          StartPos := i + SegLen;
-          if StartPos > Length(S) + 1 then StartPos := Length(S) + 1;
-          Found := True;
+          if SegLen > 0 then
+          begin
+            Inc(Result);
+            StartPos := i + SegLen;
+            if StartPos > Length(S) + 1 then StartPos := Length(S) + 1;
+            Found := True;
+          end
+          else
+            // v2.15.0 (P2 vague 2) : match de longueur NULLE (pattern
+            // reduit a des jokers, ex. '*', '**' ou segment vide d'une
+            // alternation 'a||b') — l'ancien code rebouclait ici a
+            // l'infini (StartPos := i + 0 = i). Un match vide n'est pas
+            // une occurrence : on avance d'une position, sans compter.
+            StartPos := i + 1;
           Break;
         end;
       end;
@@ -1055,81 +1079,111 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
-  TokenMatchAt : Vrai si le token Tok matche à la position si de S.
-  Retourne dans Rep le nombre de répétitions trouvées (pour avancer).
-  -----------------------------------------------------------------------------}
-function TokenMatchAt(const Tok: TTagToken; const S: string; si: Integer;
-                      out Rep: Integer): Boolean;
-var
-  c: Char;
-  Count: Integer;
-begin
-  Result := False;
-  Rep := 0;
-  Count := 0;
-  while (si + Count <= Length(S)) and (Count < Tok.MaxRep) do
-  begin
-    c := S[si + Count];
-    if Tok.IsClass then
-    begin
-      if not (c in Tok.ClassSet) then Break;
-    end
-    else
-    begin
-      if UpCase(c) <> UpCase(Tok.Ch) then Break;
-    end;
-    Inc(Count);
-  end;
-  if Count >= Tok.MinRep then
-  begin
-    Rep := Count;
-    Result := True;
-  end;
-end;
-
-{-----------------------------------------------------------------------------
-  MatchTagAt : Tente de matcher tout le pattern Pat à partir de la position
+  MatchTagAt : Tente de matcher tout le pattern Pat a partir de la position
   Start dans S. Retourne la longueur totale matchée dans MatchLen.
-  Algorithme glouton avec backtracking limité (récursif sur les tokens).
+  v2.15.0 (P2 vague 2) : simulation NFA en ensemble d'etats lineaire —
+  O(len(S) x len(Pat)) par position de depart, ZERO backtracking. L'ancienne
+  version recursive (gloutonne avec backtracking) pouvait GELER sur des
+  patterns a quantifieurs imbriques (a*a*a*a*b sur "aaaa...b" : exploration
+  exponentielle ; amplifie par --mode=alarm et son pattern par defaut).
+  Semantique : MatchLen = LONGUEUR DU MATCH LE PLUS LONG depuis Start
+  (accepte s'ecrit : tous les tokens consommes ; un match vide = True/0,
+  l'appelant ExtractTags ignore deja les matchs vides, ML > 0).
+  Etats : Pre[0..k] = "tokens 0..i-1 completement consommes" ;
+  Loop[i] = "au moins une repetition du token i en cours" (peut continuer).
   -----------------------------------------------------------------------------}
 function MatchTagAt(const Pat: TTagPattern; const S: string; Start: Integer;
                     out MatchLen: Integer): Boolean;
 
-  function DoMatch(ti, si: Integer; var EndSi: Integer): Boolean;
-  var
-    Rep, k: Integer;
+  function TokMatches(const Tok: TTagToken; c: Char): Boolean;
   begin
-    if ti >= Length(Pat) then
-    begin
-      EndSi := si;
-      Result := True;
-      Exit;
-    end;
-    // Essaie le plus de répétitions d'abord (glouton), puis backtrack
-    if TokenMatchAt(Pat[ti], S, si, Rep) then
-    begin
-      // Essayer de 0 à Rep répétitions (du max au min pour le glouton)
-      if Rep > Pat[ti].MaxRep then Rep := Pat[ti].MaxRep;
-      for k := Rep downto Pat[ti].MinRep do
-      begin
-        if DoMatch(ti + 1, si + k, EndSi) then Exit(True);
-      end;
-      // Si MinRep = 0, essayer aussi 0 répétition
-      if Pat[ti].MinRep = 0 then
-        if DoMatch(ti + 1, si, EndSi) then Exit(True);
-    end;
-    Result := False;
+    if Tok.IsClass then
+      Result := c in Tok.ClassSet
+    else
+      Result := UpCase(c) = UpCase(Tok.Ch);
   end;
 
 var
-  EndSi: Integer;
+  k, n, i, q: Integer;
+  Pre, NextPre, TmpPre: array of Boolean;
+  Loop, NextLoop, TmpLoop: array of Boolean;
+  AnyActive: Boolean;
+  BestLen: Integer;
 begin
-  EndSi := Start;
-  Result := DoMatch(0, Start, EndSi);
-  if Result then
-    MatchLen := EndSi - Start
+  k := Length(Pat);
+  n := Length(S);
+  MatchLen := 0;
+  if k = 0 then
+    Exit(False);
+
+  SetLength(Pre, k + 1);
+  SetLength(NextPre, k + 1);
+  SetLength(Loop, k);
+  SetLength(NextLoop, k);
+  for i := 0 to k do Pre[i] := False;
+  for i := 0 to k - 1 do Loop[i] := False;
+  Pre[0] := True;
+
+  // Fermeture epsilon initiale (saut des tokens facultatifs, chaine montante)
+  for i := 0 to k - 1 do
+    if Pre[i] and (Pat[i].MinRep = 0) then
+      Pre[i + 1] := True;
+
+  // Match vide possible (pattern entier sautable) — l'appelant filtre ML > 0
+  if Pre[k] then
+    BestLen := 0
   else
+    BestLen := -1;
+
+  q := Start;
+  while q <= n do
+  begin
+    // Passage caracteres : chaque etat actif consomme S[q] selon son token
+    for i := 0 to k do NextPre[i] := False;
+    for i := 0 to k - 1 do NextLoop[i] := False;
+    for i := 0 to k - 1 do
+    begin
+      if not TokMatches(Pat[i], S[q]) then Continue;
+      if Pre[i] then
+        NextLoop[i] := True;                       // 1re repetition du token i
+      if Loop[i] and (Pat[i].MaxRep > 1) then
+        NextLoop[i] := True;                       // repetition suivante
+    end;
+    // Fermeture epsilon apres consommation (passage unique montant suffit :
+    // Pre[i] ne se propage que vers Pre[i+1], Loop[i] aussi)
+    for i := 0 to k - 1 do
+    begin
+      if NextPre[i] and (Pat[i].MinRep = 0) then
+        NextPre[i + 1] := True;
+      if NextLoop[i] then
+        NextPre[i + 1] := True;
+    end;
+    // Echange des ensembles d'etats
+    TmpPre := Pre; Pre := NextPre; NextPre := TmpPre;
+    TmpLoop := Loop; Loop := NextLoop; NextLoop := TmpLoop;
+
+    // Etats actifs ?
+    AnyActive := Pre[k];
+    for i := 0 to k - 1 do
+      AnyActive := AnyActive or Loop[i] or Pre[i];
+    if not AnyActive then
+      Break;
+
+    Inc(q);
+    if Pre[k] then
+      BestLen := q - Start;   // consomme Start..q-1 : match le plus long a jour
+  end;
+
+  if BestLen >= 0 then
+  begin
+    Result := True;
+    MatchLen := BestLen;
+  end
+  else
+  begin
+    Result := False;
     MatchLen := 0;
+  end;
 end;
 
 {-----------------------------------------------------------------------------

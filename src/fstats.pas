@@ -3,7 +3,9 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.14.1 (P2 : frontiere 64Ko, WARNING, CSV formules, gate no-op visible)
+  Version    : 2.15.0 (P2 vague 2 : matchers linéaires NFA/glouton, anti-gel,
+              match nul non compté, tampons de ligne/mot bornés à croissance
+              géométrique — métriques exactes)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   

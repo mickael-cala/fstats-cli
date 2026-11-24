@@ -23,7 +23,7 @@ uses
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
-  CMDGEN_VERSION = '2.14.1';
+  CMDGEN_VERSION = '2.15.0';
   OPT_COUNT = 49;   // dont 1 entrée spéciale '' = fichiers positionnels
 
 type
