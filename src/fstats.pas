@@ -3,8 +3,9 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.16.0 (P2 vague 3 : intégrité baseline SHA-256, verdict CI
-              lisible, hors-baseline visible, --fail-on-delta inline réparé)
+  Version    : 2.16.1 (P2 vague 4 : option inconnue/à valeur manquante =
+              message honnête au lieu de « fichier introuvable », help
+              --top-lines véridique [0 = désactivé, pas « tous »])
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -119,6 +120,36 @@ program fstats;
   Sécurité : Ne modifie que la sortie standard, pas l'entrée
   Compatibilité : Fonctionne sur Windows 10+ avec Virtual Terminal Processing
   =============================================================================}
+
+{-----------------------------------------------------------------------------
+  IsKnownValueOption (v2.16.1, P2 vague 4) : vrai si le nom NU (sans valeur)
+  correspond à une option documentée qui EXIGE une valeur. Utilisé pour
+  distinguer « option inconnue » (typo) de « valeur manquante » quand un
+  '--xxx' ne matche aucune branche du parseur : le message oriente alors
+  l'utilisateur vers la correction, pas vers « fichier introuvable ».
+  Les options dont la forme NUE est légale (--check, --json, --csv, --all,
+  --compare VALEUR, --fail-if VALEUR, --fail-on-delta VALEUR, --pattern
+  VALEUR, --watch, --top-lines N...) ne figurent PAS ici : elles sont
+  traitées plus haut dans le parseur.
+  -----------------------------------------------------------------------------}
+const
+  KNOWN_VALUE_OPTS: array[0..21] of string = (
+    '--mode', '--redact', '--out', '--word-mode', '--casefold',
+    '--sentence-mode', '--histogram', '--json-mode', '--stopwords',
+    '--filter', '--ngrams', '--recursive', '--include', '--exclude',
+    '--max-depth', '--max-unique', '--top-words', '--top-chars',
+    '--top-lines', '--top-ngrams', '--top-tags', '--regex-tag'
+  );
+
+function IsKnownValueOption(const P: string): Boolean;
+var
+  k: Integer;
+begin
+  Result := False;
+  for k := 0 to High(KNOWN_VALUE_OPTS) do
+    if KNOWN_VALUE_OPTS[k] = P then
+      Exit(True);
+end;
 
 {$IFDEF MSWINDOWS}
 procedure ConfigureConsoleForUTF8;
@@ -1062,7 +1093,23 @@ begin
         end;
       end
 
-      // Argument non reconnu : fichier littéral, pattern glob, ou stdin
+      // Argument non reconnu. v2.16.1 (P2 vague 4, anti-message-trompeur) :
+      // un '--xxx' qui n'a matché AUCUNE option de la grammaire ci-dessus est
+      // soit une option inconnue (typo), soit une option à valeur écrite sans
+      // sa valeur. L'ancien comportement l'ajoutait aux FICHIERS : le message
+      // final « Fichier inaccessible ou introuvable - --redact » orientait
+      // vers le disque au lieu de la ligne de commande.
+      else if (Copy(Param, 1, 2) = '--') and (Length(Param) > 2) then
+      begin
+        if IsKnownValueOption(Param) then
+          WriteLn(ErrOutput, 'Erreur: l''option ', Param, ' exige une valeur (écriture : ',
+                  Param, '=VALEUR). Tapez --help pour la grammaire exacte.')
+        else
+          WriteLn(ErrOutput, 'Erreur: option inconnue : ', Param,
+                  '. Tapez --help pour la liste ; si c''est vraiment un fichier,',
+                  ' préfixez-le : ./', Param);
+        Halt(1);
+      end
       else
         RawFiles.Add(ParamOrig);
       Inc(i);

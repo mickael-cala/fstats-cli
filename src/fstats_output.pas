@@ -1460,8 +1460,8 @@ begin
   WriteLn(Out, '  --pattern=TEXTE   Compte les occurrences du pattern dans chaque');
   WriteLn(Out, '                    ligne (litteral + | alternance + * ? wildcards,');
   WriteLn(Out, '                    insensible a la casse) ; repetable');
-  WriteLn(Out, '  --top-lines=N     Top N des lignes identiques (def. 10, 0 = tous,');
-  WriteLn(Out, '                    desactive si l''option est absente)');
+  WriteLn(Out, '  --top-lines=N     Top N des lignes identiques (def. 10 de l''option');
+  WriteLn(Out, '                    --mode=alarm ; 0 = DESACTIVE, absente = desactive)');
   WriteLn(Out, '  --redact=LISTE    email,ipv4,url (virgules) : remplace par *** dans');
   WriteLn(Out, '                    les sorties seulement (compteurs sur le brut)');
   WriteLn(Out, '  --log-level       Compte les lignes par niveau (ERROR>WARN>INFO>');

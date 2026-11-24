@@ -1132,6 +1132,18 @@ if [ $OK -eq 0 ]; then
 fi
 report "baseline sha256 : clé = sha256sum, falsification -> sha256 FAIL + exit 2 (était : dérive invisible)" $OK
 
+# --- 120. v2.16.1 (P2 vague 4) : option inconnue = message honnête ------------
+"$FSTATS" --patern=error tests/fixtures/test_fr.txt > /dev/null 2> "$TMPDIR/v4-unknown.err"
+EC=$?
+if [ $EC -eq 1 ] && grep -q 'option inconnue : --patern=error' "$TMPDIR/v4-unknown.err"; then OK=0; else OK=1; fi
+report "option inconnue -> « option inconnue » + exit 1 (était : « Fichier introuvable »)" $OK
+
+# --- 121. v2.16.1 (P2 vague 4) : option à valeur manquante = dit laquelle ------
+"$FSTATS" --redact tests/fixtures/test_fr.txt > /dev/null 2> "$TMPDIR/v4-bare.err"
+EC=$?
+if [ $EC -eq 1 ] && grep -q 'l.option --redact exige une valeur' "$TMPDIR/v4-bare.err"; then OK=0; else OK=1; fi
+report "--redact nu -> « exige une valeur » + exit 1 (était : « Fichier introuvable »)" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

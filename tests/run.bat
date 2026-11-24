@@ -1179,6 +1179,20 @@ if "%C119_OK%"=="1" (
 )
 if "%C119_OK%"=="1" (set /a PASS+=1&echo PASS: baseline sha256 = Get-FileHash, falsification -^> sha256 FAIL + exit 2) else (set /a FAIL+=1&echo FAIL: baseline sha256 = Get-FileHash, falsification -^> sha256 FAIL + exit 2)
 
+rem --- 120. v2.16.1 (P2 vague 4) : option inconnue = message honnete ------------
+"%FSTATS%" --patern=error tests\fixtures\test_fr.txt >nul 2> "%TMPD%\v4unknown.err"
+set C120_OK=0
+if errorlevel 1 if not errorlevel 2 set C120_OK=1
+findstr /C:"option inconnue : --patern=error" "%TMPD%\v4unknown.err" >nul || set C120_OK=0
+if "%C120_OK%"=="1" (set /a PASS+=1&echo PASS: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: option inconnue -^> message honnete + exit 1 - etait Fichier introuvable)
+
+rem --- 121. v2.16.1 (P2 vague 4) : valeur manquante = dit laquelle --------------
+"%FSTATS%" --redact tests\fixtures\test_fr.txt >nul 2> "%TMPD%\v4bare.err"
+set C121_OK=0
+if errorlevel 1 if not errorlevel 2 set C121_OK=1
+findstr /C:"l'option --redact exige une valeur" "%TMPD%\v4bare.err" >nul || set C121_OK=0
+if "%C121_OK%"=="1" (set /a PASS+=1&echo PASS: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable)
+
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul
