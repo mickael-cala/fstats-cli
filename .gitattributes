@@ -7,3 +7,18 @@ tests/run.sh text eol=lf
 
 # Script de test cmd : toujours en CRLF (cmd + batch = CRLF, independant de la config git du runner)
 tests/run.bat text eol=crlf
+
+# ===================================================================
+# exemples/ (vague bilingue, 2026-11-24) : corpus d'INSTRUMENTATION —
+# les octets sont contractuels (CRLF/CR volontaires dans
+# cas-limites/fins-de-ligne-melangees.txt, BOM reel dans bom-utf8.txt,
+# octets invalides dans utf8-abime.txt, e a cheval sur la frontiere
+# 64 Ki dans frontiere-64kio.txt). -text = git les stocke et livre
+# octet pour octet, sur toute machine.
+# exemples/ = instrumentation corpus: bytes are contractual; -text
+# keeps them byte-exact on every machine.
+# ===================================================================
+exemples/** -text
+
+# Les executables compiles ne sont jamais convertis.
+*.exe binary
