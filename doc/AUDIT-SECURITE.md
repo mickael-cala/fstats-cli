@@ -58,7 +58,7 @@ décennies de durcissement des bibliothèques éprouvées.
 | P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
 | P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
-## 5. Statut P2 — vagues 1-2 corrigées (v2.14.1/v2.15.0), reste au backlog 📋
+## 5. Statut P2 — vagues 1-3 corrigées (v2.14.1 → v2.16.0), reste au backlog 📋
 
 **Corrigés en v2.14.1** (tests 111-113 + wizard rejoué) : frontière 64 Ko
 (invalid_utf8 faux positif à l'alignement — bug métrique CI), `WARNING`
@@ -76,12 +76,20 @@ exactes). Bonus : le harnais Windows run.bat était inutilisable
 (LF au lieu de CRLF : plantage au test 65+ ; `set X=1 ` avec espace
 absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
 
+**Corrigés en v2.16.0** (tests 117-119, SHA-256 validé sur vecteurs FIPS
++ parité sha256sum/Get-FileHash) : **baseline falsifiable** (clé `sha256`
+dans le summary-json, `--compare` vérifie : contenu changé = FAIL exit 2
+même si les métriques sont stables), **fichier hors baseline ignoré en
+silence** (avertissement stderr + compteur dans le verdict), **verdict CI
+illisible** (dernière ligne console = `Verdict : OK/ATTENTION/ECHEC —
+exit N`, jamais dans les formats de données). Bonus : `--fail-on-delta=M>X`
+inline n'avait **jamais** fonctionné depuis la v2.6.0 (off-by-one :
+traitée comme nom de fichier), et l'exit 2 d'un check injecté était
+ignoré. **Delta négatif requalifié ACCEPTÉ** (§6) : le gate protège
+contre l'explosion, la décroissance n'est pas une anomalie CI.
+
 **Reste au backlog** (par vagues suivantes) :
 
-- **Verdict CI**
-  - `--fail-on-delta` ne teste que la croissance (delta négatif = OK).
-  - Baseline sans intégrité (réécrivable par un attaquant du dépôt).
-  - Fichier absent de la baseline → checks delta silencieusement ignorés.
 - **Détournements sémantiques**
   - Homoglyphes (`ЕRROR` cyrillique) invisibles aux compteurs ;
     caractères RTL invisibles dans les previews.
@@ -89,7 +97,6 @@ absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
   - Option inconnue → « Fichier inaccessible ou introuvable » ;
     `--redact`/`--mode` nus → analyse sans protection.
   - `--top-lines=0` : le help dit « tous », le code dit « désactivé ».
-  - Pas de verdict final lisible en mode check (dernière ligne = exit code).
   - `%VAR%` développé par cmd.exe au collage de la commande affichée.
 - **Hygiène dev**
   - `Halt()` dans les couches basses (try..finally non déroulé).
@@ -106,6 +113,10 @@ absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
 - Top-K n-grams approximatif sur très gros corpus (sketch borné).
 - Casefold unicode = table basique FR/DE (documenté).
 - Les redaction `ipv4`/`url` couvrent des formes simples (pas IPv6/ports).
+- **`--fail-on-delta` ne teste que la croissance** (v2.16.0, requalifié) :
+  un delta négatif ne peut pas échouer — le gate protège contre
+  l'EXPLOSION des métriques (un log qui triple), pas contre la
+  décroissance ; la valeur du delta (négative) reste affichée.
 
 ## 7. Leçons pédagogiques (à relire avant chaque ajout de fonctionnalité)
 
@@ -150,6 +161,13 @@ absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
     inclus dans la valeur par cmd) et un `^>` dans un pipe devenait une
     redirection. Le signal « 63 PASS / 0 FAIL » n'existait pas avant —
     maintenant il existe et il est vérifié à chaque version.
+12. **Testez chaque option sous la forme EXACT où la documentation la
+    montre.** v2.16.0 : `--fail-on-delta=M>X` — la forme avec `=` — était
+    documentée depuis la v2.6.0 et n'avait JAMAIS fonctionné (off-by-one
+    sur le préfixe) : l'option tombait dans la branche « fichier ». La
+    forme à 3 arguments, testée elle, fonctionnait. Cinq versions de
+    « vérifié » n'ont jamais testé ce que l'utilisateur tape en lisant le
+    help. Un test par option documentée, avec sa syntaxe documentée.
 
 ## 8. Journal des audits
 
@@ -159,3 +177,4 @@ absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
 | 2026-11-23 | v2.14.0 | — | P1-1/2/3 corrigés + tests 109/110 ; restes notés au §5/P2 |
 | 2026-11-23 | v2.14.1 | — | P2 vague 1 corrigée (6 fixes + code mort) ; tests 111-113 ; backlog §5 |
 | 2026-11-24 | v2.15.0 | — | P2 vague 2 corrigée (matchers linéaires, hang match nul, bornes stockage) ; tests 114-116 ; harnais Windows réparé (63 PASS) |
+| 2026-11-24 | v2.16.0 | — | P2 vague 3 corrigée (SHA-256 baseline, verdict CI, hors-baseline visible, fail-on-delta inline) ; tests 117-119 (66 PASS) |

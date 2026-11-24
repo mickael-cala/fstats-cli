@@ -6,6 +6,50 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.16.0] — 2026-11-24 — P2 (vague 3) : intégrité baseline SHA-256, verdict CI, --fail-on-delta inline
+
+Troisième vague P2 : le **verdict du gate CI**. Deux découvertes en route :
+la forme `--fail-on-delta=M>X` (documentée depuis la v2.6.0) **n'avait
+jamais fonctionné** (off-by-one sur le préfixe, l'option tombait dans la
+branche « fichier »), et l'exit code 2 pouvait être **ignoré** quand seul
+un check injecté échouait.
+
+### Ajouté
+- **Intégrité de la baseline (SHA-256)** : `--summary-json` émet une clé
+  `sha256` (FIPS 180-4, streaming, identique à `sha256sum`/`Get-FileHash` —
+  parité testée + vecteurs FIPS). `--compare` la vérifie : contenu changé →
+  check `sha256` **FAIL + exit 2** (une dérive invisible par les métriques
+  : token remplacé, ligne réécrite). Hash identique → check `sha256` ok.
+  Baseline ancienne sans clé : saut (rétrocompatible). stdin / fichier
+  illisible : clé omise, pas de vérification. Rupture **additive**
+  documentée (SEMANTIQUE).
+- **Verdict final lisible** : la sortie console du mode check se termine par
+  `Verdict : OK/ATTENTION/ECHEC — exit N` (+ `N fichier(s) hors baseline`).
+  Jamais dans --json/--csv/--summary-json (formats purs, exit codes).
+- **Fichier hors baseline visible** : `--compare` + fichier absent →
+  avertissement stderr `absent de la baseline` + compteur dans le verdict
+  (avant : les checks delta étaient ignorés EN SILENCE).
+
+### Corrigé
+- **`--fail-on-delta=M>X` inline** (bug présent depuis la v2.6.0) :
+  `Copy(Param,1,15) = '--fail-on-delta='` ne matchait jamais (le préfixe
+  fait 16) et la valeur reprenait le `=` (`Copy(ParamOrig,16)` →
+  `=words>10` → « métrique inconnue »). L'option était traitée comme un
+  **fichier** : `fstats --fail-on-delta=words>1 f.txt` analysait f.txt
+  ET cherchait le fichier `--fail-on-delta=words>1`. Préfixes et offset
+  corrigés (16/17) ; la forme à 3 arguments était correcte elle.
+- **Exit code ignoré sur check injecté** : `--check --compare` sans
+  `--fail-if` avec un hash divergent affichait FAIL mais sortait en 0
+  (la gate exigeait `Length(Checks) > 0`). La gate compte désormais tout
+  check émis, y compris `sha256`.
+
+### Tests
+- 117 (verdict console OK/ECHEC + exit 0/2), 118 (hors baseline visible),
+  119 (sha256 = sha256sum/Get-FileHash + falsification → FAIL + exit 2) —
+  en run.sh ET run.bat. Windows : **66 PASS / 0 FAIL**.
+
+---
+
 ## [2.15.0] — 2026-11-24 — P2 (vague 2) : matchers linéaires, anti-gel, lignes/mots bornés
 
 Deuxième vague P2 : robustesse sur entrée hostile. Un fichier de **1,6 Ko** +

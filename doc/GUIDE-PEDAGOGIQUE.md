@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.15.0`.
+Doit afficher quelque chose comme `fstats 2.16.0`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -330,10 +330,12 @@ Checks
 ```
 
 Ici, la plus longue ligne fait 30 caractères : le check `max_line_length > 25`
-échoue et la commande se termine avec le code 2 (au lieu de 0). Codes de
-sortie en mode check : **0** = tout va bien, **2** = au moins un check échoué,
-**3** = seulement des avertissements (`--warn-if`), **1** = erreur (fichier
-introuvable, option invalide).
+échoue et la commande se termine avec le code 2 (au lieu de 0). Depuis la
+v2.16.0, la console se termine aussi par une ligne **verdict lisible**
+(`Verdict : ECHEC (...) - exit 2`) — inutile de déchiffrer les codes à la
+main. Codes de sortie en mode check : **0** = tout va bien, **2** = au
+moins un check échoué, **3** = seulement des avertissements (`--warn-if`),
+**1** = erreur (fichier introuvable, option invalide).
 
 Pour surveiller la **dérive** d'un corpus dans le temps, on capture un état de
 référence puis on compare :
@@ -343,9 +345,12 @@ fstats --summary-json docs/*.md > baseline.ndjson
 fstats docs/*.md --compare baseline.ndjson --fail-on-delta lines>10
 ```
 
-Cette deuxième commande échoue (code 2) si un fichier gagne ou perd plus de
-10 % de lignes par rapport à la baseline. C'est ce que la CI du dépôt fait
-déjà sur ses propres documents (dogfood).
+Cette deuxième commande échoue (code 2) si un fichier **gagne** plus de
+10 % de lignes par rapport à la baseline (la perte n'est pas une anomalie :
+c'est l'explosion qu'un gate CI doit arrêter — décision documentée). La
+baseline contient aussi le **SHA-256** de chaque fichier (v2.16.0) :
+si le contenu d'un fichier change sans faire bouger ses métriques, le
+check `sha256` échoue quand même — impossible de maquiller une dérive.
 
 ---
 
@@ -430,7 +435,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -443,7 +448,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -541,7 +546,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient

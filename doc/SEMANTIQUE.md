@@ -1,6 +1,6 @@
 # Spécification technique — sémantique figée et formats de sortie
 
-> Document de référence de `fstats` (v2.15.0). La sémantique décrite ici est
+> Document de référence de `fstats` (v2.16.0). La sémantique décrite ici est
 > **figée** : elle ne changera pas dans les versions futures sans annonce
 > explicite. Pour la prise en main, voir le
 > [guide pédagogique](GUIDE-PEDAGOGIQUE.md) ; pour la vue d'ensemble, le
@@ -101,7 +101,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -138,8 +138,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -160,7 +160,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -173,8 +173,15 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "sha256": "<64 hex>", "tool": "fstats", "version": "2.16.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
+
+**`sha256`** (v2.16.0, P2 vague 3) : empreinte SHA-256 (FIPS 180-4) du
+**contenu du fichier**, calculée en streaming — identique au résultat de
+`sha256sum`/`Get-FileHash`. C'est la clé d'**intégrité de la baseline** :
+`--compare` la vérifie (cf. Baseline et dérive). La clé est **omise** pour
+stdin et les fichiers illisibles ; une baseline ancienne sans `sha256`
+passe la vérification (rétrocompatible).
 
 Avec `--lexical-stats`, `--summary-json` ajoute (toujours à plat) les clés
 `unique_words`, `hapax`, `type_token_ratio`, `average_word_length` et
@@ -536,24 +543,55 @@ Mode check activé par `--check` **ou implicitement** par `--fail-if`,
 - Baseline : NDJSON produit par `--summary-json` (une ligne JSON par fichier,
   clé `file`) ; un objet unique est accepté. Ligne illisible → exit 1.
 - Correspondance par la chaîne `file` telle que fstats l'affiche. Fichier
-  sans baseline → checks de dérive ignorés pour ce fichier (documenté).
+  sans baseline → checks de dérive ignorés pour ce fichier — **et VISIBLE**
+  (v2.16.0) : avertissement stderr `absent de la baseline` + compteur dans
+  la ligne verdict de la sortie console. Jamais silencieux.
 - `--fail-on-delta=<metric>>X` (répétable, `>` imposé) :
   `delta = (actual - base) / base * 100` ; échec si `delta > X`.
   `base = 0` : delta 0 si actual = 0, sinon dérive infinie (échec — une
   métrique qui passe de 0 à >0 est une dérive infinie, documenté).
+  **Un delta NÉGATIF ne peut pas échouer** (seuil de croissance assumé,
+  registre sécurité §6 : le gate protège contre l'explosion des métriques,
+  la décroissance n'est pas une anomalie pour des logs) ; la valeur du
+  delta (négative) reste affichée, lisible.
+  Formes acceptées : `--fail-on-delta=M>X` (v2.16.0 : la forme `=` était
+  silencieusement cassée depuis la v2.6.0 — off-by-one sur le préfixe),
+  `--fail-on-delta:M>X`, ou `--fail-on-delta M>X` (3 arguments).
+- **Intégrité `sha256`** (v2.16.0) : si l'entrée baseline porte la clé
+  `sha256` et que le contenu actuel du fichier hash diffère, un check
+  `sha256` **échoue** (console : `sha256 != 0 : FAIL (actual 1)`,
+  `actual 1` = divergence) — le fichier a changé de contenu même si ses
+  métriques sont stables (dérive masquée). Hash identique → check `sha256`
+  `ok` (`actual 0`, intégrité prouvée = information utile, pas du bruit).
+  Baseline sans clé `sha256` → vérification sautée (rétrocompatible).
+  stdin / fichier illisible : pas de vérification.
 - Métriques delta : clés numériques du summary-json (`lines`, `words`,
   `characters`, `sentences`, `avg_words_per_sentence` (alias
   `avg_sentence_words`), `line_min`, `line_max`, `line_avg`, `invalid_utf8`
-  (alias `non_utf8`), `bom`, `crlf`, `tabs`, `nonprintable`).
+  (alias `non_utf8`), `bom`, `crlf`, `tabs`, `nonprintable`). NOTA : la clé
+  `sha256` n'est PAS une métrique delta (une dérive de hash est un échec
+  d'intégrité, pas un pourcentage).
 
-### Sorties
+### Sorties des checks
+
+- **Verdict console** (v2.16.0) : en mode check avec au moins un check (ou
+  un check `sha256` émis par `--compare`), la sortie console se termine par
+  une ligne lisible : `Verdict : OK (tous les checks passent) - exit 0`
+  / `Verdict : ATTENTION (...) - exit 3` / `Verdict : ECHEC (...) - exit 2`
+  (+ une ligne `N fichier(s) hors baseline` le cas échéant). Le verdict ne
+  figure **jamais** dans `--json`/`--csv`/`--summary-json` (formats de
+  données purs — les scripts lisent les exit codes).
 
 - Console : section `Checks` après Summary (métrique, op, seuil, statut,
-  valeur réelle ; pour les deltas, le delta %). ASCII pur.
+  valeur réelle ; pour les deltas, le delta %). ASCII pur. Le check
+  d'intégrité s'affiche `sha256 != 0 : FAIL (actual 1)` (divergence) ou
+  ok avec `actual 0`.
 - JSON pretty/NDJSON : bloc additif `checks` (après `quality`) :
   `{"id": …, "metric": …, "actual": …, "op": …, "threshold": …,
   "status": …}`. `id` = métrique (ou `delta:<metric>`), puis `#2`, `#3`… en
   cas de répétition. Pour un delta, `actual` = delta % et `op` = `>`.
+  Le check `sha256` : `id = "sha256"`, `metric = "sha256"`, `actual` = 0
+  (identique) ou 1 (divergence), `op = "!="`, `threshold = 0`.
 - `--summary-json` et `--csv` : **pas** de section checks (les exit codes
   s'appliquent quand même). `--json-mode=aggregate` : checks par fichier,
   jamais dans `totals`.

@@ -3,6 +3,57 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.16.0 — P2 vague 3 (2026-11-24)
+
+### 1. SHA-256 : implémentation validée à trois niveaux
+
+- Vecteurs FIPS 180-4 : "abc" → `ba7816bf…015ad` ✓, chaîne vide →
+  `e3b0c442…b855` ✓ (mini-programme de test dédié).
+- Parité outil : `--summary-json tests/fixtures/test_fr.txt` émet
+  `sha256: eba4cf176f…bb91` = `sha256sum` au caractère près (test 119,
+  idem `Get-FileHash` côté Windows).
+- Streaming : hash par blocs de 64 Ko, mémoire bornée (l'unité ne charge
+  jamais le fichier).
+
+### 2. Intégrité baseline : falsification attrapée
+
+Baseline créée sur un fichier, fichier réécrit avec le MÊME nombre de
+lignes/mots proches → check console `sha256 != 0 : FAIL (actual 1)` +
+**exit 2** (avant : les métriques stables masquaient la dérive). Fichier
+intact → check `sha256` ok, exit 0. Baseline pré-2.16.0 (sans clé) →
+saut silencieux, rétrocompatible (vérifié en re-générant une baseline à
+la main sans la clé).
+
+### 3. Verdict console + hors-baseline visible
+
+`--check --fail-if ...` → dernière ligne `Verdict : OK/ATTENTION/ECHEC —
+exit N` (exit vérifié conforme). `--compare` + fichier absent de la
+baseline → stderr `absent de la baseline : checks de derive ignores` +
+ligne `N fichier(s) hors baseline` dans le verdict (avant : silence).
+
+### 4. Bug --fail-on-delta inline (v2.6.0 → 2.16.0)
+
+`fstats '--fail-on-delta=words>10' --compare=B --check f.txt` AVANT :
+`Erreur: Fichier inaccessible ou introuvable - --fail-on-delta=words>10`
+(l'option traitée comme fichier) ; forme espacée seule fonctionnait.
+APRÈS : les trois formes (`=`, `:`, espace) fonctionnent — teste à la
+main sur les trois formes + exit codes cohérents.
+
+### 5. Exit code d'un check injecté
+
+`--check --compare` sans autre check + hash divergent AVANT : FAIL
+affiché, **exit 0** (gate conditionnée à Length(Checks)>0). APRÈS :
+exit 2. La condition de gate compte tout check émis (ChecksEmitted).
+
+### 6. Comptage des suites
+
+run.bat : **66 PASS / 0 FAIL** (117-119 inclus). run.sh : 58 réussis /
+65 échecs tous node-dépendants (node absent de la machine ; au passage :
+le compteur node indépendant du test 48 confirme le comportement delta
+sans node via le batch Windows, qui l'exécute nativement).
+
+---
+
 ## v2.15.0 — P2 vague 2 (2026-11-24)
 
 ### 1. Match génériques : gel démontré, lineaire démontré
