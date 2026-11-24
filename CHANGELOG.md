@@ -6,6 +6,44 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.16.2] — 2026-11-24 — P2 (vague 5) : égalités déterministes, tests --recursive ; P2 TERMINÉ
+
+Dernière vague du backlog P2 du registre sécurité — les items restants
+sont soit corrigés, soit requalifiés ACCEPTÉ_DOCUMENTÉ avec leur
+justification.
+
+### Corrigé
+- **égalités sans tie-break → ordre non stable** (Top Words, Top Chars) :
+  fréquences égales → ordre lexicographique croissant (code point croissant
+  pour les chars). Deux exécutions donnent le même résultat byte à byte.
+  **Rupture d'ordre documentée** : à fréquence égale, l'ordre peut différer
+  des versions antérieures (ex. `'a'` avant `'ab'` désormais) — les
+  compteurs et les ensembles sont inchangés, seul l'ordre des égalités
+  change (l'ancien était arbitraire, non contractuel).
+- **`--recursive`/`--include`/`--exclude`/`--max-depth` : zéro test** →
+  test 122 (sh + bat) : arborescence de référence, sémantique des globs
+  mesurée et figée (`*.txt` = racine seule — `*` ne traverse pas `/` —,
+  `**/*.txt` = récursif, `--exclude` sur le chemin RELATIF complet,
+  `--max-depth=N` = niveaux sous la racine).
+
+### Accepté-documenté (requalifié, registre §6)
+- **`Halt()` dans les couches basses** : process CLI mono-tâche — le sort
+  laisse l'OS récupérer la mémoire ; les cas avec ressources critiques
+  (dictionnaires du flux) libèrent EXPLICITEMENT avant de sortir ; le
+  point d'entrée principal déroule son `try..finally` dans le flux
+  normal. Un exception-refactor serait du cosmétique sans gain
+  utilisateur au prix d'un risque de régression des exit codes.
+- **Homoglyphes** (`ЕRROR` cyrillique) **et caractères RTL** : la
+  détection nécessiterait une table Unicode de confusables hors du
+  périmètre d'un outil de statistiques ; les compteurs qualité
+  (nonprintable, invalid_utf8) restent vrais sur ce qu'ils mesurent.
+
+### Comptage
+- Tests 122 (recursive), 123 (tie-break). Batch : **70 PASS / 0 FAIL**.
+  run.sh : 62 réussis / 65 échecs node-dépendants (machine sans node).
+
+---
+
 ## [2.16.1] — 2026-11-24 — P2 (vague 4) : messages d'options honnêtes, help véridique
 
 ### Corrigé

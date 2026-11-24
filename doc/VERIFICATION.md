@@ -3,6 +3,40 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.16.2 — P2 vague 5 (2026-11-24) — P2 terminé
+
+### 1. Égalités déterministes
+
+Fichier `zebre abricot` ×2 : Top Words = `abricot` (2) puis `zebre` (2)
+— ordre lexicographique aux fréquences égales (test 123 ; vérifié aussi
+sur les chars : code point croissant). **Rupture documentée** : la matrix
+golden v2.14.1 produisait `'ab'` avant `'a'` (égalités à 2) — v2.16.2
+produit `'a'` avant `'ab'` : compteurs identiques, ordre contractuel
+nouveau. Les suites sh/bat n'assertaient aucun ordre d'égalités :
+**aucun test cassé** (61→62, 68→70 PASS, zéro nouveau FAIL).
+
+### 2. --recursive : sémantique mesurée puis figée par tests
+
+Arborescence f1.txt (racine) + sub/f2.txt + sub/f2.log + sub/deep/f3.txt :
+
+| Commande | Fichiers | Observation |
+|---|---|---|
+| aucune | 4 | tout |
+| `--include=*.txt` | 1 | `*` ne traverse pas `/` |
+| `--include=**/*.txt` | 3 | récursif |
+| + `--max-depth=1` | 2 | un niveau sous la racine |
+| + `--exclude=sub/deep/*` | 2 | chemin RELATIF complet |
+
+Test 122 en sh et bat : les cinq comptes vérifiés à chaque exécution.
+
+### 3. État Périmètre P2 : TERMINÉ
+
+Backlog §5 du registre : vagues 1 à 5 toutes traitées (corrigées ou
+requalifiées ACCEPTÉ_DOCUMENTÉ avec justification). Restent au §6 les
+décisions assumées, qui se lisent comme des limites, pas comme des dettes.
+
+---
+
 ## v2.16.1 — P2 vague 4 (2026-11-24)
 
 ### 1. Options trompeuses : avant/après vérifiés

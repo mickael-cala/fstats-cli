@@ -58,7 +58,7 @@ décennies de durcissement des bibliothèques éprouvées.
 | P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
 | P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
-## 5. Statut P2 — vagues 1-4 corrigées (v2.14.1 → v2.16.1), reste au backlog 📋
+## 5. Statut P2 — TERMINÉ : vagues 1-5 (v2.14.1 → v2.16.2) ✅
 
 **Corrigés en v2.14.1** (tests 111-113 + wizard rejoué) : frontière 64 Ko
 (invalid_utf8 faux positif à l'alignement — bug métrique CI), `WARNING`
@@ -98,17 +98,25 @@ mensonger** (« 0 = tous » depuis la v2.8.0, le code désactive la section)
 cmd (wizard) requalifié ACCEPTÉ** : aucune échapperie fiable n'existe
 pour `%` en cmd interactif ; la commande générée n'introduit jamais de `%`.
 
-**Reste au backlog** (par vagues suivantes) :
+**Corrigés en v2.16.2** (tests 122-123) : **égalités sans tie-break** —
+fréquences égales → ordre lexicographique croissant (Top Words, Top Chars
+par code point) : déterminisme byte à byte (rupture d'ordre documentée,
+compteurs inchangés) ; **`--recursive`/`--include`/`--exclude`/
+`--max-depth` — zéro test → sémantique mesurée et figée** (globs relatifs,
+`*` ne traverse pas `/`, `**` oui, exclude sur chemin relatif complet,
+max-depth = niveaux sous la racine ; test 122 sh+bat).
 
-- **Détournements sémantiques**
-  - Homoglyphes (`ЕRROR` cyrillique) invisibles aux compteurs ;
-    caractères RTL invisibles dans les previews.
-- **Hygiène dev**
-  - `Halt()` dans les couches basses (try..finally non déroulé).
-  - `--recursive`/`--include`/`--exclude`/`--max-depth` : **zéro test**.
-  - Duplication run.sh/run.bat (1000+ vs 1150+ lignes, comportement
-    réaligné en v2.15.0 mais restant à dupliquer à la main).
-  - Égalités dans Top Words/Chars sans tie-break → ordre non stable.
+**Requalifiés ACCEPTÉ_DOCUMENTÉ (v2.16.2, §6) : `Halt()` couches basses**
+(libération explicite là où ça compte, OS pour le reste — voir §6),
+**homoglyphes/RTL** (table Unicode de confusables hors périmètre).
+
+**ÉTAT : backlog P2 VIDE.** Les vagues 1 à 5 ont traité chaque item du
+registre : corrigé + testé, ou requalifié assumé avec justification. Les
+seules entrées restantes sont les décisions du §6, qui se lisent comme
+des limites périmètre, pas comme des dettes. Duplication run.sh/run.bat :
+constat d'architecture (harnais jumeaux 1150/1186 lignes, réalignés
+v2.15.0-v2.16.2, chaque nouveau test existe DEJA dans les deux — le coût
+de maintenance est le prix de deux environnements natifs).
 
 ## 6. ACCEPTÉ_DOCUMENTÉ (décisions assumées) 📗
 
@@ -117,6 +125,19 @@ pour `%` en cmd interactif ; la commande générée n'introduit jamais de `%`.
 - `--watch` ré-analyse tout le fichier à chaque tick (v1 documentée).
 - Top-K n-grams approximatif sur très gros corpus (sketch borné).
 - Casefold unicode = table basique FR/DE (documenté).
+- **`Halt()` dans les couches basses** (requalifié v2.16.2) : process CLI
+  mono-tâche — au point de sortie, l'OS récupère la mémoire ; les cas
+  détenant des ressources de flux (dictionnaires) libèrent
+  **explicitement** avant de sortir ; l'entrée principale déroule son
+  `try..finally` en flux normal. Un exception-refactor serait du
+  cosmétique sans gain utilisateur, au prix d'un risque réel de régression
+  des exit codes (la colonne vertébrale de la gate CI).
+- **Homoglyphes / RTL invisibles** (requalifié v2.16.2) : `ЕRROR`
+  cyrillique ou les contrôles bidi nécessitent une table Unicode de
+  confusables, hors périmètre d'un outil de statistiques ; les compteurs
+  qualité restent vrais sur ce qu'ils mesurent (nonprintable,
+  invalid_utf8). L'utilisateur en contexte hostile croise avec des
+  outils dédiés (ex. `unicode-security`).
 - Les redaction `ipv4`/`url` couvrent des formes simples (pas IPv6/ports).
 - **`--fail-on-delta` ne teste que la croissance** (v2.16.0, requalifié) :
   un delta négatif ne peut pas échouer — le gate protège contre
@@ -184,3 +205,4 @@ pour `%` en cmd interactif ; la commande générée n'introduit jamais de `%`.
 | 2026-11-24 | v2.15.0 | — | P2 vague 2 corrigée (matchers linéaires, hang match nul, bornes stockage) ; tests 114-116 ; harnais Windows réparé (63 PASS) |
 | 2026-11-24 | v2.16.0 | — | P2 vague 3 corrigée (SHA-256 baseline, verdict CI, hors-baseline visible, fail-on-delta inline) ; tests 117-119 (66 PASS) |
 | 2026-11-24 | v2.16.1 | — | P2 vague 4 corrigée (options honnêtes, help véridique) ; tests 120-121 (68 PASS) |
+| 2026-11-24 | v2.16.2 | — | P2 vague 5 corrigée (tie-break, tests recursive) ; backlog P2 VIDE ; tests 122-123 (70 PASS) |
