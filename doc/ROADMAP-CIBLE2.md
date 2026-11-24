@@ -23,7 +23,7 @@ mono-fichier, streaming et ASCII-pur.
 - Streaming par blocs, dictionnaires O(1) caractères/mots
 - Top 10 caractères/mots/lignes (`--all` pour tout)
 - Multi-fichiers NDJSON/array/aggregate + `--summary-json`
-- Globs/recursivité, stdin
+- Globs/récursivité, stdin
 - Compteurs qualité (diagnostic d'hygiène avant analyse lexicale)
 
 ## Roadmap FULL → adaptations (ce qui est possible)

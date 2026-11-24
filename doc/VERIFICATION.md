@@ -1,9 +1,9 @@
 # fstats - journal de verification (sorties reelles)
 
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
-> racine : `fpc -Sg -O2 -Mobjfpc src\fstats.pas` (-Sg explicite depuis le
-> premier push CI — le matcheur utilise GOTO/LABEL, absent des fpc.cfg
-> minimaux).
+> racine : `fpc -Sg -O2 -Mobjfpc src\fstats.pas`.
+> **Note (2026-11-24)** : `-Sg` est désormais explicite (incident CI — le
+> matcheur utilise GOTO/LABEL, absent des fpc.cfg minimaux ; voir § 5).
 
 ## v2.16.2 — P2 vague 5 (2026-11-24) — P2 terminé
 
@@ -84,7 +84,7 @@ la CI sur le code des cibles 2-3 + compagnon + durcissement P0/P1/P2.
 - **test-linux, test 105** (`--interactive` profil gate, 'n') : échec
   sans trappe — le harnais ne livrait aucune preuve. Enquête locale : le
   grep portait sur « Commande générée » — **avec accents** — or
-  l'encodage console de la sortie wizard dépend du code page hérité au
+  l'encodage console de la sortie wizard dépend du code page héritée au
   lancement (le code documente lui-même « mojibake NON DÉTERMINISTE
   sous pipes », fstats.pas) : le même binaire a produit ici, à dix
   minutes d'intervalle, un « générée » NFC propre et une variante
@@ -114,6 +114,31 @@ P0/P1/P2) validée par des machines GitHub, pas seulement la machine de
 dev. Enseignement : une capture d'exit code doit être immédiate et
 numérique — tout séparateur entre la commande et sa lecture est un
 candidat à la perte.
+
+### 7. Documentation bilingue + exemples/ (2026-11-24, post-livraison)
+
+- **`exemples/`** : chaque compteur annoncé dans `exemples/README.md` a
+  été vérifié à l'exécution AVANT d'être écrit — niveaux de
+  `app-multi-niveaux.log` (error=4 warn=2 info=4 debug=1 trace=2,
+  somme=13=lines), tags SCADA (PLC1=3, PLC2=2, PLC3=1), `--redact` sur
+  l'access Apache, phrases basic/smart du corpus FR (17→12), 5 comptes
+  du `--recursive`, gate baseline (exit 0) et `lines>5` sur SCADA
+  (exit 2). Les fichiers artisanaux sont vérifiés en octets : BOM
+  réel (EF BB BF), 4 octets invalides, frontière 64 Ki avec `é` à
+  cheval → `invalid_utf8: 0`, CR/LF/CRLF mélangés.
+  Les cas-limites volontairement corrompus sont **hors** du dogfood CI.
+- **Miroirs EN (`doc/en/`)** : 7 traducteurs en parallèle, chacun
+  re-dogfoode son fichier (`Verdict OK`), les blocs de code sont
+  octet-identiques au FR (vérifié par diff). Un incident 502 pendant la
+  traduction de SEMANTIQUE a coûté le rapport final de l'agent mais le
+  fichier était complet (41 sections miroir, dogfood OK).
+- **Relecture croisée** : chaque traducteur relisant sa source FR a
+  remonté ~20 corrections FR consolidées (détails au CHANGELOG). En retour de manche : l'un d'eux a attrapé une fence
+  orpheline et un échantillon fautif introduits PAR CETTE VAGUE —
+  la relecture fonctionne aussi sur ses propres correctifs.
+- **CI** : nouveau dogfood `README.en.md AGENTS.md doc/en/*.md
+  exemples/README.md` sur les DEUX jobs (vérifié localement : 22/22
+  fichier OK avant commit).
 
 ---
 
@@ -199,7 +224,7 @@ sans node via le batch Windows, qui l'exécute nativement).
 
 ## v2.15.0 — P2 vague 2 (2026-11-24)
 
-### 1. Match génériques : gel démontré, lineaire démontré
+### 1. Match génériques : gel démontré, linéaire démontré
 
 Ancien binaire v2.14.1 (conservé comme oracle) : fichier de **1 601 octets**
 (préfixe `a`×1600 + `x`, une ligne) + `--pattern='*a*a*a*a*a*a*b'` →
@@ -226,7 +251,7 @@ l'oracle s'est faite sous watchdog (3 patterns exclus de la comparaison :
 **23/23 identiques** après normalisation version/horodatage. L'algorithme
 glouton min-d'abord reproduit l'ordre d'exploration de l'ancien DFS.
 
-### 4. NFA tags : lineaire
+### 4. NFA tags : linéaire
 
 `--regex-tag='a*a*a*b'` sur une ligne de 6 300 caractères : v2.15.0
 immédiat (avant : backtracking). Test 115 (sh + bat). Sémantique
@@ -677,7 +702,7 @@ exactement 5 entrees `top_words` et 3 entrees `top_characters`.
 `unique_words=5` (plafonne), `words=13` inchange, `average_word_length`
 exact (accumule en streaming).
 
-### 9. CSV v2 (rupture documentee)
+### 9. CSV v2 (rupture documentée)
 
 En-tete exact et ligne summary avec colonne `file` :
 
@@ -733,7 +758,7 @@ RESULTAT : 22 reussi, 0 echec(s)
 C2-A satisfait les criteres de ROADMAP-CIBLE2.md : aucune regression en mode
 par defaut (test_fr.txt 3/13/72/3, compteurs qualite, NDJSON/array/aggregate,
 --summary-json, stdin, globs, exit codes 0/1, ASCII pur en pipe), nouvelles
-options fonctionnelles et golden-teste, CSV v2 (rupture documentee) en place,
+options fonctionnelles et golden-testées, CSV v2 (rupture documentée) en place,
 version 2.3.0. B et C (n-grams, histogrammes, lisibilite) restent a venir.
 ---
 
@@ -787,7 +812,7 @@ et `Il` (casefold ascii -> `il`) sont retires du flux n-gram uniquement
 de `il`).
 
 `--stopwords=fr` sans `--ngrams` : **ignore silencieusement** (exit=0, pas de
-cle `ngrams` dans le JSON) — decision documentee au README.
+cle `ngrams` dans le JSON) — décision documentée au README.
 
 ### 5. Histogrammes (classes roadmap §6.6 + classes stables)
 
@@ -796,10 +821,10 @@ cle `ngrams` dans le JSON) — decision documentee au README.
 comptes `0/1/1/1/0`, somme = lignes (3).
 
 `--histogram=word_length` : classes stables `1-2, 3-4, 5-6, 7-8, 9-10, 11-12,
-13+` (largueur 2), comptes `3/3/4/3/0/0/0`, somme = mots (13).
+13+` (largeur 2), comptes `3/3/4/3/0/0/0`, somme = mots (13).
 
 `--histogram=words_per_sentence` : classes stables `0-4, 5-9, 10-14, 15-19,
-20+` (largueur 5, base 0), comptes `2/1/0/0/0`, somme = phrases (3).
+20+` (largeur 5, base 0), comptes `2/1/0/0/0`, somme = phrases (3).
 Les formes a tirets de la roadmap (`--histogram=line-length`, `word-length`,
 `words-per-sentence`) sont acceptees.
 
@@ -813,7 +838,7 @@ Les formes a tirets de la roadmap (`--histogram=line-length`, `word-length`,
 ```
 
 Conservation : somme des six classes = 72 = `characters` (assertion de test).
-Plages exactes documentees au README (« Semantique des classes de
+Plages exactes documentées au README (« Semantique des classes de
 caracteres »).
 
 ### 7. Agregation (--json-mode=aggregate)
@@ -827,7 +852,7 @@ totals.char_classes: {"letters": 93, "digits": 0, "whitespace": 24,
 totals.histogram: line_length ["0-9:3", "10-19:4", "20-29:2", "30-39:0", "40+:0"]
 ```
 
-Les n-grams ne sont **pas** agreges (limitation documentee) : pas de cle
+Les n-grams ne sont **pas** agreges (limitation documentée) : pas de cle
 `ngrams` dans `totals`, ils restent par fichier dans `files`.
 
 ### 8. Options invalides et --version
@@ -862,7 +887,7 @@ RESULTAT : 33 reussi, 0 echec(s)
 C2-B satisfait les criteres de ROADMAP-CIBLE2.md : aucune regression en mode
 par defaut (les 22 cas v2.3.0 passent inchanges, version 2.4.0), n-grams
 (goldens, non-traversee des lignes, top-K borne, stopwords fr/en), histogrammes
-(classes roadmap §6.6 + classes stables documentees, somme = ligne/mots/phrases),
+(classes roadmap §6.6 + classes stables documentées, somme = lignes/mots/phrases),
 char-classes (conservation = characters, golden), agregation classe par classe,
 exit codes 0/1, ASCII pur en pipe. C2-C (lisibilité, optionnel) livré en
 v2.5.0 — voir section 10 ci-dessous.
@@ -919,7 +944,7 @@ par defaut : test_fr.txt 3/13/72/3, moy 4, min/max/moy 16/30/23).
 ### Bilan
 
 C2-C satisfait les criteres de ROADMAP-CIBLE2.md : metriques sur le mode
-courant, formule exacte documentee et fgee, pas de Flesch-Kincaid exact
+courant, formule exacte documentée et figée, pas de Flesch-Kincaid exact
 (mentionne au README), score borne [0,100], aucun NaN sur fichier vide,
 additif en JSON/CSV, ASCII pur, 39/39 sur les deux suites. Cible 2
 **complete**.
@@ -973,7 +998,7 @@ par defaut : test_fr.txt 3/13/72/3).
 
 Cible 1 **complete** (A v2.2.0, B+C v2.6.0) : moteur de checks (grammaire
 figee, 10 metriques + alias, statuts ok/warn/fail, exit 0/1/2/3, mode analyse
-non rompu), baseline NDJSON + derive en % (base=0 documentee), section
+non rompu), baseline NDJSON + derive en % (base=0 documentée), section
 Checks console + bloc checks JSON (id stables), dogfood CI, 56/56 sur les
 deux suites.
 
@@ -1027,7 +1052,7 @@ Verifie le : 2026-08-26 22:55 - executable : `fstats.exe` (`fstats 2.7.0`)
   correspondance exacte `e.g`).
 - `Coût 3.14 euros.` : smart → **1 phrase** (regle decimale v2.6.1
   conservee en smart).
-- `www.ex.com ici.` : smart → **2 phrases** (limite documentee : seul le
+- `www.ex.com ici.` : smart → **2 phrases** (limite documentée : seul le
   premier point de `www.` est protege, celui de `.com` cloture).
 - `--sentence-mode=bogus` : exit=1, stderr ASCII pur
   `Erreur: --sentence-mode attend "basic" ou "smart" (recu "bogus")`.
@@ -1180,7 +1205,7 @@ Date : 2026-11-23. Ajout du mini-moteur `--regex-tag=PATTERN` (littéral +
 classes `[...]` + quantifieurs `? * +`, extraction non chevauchante) et du
 raccourci `--mode=alarm` (= `--log-level` + `--top-lines` + `--regex-tag`
 avec défaut `[A-Z]+[0-9]+`). Bump `FSTATS_VERSION` 2.9.0 → 2.10.0. Nouvelle
-fixture `tests/fixtures/alarms.log` (9 lignes SCADA avec PLC1/MOTOR23/PLC2/SENSOR7).
+fixture `tests/fixtures/alarms.log` (8 lignes SCADA avec PLC1/MOTOR23/PLC2/SENSOR7).
 
 ### 16.1 Compilation
 
@@ -1195,7 +1220,8 @@ fixture `tests/fixtures/alarms.log` (9 lignes SCADA avec PLC1/MOTOR23/PLC2/SENSO
 
 ### 16.3 Mode alarm
 
-`--mode=alarm alarms.log` → `log_levels` (error=3, warn=2, info=3) +
+`--mode=alarm alarms.log` → `log_levels` (error=3, warn=2, info=3, debug=0,
+trace=0, none=0 — somme = 8 = lignes : chaque ligne porte un niveau) +
 `top_lines` + `tags` (PLC1=5 en tête). Pattern défaut `[A-Z]+[0-9]+`.
 
 ### 16.4 Options invalides

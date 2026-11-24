@@ -1,3 +1,8 @@
+> 🇫🇷 **Document historique, conservé en français** — l'essentiel est résumé
+> dans les trois ROADMAP-CIBLE (traduites : voir `doc/en/`) et dans le § 13.
+> 🇬🇧 **Historical document, kept in French** — the essentials are summarized
+> in the three Target roadmaps (translated: see `doc/en/`) and in § 13.
+
 > **État du projet : v2.16.2 (2026-11-24)** — roadmap livrée (§ 13) **et**
 > phase de durcissement sécurité P0/P1/P2 terminée (v2.13.1 → v2.16.2 :
 > corrections P0, garde-fous sécurité P1, 5 vagues P2 — bornes mémoire,

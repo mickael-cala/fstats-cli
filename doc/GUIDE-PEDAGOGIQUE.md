@@ -136,6 +136,8 @@ Longest Lines
 -------------
    #  Length  Preview
    1      30  Deuxième phrase avec des mots.
+   2      24  Voici un exemple simple.
+   3      16  Encore un test !
 ```
 
 ### Comment lire ce tableau
@@ -283,6 +285,9 @@ Log Levels
   Error:               3
   Warn:                2
   Info:                3
+  Debug:               0
+  Trace:               0
+  None:                0
 
 Tags
 ----
@@ -290,7 +295,11 @@ Tags
    1      5  PLC1
    2      2  MOTOR23
    3      1  PLC2
+   4      1  SENSOR7
 ```
+
+(Extrait réel : `fstats --mode=alarm tests/fixtures/alarms.log` — les six
+niveaux sont toujours affichés, même à zéro.)
 
 On peut aussi cibler un tag précis : `--regex-tag='PLC[0-9]+'` n'extrait que
 les `PLC…`. Le mini-moteur accepte les classes `[0-9]`, `[A-Z]`… et les
@@ -443,7 +452,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "sha256": "eba4cf176f51968df93145ec2c899db070580e96f3d55af0c4f4995fc781bb91", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "top_lines": [{"rank": 1, "count": 1, "line": "Deuxième phrase avec des mots."},{"rank": 2, "count": 1, "line": "Encore un test !"},{"rank": 3, "count": 1, "line": "Voici un exemple simple."}]}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -456,8 +465,13 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 17, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 15, "line_max": 15, "line_avg": 15, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0, "top_lines": [{"rank": 1, "count": 1, "line": "un deux trois. "}]}
 ```
+
+(Sortie capturée sous `cmd.exe` : `echo` y ajoute un CR en fin de ligne, d'où
+`crlf: 1`, les 17 caractères et l'espace final dans `top_lines`. Le même
+`echo` sous un shell POSIX ne produit pas de CR : `characters: 15`, `crlf: 0`.
+Les compteurs sont vrais sur ce qui entre — c'est stdin qui diffère.)
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
 
@@ -554,7 +568,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "sha256": "eba4cf176f51968df93145ec2c899db070580e96f3d55af0c4f4995fc781bb91", "tool": "fstats", "version": "2.16.2", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932, "top_lines": [{"rank": 1, "count": 1, "line": "Deuxième phrase avec des mots."},{"rank": 2, "count": 1, "line": "Encore un test !"},{"rank": 3, "count": 1, "line": "Voici un exemple simple."}]}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient

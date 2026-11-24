@@ -23,7 +23,7 @@ compteur.
 
 ## État déjà en place (v2.2.0, vérifié)
 
-- stdin, NDJSON (format idéal pour les logs), glob/recursivité
+- stdin, NDJSON (format idéal pour les logs), glob/récursivité
 - Compteurs qualité : `invalid_utf8`, `crlf`, `tabs`, `nonprintable`
   (hygiène des logs corrompus)
 - `line min/max/avg` + `longest_lines` (détection de lignes anormales)

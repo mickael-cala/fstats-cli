@@ -38,6 +38,45 @@ justification.
   périmètre d'un outil de statistiques ; les compteurs qualité
   (nonprintable, invalid_utf8) restent vrais sur ce qu'ils mesurent.
 
+### Documentation bilingue + corpus d'exemples (2026-11-24, post-livraison)
+
+- **`exemples/`** : corpus de démonstration bilingue — logs réalistes
+  (app multi-niveaux avec pièges ERROR/WARNING/priorité, alarmes SCADA
+  `PLC1/MOTOR23/SENSOR7`, access Apache pour `--redact`, syslog), textes
+  FR/EN avec décimales et abréviations, unicode-monde (jumeaux NFC/NFD,
+  grec, cyrillique), données (CSV/NDJSON), cas-limites (BOM réel, octets
+  UTF-8 invalides, frontière 64 Ki avec `é` à cheval → `invalid_utf8: 0`,
+  fins de ligne LF/CRLF/CR, contrôles non imprimables, fichier vide),
+  arborescence 6 fichiers pour `--recursive/--include/--exclude/`
+  `--max-depth` (5 comptes vérifiés), baseline embarquée pour
+  `--compare`. Chaque compteur annoncé dans `exemples/README.md` a été
+  **vérifié à l'exécution** sur ces fichiers exacts ; le compagnon `fcmd`
+  y a 2 séquences guidées vérifiées.
+- **Miroirs anglais `doc/en/`** : traduction complète des 9 documents
+  (CHANGELOG, GUIDE-PEDAGOGIQUE, SEMANTIQUE, VERIFICATION, AUDIT-SECURITE,
+  ROADMAP-CIBLE1/2/3 + index README) + `README.en.md` à la racine.
+  Sources FR **canoniques** ; les miroirs suivent (règle inscrite dans
+  AGENTS.md). ROADMAPFULL reste français avec note bilingue en tête
+  (document historique). Commutateur de langue en tête des README.
+- **CI** : nouveau pas de dogfood `README.en.md AGENTS.md doc/en/*.md
+  exemples/README.md` sur les deux jobs (les miroirs EN sont gates par
+  les mêmes checks qualité que le reste du dépôt ; les fichiers
+  volontairement corrompus d'`exemples/cas-limites/` restent HORS du
+  dogfood par construction).
+- **Relecture croisée FR par les traducteurs** (7 agents, chacun relisant
+  la source en traduisant) : ~20 corrections FR consolidées — coquilles
+  (« verritable », « Les redaction », « ne se figure », « lineaire » ×2,
+  « largueur » ×2, « fgee », « documentee(s) » ×8, « recursivité », « á »,
+  « GUIDE§ », tiret long vs court du `Verdict`, titre `set X=1` réaligné,
+  « ### Intègre » renommé « Nettoyage ») + échantillons du GUIDE revus à
+  l'exécution (Longest Lines 3 lignes exactes ; `--summary-json` avec
+  `sha256`+`top_lines` ; stdin capturé sous cmd.exe avec note CR ; mode
+  alarm 6 niveaux + `SENSOR7`) + énumération completes des niveaux
+  d'alarms.log (somme = 8 = lignes) + arborescence du README réparée
+  (fichier fantôme `examples/demo.obm` supprimé, glyphe `└` corrigé,
+  `exemples//doc/en//fstats_sha.pas` ajoutés, slash Linux documenté) +
+  harmonisation « n-grams ». Chaque correctif miroité en EN.
+
 ### CI VERTE (2026-11-24, run #28) — premier vert depuis v2.7.0
 
 - Dernier échec runner : tests 120/121 (options honnêtes) sur
@@ -57,7 +96,7 @@ justification.
   run.bat (2) + commande canonique des documents (README, doc/README,
   GUIDE, ROADMAPFULL, VERIFICATION, header fstats.pas).
 - **test-linux, test 105** (--interactive profil gate) échouait sur un
-  grep á accents (« Commande générée ») : l'encodage console de la
+  grep à accents (« Commande générée ») : l'encodage console de la
   sortie wizard dépend du code page hérité au lancement (« mojibake
   NON DÉTERMINISTE », documenté dans fstats.pas) — le jumeau bat, lui,
   grep sans accents et n'a jamais échoué. Correctif : sh aligné sur sa
@@ -114,7 +153,7 @@ justification.
 ### Accepté-documenté
 - `%VAR%` développé par cmd.exe au collage (wizard) : aucune échapperie
   fiable n'existe pour `%` en cmd interactif — limitation documentée
-  ( GUIDE§/SEMANTIQUE), la commande générée n'introduit jamais de `%`
+  (GUIDE § « %VAR% », cf. SEMANTIQUE), la commande générée n'introduit jamais de `%`
   elle-même.
 
 ### Tests
@@ -141,7 +180,7 @@ un check injecté échouait.
   illisible : clé omise, pas de vérification. Rupture **additive**
   documentée (SEMANTIQUE).
 - **Verdict final lisible** : la sortie console du mode check se termine par
-  `Verdict : OK/ATTENTION/ECHEC — exit N` (+ `N fichier(s) hors baseline`).
+  `Verdict : OK/ATTENTION/ECHEC - exit N` (+ `N fichier(s) hors baseline`).
   Jamais dans --json/--csv/--summary-json (formats purs, exit codes).
 - **Fichier hors baseline visible** : `--compare` + fichier absent →
   avertissement stderr `absent de la baseline` + compteur dans le verdict
@@ -206,7 +245,7 @@ bugs du run.bat jamais exécutés jusqu'au bout (détail plus bas).
 - **Fins de ligne LF** : le fichier était 100 % LF ; cmd.exe exige CRLF —
   le batch plantait au milieu (`after66` fantôme) et n'atteignait JAMAIS les
   tests 66+. Converti CRLF : 63 PASS / 0 FAIL atteints.
-- **`set X=1 || set X=0`** : l'espace avant `&&` est inclus dans la valeur
+- **`set X=1 ` (espace final)** : l'espace avant `&&` est inclus dans la valeur
   par cmd (`C101_OK="1 "` ≠ `"1"`) — 10 tests auto-sabotés. Forme quotée
   `set "X=1"` appliquée.
 - **`echo words^>5` dans un pipe** : le caret est re-parcouru par le cmd
@@ -217,7 +256,7 @@ bugs du run.bat jamais exécutés jusqu'au bout (détail plus bas).
 - Tests 114 (anti-gel pattern + match vide), 115 (anti-gel tag NFA),
   116 (ligne 104 Ko : métriques exactes) ajoutés en sh et bat.
 
-### Intègre
+### Nettoyage (code mort + version)
 - `TokenMatchAt` supprimé (seul consommateur était l'ancien backtracking).
 - Version 2.15.0 (FSTATS_VERSION, CMDGEN_VERSION).
 

@@ -70,7 +70,7 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
 backtracking exponentiel des matchers (`--pattern` glouton linéaire,
 `--regex-tag` NFA — un fichier de 1,6 Ko gelait à 100 % CPU indéfiniment),
 **boucle infinie sur match de longueur nulle** (`*`, `**`, `a||b` — un
-verritable hang, découvert en testant le harnais), lignes/mots non bornés
+véritable hang, découvert en testant le harnais), lignes/mots non bornés
 (tampons à croissance géométrique + bornes de stockage, métriques
 exactes). Bonus : le harnais Windows run.bat était inutilisable
 (LF au lieu de CRLF : plantage au test 65+ ; `set X=1 ` avec espace
@@ -138,7 +138,7 @@ de maintenance est le prix de deux environnements natifs).
   qualité restent vrais sur ce qu'ils mesurent (nonprintable,
   invalid_utf8). L'utilisateur en contexte hostile croise avec des
   outils dédiés (ex. `unicode-security`).
-- Les redaction `ipv4`/`url` couvrent des formes simples (pas IPv6/ports).
+- Les redactions `ipv4`/`url` couvrent des formes simples (pas IPv6/ports).
 - **`--fail-on-delta` ne teste que la croissance** (v2.16.0, requalifié) :
   un delta négatif ne peut pas échouer — le gate protège contre
   l'EXPLOSION des métriques (un log qui triple), pas contre la
@@ -157,7 +157,7 @@ de maintenance est le prix de deux environnements natifs).
    fstats.pas:68-149 ont été retirées tant qu'elles ne sont pas prouvées.
 5. **Chaque parseur maison vient avec les pièges connus de la bibliothèque
    qu'il imite** — écrire le test du piège en même temps que le parseur.
-6. **La version d'un test ne se figure jamais** (P0-3) : dériver ou mourir.
+6. **La version d'un test ne se fige jamais** (P0-3) : dériver ou mourir.
 7. **Une protection est un point de passage obligé, ou ce n'est qu'une
    intention.** P1-3 : la redaction existait depuis la v2.8.0, mais dispersée
    en appels ponctuels — les emails fuyaient dans le Top Words, et la doc
@@ -229,3 +229,4 @@ de maintenance est le prix de deux environnements natifs).
 | 2026-11-24 | v2.16.2 | — | Rattrapage node : 127/127 en sh ET bat (254 vérifications) ; 2 tests jumeaux périmés alignés sur la sémantique figée (56 : ids +sha256 v2.16.0 ; 71 : match nul 0/0 v2.15.0) ; 3e occurrence de la leçon 11 (harnais jamais tourné jusqu'au bout) |
 | 2026-11-24 | v2.16.2 | — | Premier push CI : échec -Sg (Windows, compilation) + test 105 (Linux) ; -Sg rendu explicite partout (leçon 13) ; test 105 instrumenté (preuve auto-imprimée en CI) |
 | 2026-11-24 | v2.16.2 | — | Run #28 : CI VERTE test-windows + test-linux (127/127 chacun) ; échec fantôme 120/121 réparé par capture d'exit code immédiate et numérique (leçon 13 prolongée) |
+| 2026-11-24 | v2.16.2 | — | Vague bilingue : miroirs EN doc/en/ gate par la CI (dogfood étendu), corpus exemples/ vérifié à l'exécution, relecture croisée de 7 traducteurs → ~20 corrections FR consolidées (aucune faille sécurité ; pure véracité documentaire) |

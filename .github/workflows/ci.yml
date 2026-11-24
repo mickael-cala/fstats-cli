@@ -52,6 +52,10 @@ jobs:
       - name: Dogfood - checks sur le depot
         shell: cmd
         run: fstats.exe --check --fail-if non_utf8^>0 --fail-if bom^>0 --fail-if nonprintable^>0 README.md doc\*.md src\*.pas
+      # v2.16.2 : le depot devenant bilingue, les miroirs EN sont aussi gates
+      - name: Dogfood - miroirs anglais + exemples
+        shell: cmd
+        run: fstats.exe --check --fail-if non_utf8^>0 --fail-if bom^>0 --fail-if nonprintable^>0 README.en.md AGENTS.md doc\en\*.md exemples\README.md
 
   test-linux:
     runs-on: ubuntu-latest
@@ -63,3 +67,5 @@ jobs:
         run: bash tests/run.sh
       - name: Dogfood - checks sur le depot
         run: src/fstats --check --fail-if non_utf8\>0 --fail-if bom\>0 --fail-if nonprintable\>0 README.md doc/*.md src/*.pas
+      - name: Dogfood - miroirs anglais + exemples
+        run: src/fstats --check --fail-if non_utf8\>0 --fail-if bom\>0 --fail-if nonprintable\>0 README.en.md AGENTS.md doc/en/*.md exemples/README.md

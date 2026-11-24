@@ -1,5 +1,7 @@
 # fstats — statistiques de fichiers texte en ligne de commande
 
+**Langue / Language : 🇫🇷 [Français (ce fichier)](README.md) · 🇬🇧 [English](README.en.md)**
+
 [![CI](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mickael-cala/fstats-cli/actions/workflows/ci.yml)
 [![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue.svg)](LICENSE)
 
@@ -7,7 +9,7 @@ Version 2.16.2 · Free Pascal (mode objfpc) · MIT
 
 `fstats` est un petit outil, **rapide et sans dépendances**, qui analyse des
 fichiers texte UTF-8 et affiche des statistiques : caractères, mots, lignes,
-phrases, mots les plus fréquents, n-grammes, histogrammes… Il peut aussi
+phrases, mots les plus fréquents, n-grams, histogrammes… Il peut aussi
 **servir de garde-fou en CI** : checks sur des seuils (`--fail-if`),
 comparaison à une baseline (`--compare`) et exit codes dédiés (0/1/2/3).
 
@@ -19,12 +21,15 @@ du compilateur Free Pascal pour le construire.
 
 ## Démarrage rapide
 
-Compilation depuis la racine du dépôt :
+Compilation depuis la racine du dépôt (Windows) :
 
 ```
 fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas
 fpc -Sg -O2 -Mobjfpc -FE. src\fcmd.pas
 ```
+
+Sous **Linux/macOS**, mêmes commandes avec le séparateur `/` :
+`fpc -Sg -O2 -Mobjfpc -FE. src/fstats.pas` (le reste est inchangé).
 
 `-Sg` est **requis** (le matcheur wildcards `fstats_lex.pas` utilise
 `GOTO`/`LABEL`) ; les `fpc.cfg` officiels l'embarquent par défaut (`-Sgic`),
@@ -73,7 +78,7 @@ fcmd --profil=log        # pré-sélectionne le profil
 | **Diagnostic** | UTF-8 invalide, BOM, fins de ligne CRLF, tabulations, caractères de contrôle |
 | **Quality Gate** | checks sur seuils (`--fail-if`/`--warn-if`), baseline (`--compare`/`--fail-on-delta`), exit codes 0/1/2/3 pour la CI |
 | **Vocabulaire** | mots uniques, hapax, type-token ratio, longueur moyenne des mots, entropie |
-| **Répétitions** | n-grammes (1 à 5 mots), avec filtrage des mots vides (français/anglais) |
+| **Répétitions** | n-grams (1 à 5 mots), avec filtrage des mots vides (français/anglais) |
 | **Distribution** | histogrammes (longueur de ligne, de mot, mots par phrase), classes de caractères |
 | **Lisibilité** | mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7), score 0-100 (sans syllabes) |
 | **Log Sentinel** | patterns (`--pattern`), top lignes (`--top-lines`), redaction (`--redact`), niveaux (`--log-level`), filtre (`--filter`), tags (`--regex-tag`), mode alarm (`--mode=alarm`), watch (`--watch`) |
@@ -105,9 +110,9 @@ fstats [options] <fichier|glob|-> [fichier2 ...]
 | `--lexical-stats` | Mots uniques, hapax, TTR, longueur moyenne, entropie |
 | `--readability` | Mots par phrase, longueur moyenne des mots, % de mots longs (≥ 7 caractères), score 0-100 — approximation **sans syllabes**, pas de Flesch-Kincaid exact |
 | `--max-unique=N` | Borne mémoire des mots uniques (défaut 100 000) |
-| `--ngrams=N` | N-grammes sur les mots du mode courant (N = 1..5, fenêtres par ligne) |
-| `--top-ngrams=K` | Limite du top-K des n-grammes (défaut 10 ; `0` = tous) |
-| `--stopwords=fr\|en\|none` | Retire les mots vides du flux n-gramme uniquement |
+| `--ngrams=N` | N-grams sur les mots du mode courant (N = 1..5, fenêtres par ligne) |
+| `--top-ngrams=K` | Limite du top-K des n-grams (défaut 10 ; `0` = tous) |
+| `--stopwords=fr\|en\|none` | Retire les mots vides du flux n-grams uniquement |
 | `--histogram=M` | `line_length` \| `word_length` \| `words_per_sentence` (barres ASCII) |
 | `--char-classes` | Classe chaque caractère : lettres, chiffres, blancs, ponctuation, contrôle, autre |
 
@@ -235,6 +240,11 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 | [doc/ROADMAP-CIBLE3.md](doc/ROADMAP-CIBLE3.md) | Cible 3 « Log Sentinel » — **complète** (C3-A v2.8.0 … C3-D v2.11.0 : patterns, top-lines, redaction, log-level, filter, alarm, watch) |
 | [doc/ROADMAPFULL.md](doc/ROADMAPFULL.md) | Vision d'ensemble et roadmaps complètes |
 | [doc/README.md](doc/README.md) | Index de la documentation |
+| [README.en.md](README.en.md) | 🇬🇧 English translation of this README — tous les documents ont leur miroir anglais dans [doc/en/](doc/en/README.md) |
+
+**Exemples prêts à l'emploi** : le dossier [exemples/](exemples/README.md)
+embarque logs SCADA, corpus FR/EN, données, cas-limites et baseline — avec
+des commandes dont chaque compteur annoncé a été vérifié.
 
 ## Tests automatisés
 
@@ -252,18 +262,20 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 fstats/
 ├── .github/workflows/ci.yml  # CI GitHub Actions (Windows + Linux)
 ├── doc/                      # Documentation (guide, spec, roadmaps, validation)
-├── examples/demo.obm         # Fichier de démonstration
+├── doc/en/                   # English translations of the documentation
+├── exemples/                 # Corpus de démonstration (logs SCADA, textes, données, cas-limites)
 ├── src/fstats.pas            # Programme principal (point d'entrée, parsing CLI)
 ├── src/fstats_types.pas      # Constantes, globales, types (TStats, options…)
 ├── src/fstats_utf8.pas       # UTF-8, VisualChar, tris, couleurs ANSI, FormatFloatTrim
 ├── src/fstats_glob.pas       # Moteur de glob interne (*, **, ?) et --recursive
 ├── src/fstats_lex.pas        # Tokenisation, n-grams, patterns/redaction, log-level, regex-tag
+├── src/fstats_sha.pas        # SHA-256 streaming (FIPS 180-4) : intégrité baseline
 ├── src/fstats_analyzer.pas   # Analyse (fichier/stdin) + watch C3-D + handlers Ctrl+C
 ├── src/fstats_checks.pas     # Quality gate : checks, baseline NDJSON, --fail-on-delta
 ├── src/fstats_cmdgen.pas     # Wizard partagé (génération de commande, v2.13.0)
 ├── src/fcmd.pas              # Compagnon fcmd : génère la ligne de commande
-└── src/fstats_output.pas     # Sorties : console, JSON, CSV, usage
-├── tests/                    # Suites de tests + fixtures
+├── src/fstats_output.pas     # Sorties : console, JSON, CSV, usage
+├── tests/                    # Suites de tests + fixtures (run.sh + run.bat, 127 cas)
 ├── LICENSE                   # Licence MIT
 └── README.md
 ```
@@ -286,7 +298,7 @@ fstats/
   `raw`) ; `--word-mode=ascii|unicode` retire la ponctuation.
 - Le case folding `unicode` est une table basique limitée (accents
   français/allemand), pas un folding Unicode complet.
-- N-grammes : top-K **approximatif** sur très gros corpus (sketch mémoire
+- N-grams : top-K **approximatif** sur très gros corpus (sketch mémoire
   borné) ; non agrégés en `--json-mode=aggregate`.
 - Un point **entre deux chiffres** (`3.14`) ne clôture pas une phrase (v2.6.1) ;
   un point après un chiffre suivi d'un espace (`Version 3.`) reste une fin de
