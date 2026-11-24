@@ -1144,6 +1144,41 @@ powershell -NoProfile -Command "$o=[IO.File]::ReadAllText('%TMPD%\giant.json'); 
 if not errorlevel 1 (set C116_OK=1) else (set C116_OK=0)
 if "%C116_OK%"=="1" (set /a PASS+=1&echo PASS: ligne 104 Ko -^> metriques exactes, stockage borne) else (set /a FAIL+=1&echo FAIL: ligne 104 Ko -^> metriques exactes, stockage borne)
 
+rem --- 117. v2.16.0 (P2 vague 3) : verdict console lisible ----------------------
+"%FSTATS%" --check --fail-if lines^>100 tests\fixtures\test_fr.txt > "%TMPD%\v3verdict.txt" 2>nul
+set C117_OK=1
+if errorlevel 1 set C117_OK=0
+findstr /B /C:"Verdict : OK" "%TMPD%\v3verdict.txt" >nul || set C117_OK=0
+"%FSTATS%" --check --fail-if lines^>2 tests\fixtures\test_fr.txt > "%TMPD%\v3verdict2.txt" 2>nul
+if errorlevel 3 (set C117_OK=0) else if errorlevel 2 (set C117_OK=%C117_OK%) else (set C117_OK=0)
+findstr /B /C:"Verdict : ECHEC" "%TMPD%\v3verdict2.txt" >nul || set C117_OK=0
+if "%C117_OK%"=="1" (set /a PASS+=1&echo PASS: --check console -^> verdict final lisible OK/ECHEC + exit 0/2) else (set /a FAIL+=1&echo FAIL: --check console -^> verdict final lisible OK/ECHEC + exit 0/2)
+
+rem --- 118. v2.16.0 (P2 vague 3) : fichier hors baseline = VISIBLE ------------
+echo baseline pour un autre fichier > "%TMPD%\v3other.txt"
+"%FSTATS%" --summary-json "%TMPD%\v3other.txt" > "%TMPD%\v3other.ndjson" 2>nul
+"%FSTATS%" --compare "%TMPD%\v3other.ndjson" --fail-on-delta "words>10" tests\fixtures\test_fr.txt > "%TMPD%\v3miss.txt" 2> "%TMPD%\v3miss.err"
+set C118_OK=1
+findstr /C:"absent de la baseline" "%TMPD%\v3miss.err" >nul || set C118_OK=0
+findstr /C:"hors baseline" "%TMPD%\v3miss.txt" >nul || set C118_OK=0
+if "%C118_OK%"=="1" (set /a PASS+=1&echo PASS: --compare : absent baseline -^> stderr + ligne verdict - etait ignore en silence) else (set /a FAIL+=1&echo FAIL: --compare : absent baseline -^> stderr + ligne verdict - etait ignore en silence)
+
+rem --- 119. v2.16.0 (P2 vague 3) : integrite baseline SHA-256 -------------------
+"%FSTATS%" --summary-json tests\fixtures\test_fr.txt > "%TMPD%\v3sha.ndjson" 2>nul
+powershell -NoProfile -Command "$b=[IO.File]::ReadAllText('%TMPD%\v3sha.ndjson'); $x=[regex]::Match($b,'\"sha256\": \"([0-9a-f]{64})\"').Groups[1].Value; $h=(Get-FileHash -Algorithm SHA256 'tests\fixtures\test_fr.txt').Hash.ToLower(); if($x -and ($x -eq $h)){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 (set C119_OK=1) else (set C119_OK=0)
+if "%C119_OK%"=="1" (
+  powershell -NoProfile -Command "[IO.File]::WriteAllText('%TMPD%\v3guard.txt', 'Voici un fichier sain pour la base.'+[char]13+[char]10+'Seconde phrase.'+[char]13+[char]10)"
+  "%FSTATS%" --summary-json "%TMPD%\v3guard.txt" > "%TMPD%\v3guard.ndjson" 2>nul
+  "%FSTATS%" --check --compare "%TMPD%\v3guard.ndjson" "%TMPD%\v3guard.txt" > "%TMPD%\v3intact.txt" 2>nul
+  if errorlevel 1 (set C119_OK=0)
+  powershell -NoProfile -Command "[IO.File]::WriteAllText('%TMPD%\v3guard.txt', 'Voici un fichier sain mais FALSIFIE.'+[char]13+[char]10+'Seconde phrase.'+[char]13+[char]10)"
+  "%FSTATS%" --check --compare "%TMPD%\v3guard.ndjson" "%TMPD%\v3guard.txt" > "%TMPD%\v3tamp.txt" 2>nul
+  if errorlevel 3 (set C119_OK=0) else if errorlevel 2 (set C119_OK=%C119_OK%) else (set C119_OK=0)
+  findstr /C:"sha256 != 0 : FAIL" "%TMPD%\v3tamp.txt" >nul || set C119_OK=0
+)
+if "%C119_OK%"=="1" (set /a PASS+=1&echo PASS: baseline sha256 = Get-FileHash, falsification -^> sha256 FAIL + exit 2) else (set /a FAIL+=1&echo FAIL: baseline sha256 = Get-FileHash, falsification -^> sha256 FAIL + exit 2)
+
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul

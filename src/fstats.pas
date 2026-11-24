@@ -3,9 +3,8 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.15.0 (P2 vague 2 : matchers linéaires NFA/glouton, anti-gel,
-              match nul non compté, tampons de ligne/mot bornés à croissance
-              géométrique — métriques exactes)
+  Version    : 2.16.0 (P2 vague 3 : intégrité baseline SHA-256, verdict CI
+              lisible, hors-baseline visible, --fail-on-delta inline réparé)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   
@@ -100,13 +99,13 @@ program fstats;
 {$IFDEF MSWINDOWS}
   // Windows : besoin de Windows API pour la gestion de la console UTF-8
   uses
-    fstats_types, fstats_utf8, fstats_glob, fstats_lex,
+    fstats_types, fstats_utf8, fstats_glob, fstats_lex, fstats_sha,
     fstats_analyzer, fstats_checks, fstats_output, fstats_cmdgen,
     SysUtils, Classes, Windows, Generics.Collections, Generics.Defaults;
 {$ELSE}
   // Linux/Mac : pas besoin d'API spécifique, UTF-8 natif
   uses
-    fstats_types, fstats_utf8, fstats_glob, fstats_lex,
+    fstats_types, fstats_utf8, fstats_glob, fstats_lex, fstats_sha,
     fstats_analyzer, fstats_checks, fstats_output, fstats_cmdgen,
     SysUtils, Classes, BaseUnix, Generics.Collections, Generics.Defaults;
 {$ENDIF}
@@ -211,6 +210,11 @@ var
   CheckResults: TCheckResultArray; // résultats du fichier courant
   HasFail, HasWarn: Boolean;       // pire statut multi-fichiers (fail > warn > ok)
   FailOnDeltaCount: Integer;       // nombre de --fail-on-delta (validation)
+  DeltaCheckCount: Integer;       // checks de dérive définis (v2.16.0)
+  MissingBaseline: Integer;        // fichiers sans entrée baseline (v2.16.0)
+  ShaActual: string;               // SHA-256 du fichier courant (v2.16.0)
+  InBaseline: Boolean;             // fichier présent dans la baseline (v2.16.0)
+  ChecksEmitted: Boolean;          // check sha256 injecté sans Checks défini (v2.16.0)
   CheckMetric: string;             // valeurs temporaires de parsing des checks
   CheckOp: TCheckOp;
   CheckThr: Double;
@@ -314,6 +318,9 @@ begin
   HasFail := False;
   HasWarn := False;
   FailOnDeltaCount := 0;
+  DeltaCheckCount := 0;
+  MissingBaseline := 0;
+  ChecksEmitted := False;
 
   OutFileName := '';  // Pas de redirection de sortie par défaut
 
@@ -982,11 +989,11 @@ begin
           IsDelta := False;
         end;
       end
-      else if (Param = '--fail-on-delta') or (Copy(Param, 1, 15) = '--fail-on-delta=') or
-              (Copy(Param, 1, 15) = '--fail-on-delta:') then
+      else if (Param = '--fail-on-delta') or (Copy(Param, 1, 16) = '--fail-on-delta=') or
+              (Copy(Param, 1, 16) = '--fail-on-delta:') then
       begin
-        if (Copy(Param, 1, 15) = '--fail-on-delta=') or (Copy(Param, 1, 15) = '--fail-on-delta:') then
-          V := Copy(ParamOrig, 16, Length(ParamOrig))
+        if (Copy(Param, 1, 16) = '--fail-on-delta=') or (Copy(Param, 1, 16) = '--fail-on-delta:') then
+          V := Copy(ParamOrig, 17, Length(ParamOrig))
         else
         begin
           if i >= ParamCount then
@@ -1171,6 +1178,13 @@ begin
     // --fail-on-delta activent le mode check sans --check explicite.
     CheckMode := OptCheck or (Length(Checks) > 0) or (CompareFile <> '');
 
+    // v2.16.0 (P2 vague 3) : nombre de checks de dérive — conditionne le
+    // signalement des fichiers absents de la baseline.
+    DeltaCheckCount := 0;
+    for k := 0 to High(Checks) do
+      if Checks[k].IsDelta then
+        Inc(DeltaCheckCount);
+
     // v2.14.1 (P2) : un gate no-op doit être VISIBLE. Sans check défini,
     // le mode check rend toujours exit 0 sans rien tester — footgun CI.
     // Avertissement stderr uniquement (comportement/exit inchangés).
@@ -1315,19 +1329,52 @@ begin
           AnalyzeFile(Files[i], Stats, OptAll, WordMode, CaseFoldMode, SentenceMode,
                       MaxUnique, SOpts, LOpts);
 
+        // v2.16.0 (P2 vague 3) : SHA-256 du contenu (streaming, mémoire
+        // bornée) — clé "sha256" du summary-json ET vérification d'intégrité
+        // au --compare. stdin et fichier illisible : pas de hash ('').
+        if Files[i] = 'stdin' then
+          ShaActual := ''
+        else
+          ShaActual := FileSHA256(Files[i]);
+
         // C2 (v2.6.0) : évaluation des checks APRÈS l'analyse, sur les
         // compteurs TStats — le streaming et la mémoire bornée ne sont pas
         // affectés. Le pire statut multi-fichiers est cumulé (fail > warn > ok)
         // quel que soit le format de sortie (les exit codes s'appliquent aussi
         // avec --summary-json et --csv, qui n'ont pas de section checks).
-        EvaluateChecks(Stats, Checks, Baseline, CheckResults);
+        EvaluateChecks(Stats, Checks, Baseline, ShaActual, CheckResults);
+        // v2.16.0 : un check sha256 peut être émis SANS aucun --fail-if
+        // (baseline avec clé sha256) — il compte pour la gate et le verdict.
+        if Length(CheckResults) > 0 then
+          ChecksEmitted := True;
+
+        // v2.16.0 (P2 vague 3) : un fichier absent de la baseline n'est plus
+        // IGNORE en silence — avertissement stderr + compteur (visible dans
+        // le verdict console). Comportement/exit inchangés.
+        if CheckMode and (DeltaCheckCount > 0) and (CompareFile <> '') then
+        begin
+          InBaseline := False;
+          for k := 0 to High(Baseline) do
+            if Baseline[k].FilePath = Stats.Path then
+            begin
+              InBaseline := True;
+              Break;
+            end;
+          if not InBaseline then
+          begin
+            Inc(MissingBaseline);
+            WriteLn(ErrOutput, 'Attention: ', Stats.Path, ' absent de la baseline ',
+                    '(--compare) : checks de derive ignores pour ce fichier.');
+            Flush(ErrOutput);
+          end;
+        end;
         for k := 0 to High(CheckResults) do
           if CheckResults[k].Status = csFail then HasFail := True
           else if CheckResults[k].Status = csWarn then HasWarn := True;
 
         // Export selon le format demandé
         if OptSummaryJSON then
-          WriteLn(BuildSummaryJSON(Stats, OptLexicalStats, OptReadability))
+          WriteLn(BuildSummaryJSON(Stats, OptLexicalStats, OptReadability, ShaActual))
         else if OptJSON then
         begin
           case JsonMode of
@@ -1478,14 +1525,33 @@ begin
     if OutFileName <> '' then
       Close(Output);
 
+    // v2.16.0 (P2 vague 3) : verdict final LIISIBLE en mode check console —
+    // la dernière ligne du gate dit ce qui s'est passé, au lieu de laisser
+    // le lecteur déduire de l'exit code. Uniquement sur la sortie console
+    // (jamais dans --json/--csv/--summary-json : les formats de données
+    // restent purs, les exit codes font foi pour les scripts).
+    if CheckMode and ((Length(Checks) > 0) or ChecksEmitted) and
+       (not OptSummaryJSON) and (not OptJSON) and (not OptCSV) then
+    begin
+      if HasFail then
+        WriteLn('Verdict : ECHEC (au moins un check --fail-if en echec) - exit 2')
+      else if HasWarn then
+        WriteLn('Verdict : ATTENTION (au moins un --warn-if declenche, aucun echec) - exit 3')
+      else
+        WriteLn('Verdict : OK (tous les checks passent) - exit 0');
+      if MissingBaseline > 0 then
+        WriteLn('  ', MissingBaseline, ' fichier(s) hors baseline : checks de derive ignores');
+    end;
+
     // Code de retour : 1 si au moins un fichier a échoué, 0 sinon
     if HadError then
       Halt(1);
 
     // C2 (v2.6.0) : exit codes du mode check — uniquement en mode check avec
-    // au moins un check défini (--check seul : analyse normale, exit 0). Le
-    // mode analyse garde 0/1 (aucune rupture pour les scripts existants).
-    if CheckMode and (Length(Checks) > 0) then
+    // au moins un check défini OU un check sha256 émis (v2.16.0). --check
+    // seul (nothing) : analyse normale, exit 0. Le mode analyse garde 0/1
+    // (aucune rupture pour les scripts existants).
+    if CheckMode and ((Length(Checks) > 0) or ChecksEmitted) then
     begin
       if HasFail then
         Halt(2);   // au moins un check échoué (prioritaire)

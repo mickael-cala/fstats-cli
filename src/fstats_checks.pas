@@ -34,9 +34,10 @@ procedure ParseJSONObject(const S: string; var Keys, Values: TStringArray);
 function SplitJSONObjects(const S: string; var Objs: TStringArray): Boolean;
 function BaselineValue(const E: TBaselineEntry; const Key: string;
                        out V: Double): Boolean;
+function BaselineStr(const E: TBaselineEntry; const Key: string): string;
 procedure LoadBaseline(const Path: string; var Baseline: TBaselineArray);
 procedure EvaluateChecks(const Stats: TStats; const Checks: TCheckArray;
-                         const Baseline: TBaselineArray;
+                         const Baseline: TBaselineArray; const ActualSha: string;
                          out Results: TCheckResultArray);
 
 implementation
@@ -668,6 +669,23 @@ begin
 end;
 
 {-----------------------------------------------------------------------------
+  BaselineStr : Valeur CHAÎNE d'une clé d'entrée baseline (v2.16.0, intégrité :
+  la clé "sha256" produite par --summary-json). Vide si absente.
+  -----------------------------------------------------------------------------}
+function BaselineStr(const E: TBaselineEntry; const Key: string): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(E.Keys) do
+    if E.Keys[i] = Key then
+    begin
+      Result := E.Values[i];
+      Exit;
+    end;
+end;
+
+{-----------------------------------------------------------------------------
   LoadBaseline : Lit et parse un fichier baseline (NDJSON produit par
   --summary-json ; un objet unique est accepté). Chaque objet doit avoir la
   clé "file", sinon erreur fatale exit 1 (message stderr français).
@@ -737,12 +755,13 @@ end;
   pour les checks de dérive.
   -----------------------------------------------------------------------------}
 procedure EvaluateChecks(const Stats: TStats; const Checks: TCheckArray;
-                         const Baseline: TBaselineArray;
+                         const Baseline: TBaselineArray; const ActualSha: string;
                          out Results: TCheckResultArray);
 var
   i, j, Entry, Ordinal: Integer;
   V, Base, Delta: Double;
   Key: string;
+  ShaBase: string;
   R: TCheckResult;
 begin
   SetLength(Results, 0);
@@ -822,6 +841,47 @@ begin
     else R.Id := Key + '#' + IntToStr(Ordinal);
     SetLength(Results, Length(Results) + 1);
     Results[High(Results)] := R;
+  end;
+
+  // v2.16.0 (P2 vague 3) : intégrité de la baseline. Si l'entrée baseline
+  // porte une clé "sha256" (produite par --summary-json) et que le contenu
+  // actuel du fichier hash diffère, le check "sha256" échoue : le fichier a
+  // changé de contenu — ses métriques stables peuvent masquer la dérive
+  // (token collé, ligne réécrite). Un hash identique n'émet rien (pas de
+  // bruit) ; une baseline ancienne sans clé saute la vérification
+  // (rétrocompatible). Non applicable à stdin ni aux fichiers illisibles
+  // (ActualSha = '').
+  if (Entry >= 0) and (ActualSha <> '') then
+  begin
+    ShaBase := BaselineStr(Baseline[Entry], 'sha256');
+    if (ShaBase <> '') and (ShaBase <> ActualSha) then
+    begin
+      R.Actual := 1;                 // 1 = divergence (documenté SEMANTIQUE)
+      R.Metric := 'sha256';
+      R.Op := opNe;
+      R.Threshold := 0;
+      R.IsDelta := False;
+      R.DeltaInf := False;
+      R.Status := csFail;
+      R.Id := 'sha256';
+      SetLength(Results, Length(Results) + 1);
+      Results[High(Results)] := R;
+    end
+    else if (ShaBase <> '') and (ShaBase = ActualSha) then
+    begin
+      // Hash vérifié identique : signal positif, émis comme check ok (v2.16.0
+      // — l'intégrité PROUVÉE est une information, pas du bruit).
+      R.Actual := 0;
+      R.Metric := 'sha256';
+      R.Op := opNe;
+      R.Threshold := 0;
+      R.IsDelta := False;
+      R.DeltaInf := False;
+      R.Status := csOk;
+      R.Id := 'sha256';
+      SetLength(Results, Length(Results) + 1);
+      Results[High(Results)] := R;
+    end;
   end;
 end;
 

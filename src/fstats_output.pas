@@ -35,7 +35,7 @@ function BuildJSONCompact(const Stats: TStats; ShowAll: Boolean; LexicalStats: B
                           Readability: Boolean;
                           const CheckResults: TCheckResultArray): string;
 function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean;
-                          Readability: Boolean): string;
+                          Readability: Boolean; const Sha: string): string;
 function CsvEscape(const S: string): string;
 procedure ExportCSV(const Stats: TStats; ShowAll: Boolean; LexicalStats: Boolean;
                     Readability: Boolean; CsvKind: TCsvKind);
@@ -1117,7 +1117,7 @@ end;
   pour les scripts/jq : compteurs et métriques en champs de premier niveau.
   -----------------------------------------------------------------------------}
 function BuildSummaryJSON(const Stats: TStats; LexicalStats: Boolean;
-                          Readability: Boolean): string;
+                          Readability: Boolean; const Sha: string): string;
 var
   S: string;
   i: Integer;
@@ -1125,6 +1125,11 @@ var
   Rd: TReadabilityStats;
 begin
   S := '{"file": "' + JsonEscape(Stats.Path) + '"';
+  // v2.16.0 (P2 vague 3) : empreinte du contenu — l'intégrité de la
+  // baseline est vérifiable au --compare. Vide/absent pour stdin et les
+  // fichiers illisibles (clé omise, documenté SEMANTIQUE).
+  if Sha <> '' then
+    S := S + ', "sha256": "' + Sha + '"';
   S := S + ', "tool": "fstats"';
   S := S + ', "version": "' + FSTATS_VERSION + '"';
   S := S + ', "schema_version": "1.0"';

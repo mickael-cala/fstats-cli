@@ -1089,6 +1089,49 @@ if grep -q '"line_max": 104000' "$TMPDIR/giant.json" \
    && grep -q '"words": 1' "$TMPDIR/giant.json"; then OK=0; else OK=1; fi
 report "ligne 104 Ko : line_max/characters exacts, mot stocké borné (LINE/WORD_STORE_MAX)" $OK
 
+# --- 117. v2.16.0 (P2 vague 3) : verdict console lisible en mode check -----
+"$FSTATS" --check --fail-if=words'>100' tests/fixtures/test_fr.txt > "$TMPDIR/v3-verdict.txt" 2>/dev/null
+EC=$?
+if grep -q '^Verdict : OK' "$TMPDIR/v3-verdict.txt" && [ $EC -eq 0 ]; then OK=0; else OK=1; fi
+if [ $OK -eq 0 ]; then
+  "$FSTATS" --check --fail-if=words'>5' tests/fixtures/test_fr.txt > "$TMPDIR/v3-verdict2.txt" 2>/dev/null
+  EC2=$?
+  if grep -q '^Verdict : ECHEC' "$TMPDIR/v3-verdict2.txt" && [ $EC2 -eq 2 ]; then OK=0; else OK=1; fi
+fi
+report "--check console : dernière ligne = verdict OK/ECHEC lisible + exit 0/2" $OK
+
+# --- 118. v2.16.0 (P2 vague 3) : fichier hors baseline = VISIBLE ----------
+printf 'baseline pour un autre fichier\n' > "$TMPDIR/v3-other.txt"
+"$FSTATS" --summary-json "$TMPDIR/v3-other.txt" > "$TMPDIR/v3-other.ndjson" 2>/dev/null
+"$FSTATS" --compare="$TMPDIR/v3-other.ndjson" --fail-on-delta='words>10' tests/fixtures/test_fr.txt > "$TMPDIR/v3-miss.txt" 2> "$TMPDIR/v3-miss.err"
+if grep -q 'absent de la baseline' "$TMPDIR/v3-miss.err" && grep -q 'hors baseline' "$TMPDIR/v3-miss.txt"; then OK=0; else OK=1; fi
+report "--compare : fichier absent de la baseline -> avertissement stderr + ligne verdict (était IGNORE en silence)" $OK
+
+# --- 119. v2.16.0 (P2 vague 3) : intégrité baseline SHA-256 -----------------
+# a) la clé sha256 du summary-json = sha256sum du fichier (parité outil)
+"$FSTATS" --summary-json tests/fixtures/test_fr.txt > "$TMPDIR/v3-sha.ndjson" 2>/dev/null
+GOT_SHA=$(grep -o '"sha256": "[0-9a-f]*"' "$TMPDIR/v3-sha.ndjson" | head -1 | grep -o '[0-9a-f]\{64\}')
+if command -v sha256sum > /dev/null 2>&1; then
+  EXP_SHA=$(sha256sum tests/fixtures/test_fr.txt | cut -d' ' -f1)
+else
+  EXP_SHA="$GOT_SHA"   # fallback : vérification d'égalité interne seulement
+fi
+if [ "$GOT_SHA" = "$EXP_SHA" ] && [ -n "$GOT_SHA" ]; then OK=0; else OK=1; fi
+# b) fichier intact -> sha256 ok ; falsifié -> FAIL + exit 2
+if [ $OK -eq 0 ]; then
+  printf 'Voici un fichier sain pour la base.\nSeconde phrase.\n' > "$TMPDIR/v3-guard.txt"
+  "$FSTATS" --summary-json "$TMPDIR/v3-guard.txt" > "$TMPDIR/v3-guard.ndjson" 2>/dev/null
+  "$FSTATS" --check --compare="$TMPDIR/v3-guard.ndjson" "$TMPDIR/v3-guard.txt" > "$TMPDIR/v3-intact.txt" 2>/dev/null
+  EC1=$?
+  printf 'Voici un fichier sain mais FALSIFIE.\nSeconde phrase.\n' > "$TMPDIR/v3-guard2.txt"
+  cp "$TMPDIR/v3-guard.txt" "$TMPDIR/v3-guard.bak" && cp "$TMPDIR/v3-guard2.txt" "$TMPDIR/v3-guard.txt"
+  "$FSTATS" --check --compare="$TMPDIR/v3-guard.ndjson" "$TMPDIR/v3-guard.txt" > "$TMPDIR/v3-tamp.txt" 2>/dev/null
+  EC2=$?
+  cp "$TMPDIR/v3-guard.bak" "$TMPDIR/v3-guard.txt"
+  if grep -q 'sha256 != 0 : FAIL' "$TMPDIR/v3-tamp.txt" && [ $EC2 -eq 2 ] && [ $EC1 -eq 0 ]; then OK=0; else OK=1; fi
+fi
+report "baseline sha256 : clé = sha256sum, falsification -> sha256 FAIL + exit 2 (était : dérive invisible)" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then
