@@ -1,0 +1,3 @@
+Controlebinaire, tabulation:	visible	.
+Espace ins�cable:  et large:  tous deux non-ASCII mais valides.
+Vraie tabulation en pleine ligne pour le compteur tabs.

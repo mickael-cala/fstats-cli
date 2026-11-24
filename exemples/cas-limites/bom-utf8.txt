@@ -1,0 +1,3 @@
+﻿Fichier Windows edite avec le bloc-notes : UTF-8 AVEC marque d ordre (BOM).
+La premiere ligne sera precedee de 3 octets invisibles EF BB BF.
+Le compteur qualite bom doit valoir true (v1 fichier).

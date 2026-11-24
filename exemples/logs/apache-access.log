@@ -1,0 +1,10 @@
+192.168.1.42 - - [24/Nov/2026:08:00:01 +0100] "GET /index.html HTTP/1.1" 200 5120
+10.14.2.8 - admin [24/Nov/2026:08:00:03 +0100] "POST /login HTTP/1.1" 401 320
+172.16.4.17 - - [24/Nov/2026:08:00:07 +0100] "GET /rapport.pdf HTTP/1.1" 200 1048576
+203.0.113.7 - - [24/Nov/2026:08:01:12 +0100] "GET /wp-admin/setup-config.php HTTP/1.1" 404 209
+192.168.1.42 - - [24/Nov/2026:08:02:45 +0100] "GET /favicon.ico HTTP/1.1" 200 145
+198.51.100.23 - maria [24/Nov/2026:08:03:00 +0100] "GET /api/v1/clients?email=maria.dupont@exemple.fr HTTP/1.1" 200 2048
+203.0.113.99 - - [24/Nov/2026:08:03:22 +0100] "GET http://interne.example.com/miroir HTTP/1.1" 200 512
+10.14.2.8 - admin [24/Nov/2026:08:04:10 +0100] "POST /mot-de-passe HTTP/1.1" 403 101
+192.168.1.99 - - [24/Nov/2026:08:05:00 +0100] "GET /contacts.html HTTP/1.1" 200 4096
+203.0.113.7 - - [24/Nov/2026:08:06:30 +0100] "GET /.env HTTP/1.1" 404 180

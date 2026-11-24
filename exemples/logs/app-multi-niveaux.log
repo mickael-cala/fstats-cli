@@ -1,0 +1,13 @@
+2026-11-24 08:00:01 INFO    Demarrage du service d'acquisition (PID 4210)
+2026-11-24 08:00:02 DEBUG   Ouverture du canal COM3, debit 19200 bauds
+2026-11-24 08:00:03 TRACE   Lecture trame 0x0102 longueur=8 octets
+2026-11-24 08:01:15 WARNING Pression hydraulique proche du seuil (4.9 bar)
+2026-11-24 08:02:44 WARN    Capteur S3 desynchronise, nouvelle tentative
+2026-11-24 08:03:10 ERROR   Perte de communication avec l'automate PLC1
+2026-11-24 08:03:11 ERROR   Tentative de reconnexion en cours
+2026-11-24 08:03:12 INFO    Reconnexion PLC1 etablie en 1024 ms
+2026-11-24 08:03:44 DEBUG   WARN then ERROR dans le meme ordre ; priorite ERROR
+2026-11-24 08:05:00 ERRORS  le pluriel ne comptera pas comme niveau error
+2026-11-24 08:06:30 INFO    Session timeout apres inactivite : connection timeout expired
+2026-11-24 08:07:00 TRACE  	une vraie tabulation dans le message
+2026-11-24 08:08:00 INFO    Arret propre demande par l'operateur

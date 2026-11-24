@@ -1,0 +1,8 @@
+{"ts":"2026-11-24T07:15:02Z","level":"ERROR","logger":"acquisition","message":"PLC1 defaut capteur T101"}
+{"ts":"2026-11-24T07:15:33Z","level":"ERROR","logger":"acquisition","message":"PLC1 defaut capteur T101 relance"}
+{"ts":"2026-11-24T07:20:10Z","level":"WARN","logger":"controle","message":"SENSOR7 derive hors tolerance"}
+{"ts":"2026-11-24T07:31:00Z","level":"INFO","logger":"acquisition","message":"cycle AI04 termine"}
+{"ts":"2026-11-24T07:31:41Z","level":"ERROR","logger":"acquisition","message":"PLC2 perte 4-20 mA"}
+{"ts":"2026-11-24T08:02:03Z","level":"DEBUG","logger":"modbus","message":"reponse esclave 7 lue en 12 ms"}
+{"ts":"2026-11-24T08:12:20Z","level":"INFO","logger":"maintenance","message":"cycle automatique demarre"}
+{"ts":"2026-11-24T08:30:55Z","level":"TRACE","logger":"modbus","message":"trame 0x0F retransmise"}

@@ -1,0 +1,7 @@
+The fstats tool analyzes text files: it counts lines, words and characters.
+Release 3. of the software is in production, and version 3.14 fixed two defects.
+Mr. Smith reported: e.g. sensor noise, i.e. intermittent failures — see note No 7.
+The compass reads 3.14159 radians ; the angular drift reaches 2.5 degrees at most.
+Look for this: admin@factory-industrial.com or https://intranet.factory.example/plan.
+Employee Cafés and naïve regexes: é, è and ç meet inside one file.
+End of the demonstration corpus, thank you for reading.

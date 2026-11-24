@@ -1,0 +1,7 @@
+id,nom,email,ip,url,note
+1,Maria Dupont,maria.dupont@exemple.fr,192.168.1.42,https://intranet.usine.example/plan,"Retour client : OK"
+2,François Müller,f.muller@usine-industrielle.fr,10.14.2.8,http://miroir.example.com,"relance le 3.12"
+3,Youssef Benali,ybenali@exemple.fr,172.16.4.17,https://w3.example.com/livrable,"livré"
+4,Chloé Marchand,c.marchand@exemple.fr,203.0.113.7,,absente
+5,John O'Connor,j.oconnor@factory-industrial.com,198.51.100.23,https://plc.example.com/backup,"note : 2.5 mm"
+6,Ana Popescu,ana.popescu@exemple.fr,10.0.0.5,http://scada.example.com/mirror,mise a jour

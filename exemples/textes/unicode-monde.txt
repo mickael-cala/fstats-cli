@@ -1,0 +1,6 @@
+Greek: Καλώς ήρθατε! Η γρήγορη αλώπηξ — πέμπτο μήνυμα, δεν εμφανίζεται.
+Cyrillic: Получено сообщение (2 сообщения) — уровень: ОШИБКА, восстановление.
+Latin-ext: lângă stația de pompare — ă, â, î, ș, ț — mărimea fluxului.
+Twin composed/decomposed: cafe\u0301 (e + U+0301, NFD) vs café (U+00E9, NFC).
+Replacement char: le symbole � (U+FFFD) reste un separateur, pas un mot.
+Menagerie: « œuf » « cœur » « pi ≈ 3.14159 » — sémantique figée du tri.

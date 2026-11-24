@@ -1,0 +1,3 @@
+Ligne une en fin LF standard.
+Ligne deux en fin CRLF Windows.
+Ligne trois en fin CR seul (Mac historique).Ligne quatre, la derniere, sans saut de ligne final.

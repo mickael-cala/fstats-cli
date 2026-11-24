@@ -1,0 +1,7 @@
+L'outil fstats analyse des fichiers texte : il compte les lignes, les mots et les caractères.
+La Version 3. du logiciel est en production, et la version 3.14 corrigeait deux défauts.
+M. Dupont a rapporté : e.g. des sons, i.e. des pannes intermittentes — cf. la note N° 7.
+La boussole indique 3.14159 radians ; l'écart angulaire atteint 2.5 degrés au maximum.
+Cherchez ceci : admin@usine-industrielle.fr ou bien https://intranet.usine.example/plan.
+Le cœur du système : des algorithmes et des œufs de Pâques cachés dans le code source.
+Fin du corpus de démonstration, merci de votre attention.

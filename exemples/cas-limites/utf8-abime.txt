@@ -1,0 +1,2 @@
+Octet isole invalide ici: € puis un deuxieme: Ã
+Sequence tronquee â‚ (euro, 2 octets sur 3) et du texte sain ensuite.

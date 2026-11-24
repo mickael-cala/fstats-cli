@@ -1,0 +1,10 @@
+2026-11-24T07:15:02 ALARM ERROR   PLC1     Defaut capteur temperature T101
+2026-11-24T07:15:33 ALARM ERROR   PLC1     Defaut capteur temperature T101 (relance)
+2026-11-24T07:16:58 ALARM ERROR   MOTOR23  Surintensite phase 2 detectee
+2026-11-24T07:20:10 ALARM WARN    SENSOR7  Derive de mesure hors tolerance
+2026-11-24T07:31:00 ALARM ERROR   PLC2     Perte signal 4-20 mA entree AI04
+2026-11-24T07:31:41 ALARM ERROR   PLC2     Perte signal 4-20 mA entree AI04 (2e alarme)
+2026-11-24T07:45:15 ALARM WARN    PLC1     Niveau cuve proche de la seuil bas
+2026-11-24T08:02:03 ALARM ERROR   SENSOR7  Defaut communication bus MODBUS
+2026-11-24T08:12:20 ALARM INFO   PLC3     Cycle de maintenance automatique demarre
+2026-11-24T08:30:55 ALARM ERROR   VALVE12  Fuite detectee sur ligne de pression

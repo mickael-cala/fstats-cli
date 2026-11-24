@@ -1,0 +1,9 @@
+Nov 24 08:00:01 automate sshd[1420]: Accepted password for ops from 10.0.0.5 port 51234 ssh2
+Nov 24 08:00:02 automate kernel: [3.14159] USB device disconnected
+Nov 24 08:01:15 automate fstats[4210]: INFO analyse planifiee des journaux
+Nov 24 08:02:44 automate sshd[1421]: Failed password for root from 203.0.113.7 port 40122 ssh2
+Nov 24 08:03:10 automate kernel: [2.71828] WARN temperature superieure au seuil
+Nov 24 08:03:11 automate fstats[4210]: ERROR fichier d'entree absent : /var/log/acquisition/trames.raw
+Nov 24 08:05:00 automate CRON[1430]: INFO job de sauvegarde terminee sans erreur
+Nov 24 08:06:30 automate kernel: [1.41421] debug purge du cache disque
+Nov 24 08:08:00 automate systemd[1]: TRACE unit textual-stats.service started

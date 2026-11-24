@@ -1,0 +1,1 @@
+Fichier ASCII pur : aucun octet au-dela de 0x7F ici.
