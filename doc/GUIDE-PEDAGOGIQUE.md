@@ -71,8 +71,12 @@ fstats --version
 
 Doit afficher quelque chose comme `fstats 2.16.2`.
 
-> **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
-> `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
+> **Note multi-OS (v2.16.2)** : `build.bat` (Windows, 32 + 64 bits),
+> `build.sh` (Linux, amd64 + aarch64), `buildmac.sh` (macOS récent, zsh,
+> Apple Silicon + Intel) et `buildmac-intel.sh` (vieux Mac Intel, bash)
+> compilent sans avoir à taper la commande ; les `clear.*` correspondants
+> suppriment les fichiers de compilation (`bin/`, `*.o`, `*.ppu`,
+> binaires).
 
 > **Astuce (v2.13.0)** : pour générer la ligne de commande sans retenir les
 > options, lance le compagnon : `fstats --interactive` (wizard intégré) ou

@@ -140,6 +140,38 @@ candidat à la perte.
   exemples/README.md` sur les DEUX jobs (vérifié localement : 22/22
   fichier OK avant commit).
 
+### 8. Scripts de build multi-OS (2026-11-24, post-livraison)
+
+- **Périmètre voulu** : 8 scripts réels par OS/architecture —
+  `build.bat` + `clear.bat` (Windows, 32 + 64 bits), `build.sh` +
+  `clear.sh` (Linux, amd64 + aarch64, bash), `buildmac.sh` +
+  `clearmac.sh` (macOS récent, **zsh**, aarch64 + x86_64),
+  `buildmac-intel.sh` + `clearmac-intel.sh` (vieux Macs Intel, bash
+  3.2-compatible, x86_64). `wbld.bat`/`wclr.bat` supprimés (renommés
+  `build.bat`/`clear.bat`, historique CHANGELOG annoté).
+- **Vérifié à l'exécution (poste Windows 32 bits)** :
+  - `build.bat` : `fpc` trouvé via PATH, cible 32 bits compilée —
+    `bin\win32\fstats.exe` (1619 lignes) + `bin\win32\fcmd.exe` (127
+    lignes), smoke `--version` = `fstats 2.16.2` et `--help` du
+    compagnon OK ;
+  - cible 64 bits absente du poste : sortie FPC complète conservée
+    (transparence) PUIS message propre `[ECHEC]`, récap 1/2, exit 1,
+    `bin\win64\` absent (purge des dossiers vides par `rmdir`);
+  - `clear.bat` : marqueur `.ppu` créé → supprimé, `bin\` supprimé,
+    sources/docs/exemples intacts, exit 0 ;
+  - `build.sh` exécuté depuis ce même poste (hôte win32 → cibles linux
+    absentes par construction) : les DEUX cibles échouent proprement
+    (`[ÉCHEC]` + récap 0/2 + exit 1) et `bin/` est entièrement purgé —
+    exactement le comportement attendu sur un poste sans toolchain
+    linux ;
+  - `bash -n` OK sur les 6 `.sh`, bits exécutables posés.
+- **Non vérifié localement (honnêteté)** : ni macOS ni zsh sur le
+  poste. `buildmac.sh`/`clearmac.sh` sont écrits en sous-ensemble POSIX
+  commun zsh/bash (syntaxe auditée par `bash -n`, fait) ; l'exécution
+  réelle macOS (zsh natif, aarch64/x86_64) reste à confirmer sur
+  machine cible. Les binaires linux/mac produits sur vraies cibles
+  seront vérifiés à la première occasion (CI dédiée ou machine).
+
 ---
 
 ## v2.16.1 — P2 vague 4 (2026-11-24)
@@ -457,7 +489,8 @@ inconnue (exit 1), fichier absent (exit 1).
   `non_utf8`/`invalid_utf8`, `bom`, `crlf`, `tabs`, `nonprintable`).
 - Exit codes 0/1/2/3 (`Halt(0..3)` dans le main = doc).
 - 100 tests dans `tests/run.sh`/`run.bat` = CHANGELOG v2.11.0.
-- Commande de compilation inchangée et valide partout (`wbld.bat`,
+- Commande de compilation inchangée et valide partout (`build.bat` —
+  `wbld.bat` avant le renommage v2.16.2 —,
   `tests/run.*`, CI smoke, `doc/README.md`, GUIDE).
 - Versions courantes passées à 2.12.0 dans README, `doc/README.md`,
   `doc/GUIDE-PEDAGOGIQUE.md`, `doc/SEMANTIQUE.md` (exemples `--version` et

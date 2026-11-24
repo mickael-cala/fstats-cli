@@ -39,8 +39,23 @@ Under **Linux/macOS**, the same commands with the `/` separator:
 seen in CI at the v2.16.2 push.
 
 Two executables are created at the root: `fstats.exe` and the companion
-`fcmd.exe` (the second line compiles `src\fcmd.pas`; `wbld.bat` does the
-same on Windows, and `wclr.bat` cleans up the build artifacts).
+`fcmd.exe` (the second line compiles `src\fcmd.pas`).
+
+Ready-to-use build scripts (multi-OS and multi-architecture, they compile
+both binaries into `bin/<arch>/` without touching the root binaries used
+by the tests):
+
+| OS | Build | Cleanup |
+|---|---|---|
+| Windows (32 + 64-bit) | `build.bat` → `bin\win32\`, `bin\win64\` | `clear.bat` |
+| Linux, bash (amd64 + aarch64) | `build.sh` → `bin/amd64/`, `bin/aarch64/` | `clear.sh` |
+| Recent macOS, zsh (Apple Silicon + Intel) | `buildmac.sh` → `bin/aarch64/`, `bin/x86_64/` | `clearmac.sh` |
+| Old Intel Mac, bash | `buildmac-intel.sh` → `bin/x86_64/` | `clearmac-intel.sh` |
+
+A missing target (e.g. 64-bit on a 32-bit-only FPC install) is reported
+cleanly then skipped: the script continues and recapitulates (exit 1 if
+at least one failure; `clear.*` removes only `bin/`, `*.ppu`, `*.o` and
+the compiled binaries).
 
 First analyses:
 

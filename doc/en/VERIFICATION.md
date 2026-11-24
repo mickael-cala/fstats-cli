@@ -117,6 +117,37 @@ P0/P1/P2) validated by GitHub machines, not just the dev machine.
 Takeaway: an exit-code capture must be immediate and numeric — any
 separator between the command and its reading is a candidate for loss.
 
+### 8. Multi-OS build scripts (2026-11-24, post-delivery)
+
+- **Intended scope**: 8 real scripts per OS/architecture — `build.bat` +
+  `clear.bat` (Windows, 32 + 64-bit), `build.sh` + `clear.sh` (Linux,
+  amd64 + aarch64, bash), `buildmac.sh` + `clearmac.sh` (recent macOS,
+  **zsh**, aarch64 + x86_64), `buildmac-intel.sh` + `clearmac-intel.sh`
+  (old Intel Macs, bash 3.2-compatible, x86_64). `wbld.bat`/`wclr.bat`
+  removed (renamed `build.bat`/`clear.bat`, CHANGELOG history annotated).
+- **Verified at execution (32-bit Windows workstation)**:
+  - `build.bat`: `fpc` found via PATH, 32-bit target compiled —
+    `bin\win32\fstats.exe` (1619 lines) + `bin\win32\fcmd.exe` (127
+    lines), smoke `--version` = `fstats 2.16.2` and companion `--help`
+    OK;
+  - 64-bit target missing on that workstation: full FPC output kept
+    (transparency) THEN clean `[ECHEC]` message, recap 1/2, exit 1,
+    `bin\win64\` absent (empty folders purged by `rmdir`);
+  - `clear.bat`: `.ppu` marker created → removed, `bin\` removed,
+    sources/docs/examples untouched, exit 0;
+  - `build.sh` executed from that same workstation (win32 host →
+    linux targets absent by construction): BOTH targets fail cleanly
+    (`[ÉCHEC]` + recap 0/2 + exit 1) and `bin/` is fully purged —
+    exactly the expected behavior on a workstation without a linux
+    toolchain;
+  - `bash -n` OK on the 6 `.sh`, executable bits set.
+- **Not verified locally (honesty)**: neither macOS nor zsh on the
+  workstation. `buildmac.sh`/`clearmac.sh` are written in the POSIX
+  subset shared by zsh/bash (syntax audited via `bash -n`, done); real
+  macOS execution (native zsh, aarch64/x86_64) remains to be confirmed
+  on a target machine. The linux/mac binaries produced on real targets
+  will be verified at the first opportunity (dedicated CI or machine).
+
 ---
 
 ## v2.16.1 — P2 wave 4 (2026-11-24)
@@ -447,7 +478,8 @@ option (exit 1), missing file (exit 1).
   `non_utf8`/`invalid_utf8`, `bom`, `crlf`, `tabs`, `nonprintable`).
 - Exit codes 0/1/2/3 (`Halt(0..3)` in the main = doc).
 - 100 tests in `tests/run.sh`/`run.bat` = CHANGELOG v2.11.0.
-- Compilation command unchanged and valid everywhere (`wbld.bat`,
+- Compilation command unchanged and valid everywhere (`build.bat` —
+  `wbld.bat` before the v2.16.2 rename —,
   `tests/run.*`, CI smoke, `doc/README.md`, GUIDE).
 - Current versions bumped to 2.12.0 in README, `doc/README.md`,
   `doc/GUIDE-PEDAGOGIQUE.md`, `doc/SEMANTIQUE.md` (the `--version`

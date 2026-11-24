@@ -37,8 +37,23 @@ mais un `fpc.cfg` minimal ne l'a pas — d'où le switch explicite (vu en CI
 au push v2.16.2).
 
 Deux exécutables sont créés à la racine : `fstats.exe` et le compagnon
-`fcmd.exe` (la deuxième ligne compile `src\fcmd.pas` ; `wbld.bat` fait pareil
-sous Windows, `wclr.bat` nettoie les artefacts de compilation).
+`fcmd.exe` (la deuxième ligne compile `src\fcmd.pas`).
+
+Scripts de build prêts à l'emploi (multi-OS et multi-architecture, ils
+compilent les deux binaires dans `bin/<arch>/` sans toucher aux binaires
+de la racine utilisés par les tests) :
+
+| OS | Build | Nettoyage |
+|---|---|---|
+| Windows (32 + 64 bits) | `build.bat` → `bin\win32\`, `bin\win64\` | `clear.bat` |
+| Linux, bash (amd64 + aarch64) | `build.sh` → `bin/amd64/`, `bin/aarch64/` | `clear.sh` |
+| macOS récent, zsh (Apple Silicon + Intel) | `buildmac.sh` → `bin/aarch64/`, `bin/x86_64/` | `clearmac.sh` |
+| Vieux Mac Intel, bash | `buildmac-intel.sh` → `bin/x86_64/` | `clearmac-intel.sh` |
+
+Une cible absente (ex. 64 bits sur une installation FPC 32 bits seule)
+est signalée proprement puis ignorée : le script continue et récapitule
+(exit 1 si au moins un échec ; `clear.*` ne supprime que `bin/`,
+`*.ppu`, `*.o` et les binaires compilés).
 
 Premières analyses :
 

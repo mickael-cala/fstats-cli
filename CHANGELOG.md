@@ -149,6 +149,33 @@ justification.
   famille de périmés que les tests 56/71 : l'oubli d'un chiffrage n'est
   pas visible tant qu'aucune machine ne le vérifie).
 
+### Scripts de build multi-OS (2026-11-24, post-livraison)
+
+- **Nouveaux scripts `build.*` / `clear.*`** : vrais scripts de build par
+  OS et architecture, ils remplacent `wbld.bat`/`wclr.bat` (supprimés) —
+  Windows `build.bat`/`clear.bat` (32 bits → `bin\win32\`, 64 bits →
+  `bin\win64\`), Linux `build.sh`/`clear.sh` en bash (`amd64` →
+  `bin/amd64/`, `aarch64` → `bin/aarch64/`), macOS récent
+  `buildmac.sh`/`clearmac.sh` en **zsh** (aarch64 natif + x86_64 cross),
+  vieux Macs Intel `buildmac-intel.sh`/`clearmac-intel.sh` en bash
+  3.2-compatible (x86_64). Points communs : localisation de `fpc` (PATH
+  puis chemins d'installation connus), **`-Sg` explicite** (goto du
+  matcheur, leçon 13), sorties isolées dans `bin/<arch>/` (les binaires
+  racine des tests restent intacts), une cible absente est signalée
+  proprement sans arrêter les autres (récapitulatif clair + exit 1),
+  `clear.*` ne supprime QUE `bin/`, `*.ppu`, `*.o` et les binaires
+  compilés (racine et `src/`) — sources, tests, docs et exemples intacts.
+- **Vérifié localement (poste Windows 32 bits)** : `build.bat` compile
+  `fstats` + `fcmd` dans `bin\win32\` (smoke `--version` + `--help`
+  compagnon OK) ; la cible 64 bits absente de ce poste produit le
+  message d'échec propre attendu (récap 1/2, exit 1) ; `build.sh`
+  validé en mode échec depuis ce même poste (0/2 propre, dossiers vides
+  purgés) ; `clear.bat`/`clear.sh` vérifiés ; `bash -n` OK sur les 6
+  `.sh`. **Périmètre honnête** : zsh absent de l'environnement local —
+  `buildmac.sh`/`clearmac.sh` sont écrits en sous-ensemble POSIX commun
+  zsh/bash, l'exécution macOS reste à confirmer sur machine cible
+  (tracé dans VERIFICATION).
+
 ---
 
 ## [2.16.1] — 2026-11-24 — P2 (vague 4) : messages d'options honnêtes, help véridique
@@ -408,7 +435,8 @@ Corrections issues de l'audit croisé à trois auditeurs indépendants
   107 tests au total.
 
 ### Modifié
-- `wbld.bat` compile les deux binaires ; CI : smoke test de compilation de
+- `wbld.bat` compile les deux binaires (script renommé `build.bat` en
+  2.16.2) ; CI : smoke test de compilation de
   `fcmd.pas` en plus de `fstats.pas`.
 - `--help` documente `--interactive`.
 

@@ -93,10 +93,38 @@ either fixed, or requalified ACCEPTED_DOCUMENTED with their justification.
   v2.16.2)", each item cross-checked against this CHANGELOG. The
   TARGET 1-3 roadmaps verified as conforming (statuses and gaps
   already traced).
-- `README.md`: "100 cas d'acceptation" → **127** (the tests 101-123
-  added from v2.13.1 to v2.16.2 had never been carried over there —
-  same family of stale items as tests 56/71: a forgotten tally stays
-  invisible as long as no machine verifies it).
+- `README.md`: "100 cas d'acceptation" → **127** — **127 acceptance cases**
+  (the tests 101-123 added from v2.13.1 to v2.16.2 had never been carried
+  over there — same family of stale items as tests 56/71: a forgotten tally
+  stays invisible as long as no machine verifies it).
+
+### Multi-OS build scripts (2026-11-24, post-delivery)
+
+- **New `build.*` / `clear.*` scripts**: real build scripts per OS and
+  architecture, replacing `wbld.bat`/`wclr.bat` (removed) — Windows
+  `build.bat`/`clear.bat` (32-bit → `bin\win32\`, 64-bit →
+  `bin\win64\`), Linux `build.sh`/`clear.sh` in bash (`amd64` →
+  `bin/amd64/`, `aarch64` → `bin/aarch64/`), recent macOS
+  `buildmac.sh`/`clearmac.sh` in **zsh** (native aarch64 + cross
+  x86_64), old Intel Macs `buildmac-intel.sh`/`clearmac-intel.sh` in
+  bash 3.2-compatible (x86_64). Common points: `fpc` location (PATH
+  then known install paths), **explicit `-Sg`** (matcher goto, lesson
+  13), outputs isolated in `bin/<arch>/` (the test binaries at the
+  root stay untouched), a missing target is reported cleanly without
+  stopping the others (clear recap + exit 1), `clear.*` removes ONLY
+  `bin/`, `*.ppu`, `*.o` and the compiled binaries (root and `src/`) —
+  sources, tests, docs and examples untouched.
+- **Verified locally (32-bit Windows workstation)**: `build.bat`
+  compiles `fstats` + `fcmd` into `bin\win32\` (smoke `--version` +
+  companion `--help` OK); the 64-bit target missing on that
+  workstation produces the expected clean failure message (recap 1/2,
+  exit 1); `build.sh` validated in failure mode from that same
+  workstation (clean 0/2, empty folders purged); `clear.bat`/
+  `clear.sh` verified; `bash -n` OK on the 6 `.sh`. **Honest scope**:
+  zsh absent from the local environment — `buildmac.sh`/
+  `clearmac.sh` are written in the common POSIX subset shared by
+  zsh/bash, macOS execution remains to be confirmed on a target
+  machine (traced in VERIFICATION).
 
 ---
 
@@ -374,7 +402,8 @@ Fixes coming out of the cross-audit by three independent auditors
   107 tests in total.
 
 ### Changed
-- `wbld.bat` compiles both binaries; CI: compilation smoke test of
+- `wbld.bat` compiles both binaries (script renamed `build.bat` in
+  2.16.2); CI: compilation smoke test of
   `fcmd.pas` in addition to `fstats.pas`.
 - `--help` documents `--interactive`.
 
