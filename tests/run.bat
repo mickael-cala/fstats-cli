@@ -1193,6 +1193,33 @@ if errorlevel 1 if not errorlevel 2 set C121_OK=1
 findstr /C:"l'option --redact exige une valeur" "%TMPD%\v4bare.err" >nul || set C121_OK=0
 if "%C121_OK%"=="1" (set /a PASS+=1&echo PASS: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable) else (set /a FAIL+=1&echo FAIL: --redact nu -^> exige une valeur + exit 1 - etait Fichier introuvable)
 
+rem --- 122. v2.16.2 (P2 vague 5) : --recursive/--include/--exclude/--max-depth -
+mkdir "%TMPD%\v5tree\sub\deep" 2>nul
+echo ccc INFO> "%TMPD%\v5tree\f1.txt"
+echo bbb WARN> "%TMPD%\v5tree\sub\f2.txt"
+echo aaa ERROR> "%TMPD%\v5tree\sub\deep\f3.txt"
+echo ignore-me> "%TMPD%\v5tree\sub\f2.log"
+set C122_OK=1
+"%FSTATS%" --summary-json --recursive="%TMPD%\v5tree" > "%TMPD%\v5.r1" 2>nul
+powershell -NoProfile -Command "if((Get-Content '%TMPD%\v5.r1').Count -eq 4){exit 0}else{exit 1}" >nul 2>nul || set C122_OK=0
+"%FSTATS%" --summary-json --recursive="%TMPD%\v5tree" --include=*.txt > "%TMPD%\v5.r2" 2>nul
+powershell -NoProfile -Command "if((Get-Content '%TMPD%\v5.r2').Count -eq 1){exit 0}else{exit 1}" >nul 2>nul || set C122_OK=0
+"%FSTATS%" --summary-json --recursive="%TMPD%\v5tree" --include=**/*.txt > "%TMPD%\v5.r3" 2>nul
+powershell -NoProfile -Command "if((Get-Content '%TMPD%\v5.r3').Count -eq 3){exit 0}else{exit 1}" >nul 2>nul || set C122_OK=0
+"%FSTATS%" --summary-json --recursive="%TMPD%\v5tree" --include=**/*.txt --max-depth=1 > "%TMPD%\v5.r4" 2>nul
+powershell -NoProfile -Command "if((Get-Content '%TMPD%\v5.r4').Count -eq 2){exit 0}else{exit 1}" >nul 2>nul || set C122_OK=0
+"%FSTATS%" --summary-json --recursive="%TMPD%\v5tree" --include=**/*.txt --exclude=sub/deep/* > "%TMPD%\v5.r5" 2>nul
+powershell -NoProfile -Command "if((Get-Content '%TMPD%\v5.r5').Count -eq 2){exit 0}else{exit 1}" >nul 2>nul || set C122_OK=0
+if "%C122_OK%"=="1" (set /a PASS+=1&echo PASS: --recursive : filtres glob et max-depth verifies [4/1/3/2/2]) else (set /a FAIL+=1&echo FAIL: --recursive : filtres glob et max-depth verifies [4/1/3/2/2])
+
+rem --- 123. v2.16.2 (P2 vague 5) : egalites = ordre deterministe -----------------
+echo zebre abricot> "%TMPD%\v5tie.txt"
+echo zebre abricot>> "%TMPD%\v5tie.txt"
+"%FSTATS%" --top-words=10 "%TMPD%\v5tie.txt" > "%TMPD%\v5tie.out" 2>nul
+powershell -NoProfile -Command "$t=[IO.File]::ReadAllText('%TMPD%\v5tie.out'); $a=$t.IndexOf('abricot'); $z=$t.IndexOf('zebre'); if(($a -ge 0) -and ($z -gt $a)){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 (set C123_OK=1) else (set C123_OK=0)
+if "%C123_OK%"=="1" (set /a PASS+=1&echo PASS: egalites de frequence -^> ordre lexicographique [abricot avant zebre]) else (set /a FAIL+=1&echo FAIL: egalites de frequence -^> ordre lexicographique [abricot avant zebre])
+
 echo.
 echo RESULTAT : %PASS% reussi, %FAIL% echec(s)"
 rd /s /q "%TMPD%" >nul 2>nul

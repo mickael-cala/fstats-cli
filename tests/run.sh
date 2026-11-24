@@ -1144,6 +1144,34 @@ EC=$?
 if [ $EC -eq 1 ] && grep -q 'l.option --redact exige une valeur' "$TMPDIR/v4-bare.err"; then OK=0; else OK=1; fi
 report "--redact nu -> « exige une valeur » + exit 1 (était : « Fichier introuvable »)" $OK
 
+# --- 122. v2.16.2 (P2 vague 5) : --recursive/--include/--exclude/--max-depth --
+# Arborescence de référence : f1.txt (racine), sub/f2.txt, sub/f2.log,
+# sub/deep/f3.txt. Sémantique mesurée AVANT le test (les globs ne
+# traversent PAS '/' : '*.txt' = racine seule, '**/*.txt' = tout).
+mkdir -p "$TMPDIR/v5tree/sub/deep"
+printf 'ccc INFO\n'  > "$TMPDIR/v5tree/f1.txt"
+printf 'bbb WARN\n'  > "$TMPDIR/v5tree/sub/f2.txt"
+printf 'aaa ERROR\n' > "$TMPDIR/v5tree/sub/deep/f3.txt"
+printf 'ignore-me\n' > "$TMPDIR/v5tree/sub/f2.log"
+count_ndjson() { grep -c '^{' "$1"; }
+"$FSTATS" --summary-json --recursive="$TMPDIR/v5tree" > "$TMPDIR/v5.r1" 2>/dev/null
+"$FSTATS" --summary-json --recursive="$TMPDIR/v5tree" --include='*.txt' > "$TMPDIR/v5.r2" 2>/dev/null
+"$FSTATS" --summary-json --recursive="$TMPDIR/v5tree" --include='**/*.txt' > "$TMPDIR/v5.r3" 2>/dev/null
+"$FSTATS" --summary-json --recursive="$TMPDIR/v5tree" --include='**/*.txt' --max-depth=1 > "$TMPDIR/v5.r4" 2>/dev/null
+"$FSTATS" --summary-json --recursive="$TMPDIR/v5tree" --include='**/*.txt' --exclude='sub/deep/*' > "$TMPDIR/v5.r5" 2>/dev/null
+if [ "$(count_ndjson "$TMPDIR/v5.r1")" -eq 4 ] && [ "$(count_ndjson "$TMPDIR/v5.r2")" -eq 1 ] && \
+   [ "$(count_ndjson "$TMPDIR/v5.r3")" -eq 3 ] && [ "$(count_ndjson "$TMPDIR/v5.r4")" -eq 2 ] && \
+   [ "$(count_ndjson "$TMPDIR/v5.r5")" -eq 2 ]; then OK=0; else OK=1; fi
+report "--recursive : sans filtre 4 fichiers, *.txt 1, **/*.txt 3, max-depth=1 => 2, exclude sub/deep/* => 2" $OK
+
+# --- 123. v2.16.2 (P2 vague 5) : égalités = ordre déterministe ------------------
+printf 'zebre abricot\nzebre abricot\n' > "$TMPDIR/v5tie.txt"
+"$FSTATS" --top-words=10 "$TMPDIR/v5tie.txt" > "$TMPDIR/v5tie.out" 2>/dev/null
+L1=$(grep -n "'abricot'" "$TMPDIR/v5tie.out" | head -1 | cut -d: -f1)
+L2=$(grep -n "'zebre'" "$TMPDIR/v5tie.out" | head -1 | cut -d: -f1)
+if [ -n "$L1" ] && [ -n "$L2" ] && [ "$L1" -lt "$L2" ]; then OK=0; else OK=1; fi
+report "égalités de fréquence : ordre lexicographique croissant (abricot avant zebre)" $OK
+
 echo ""
 echo "RESULTAT : $PASS reussi, $FAIL echec(s)"
 if [ "$FAIL" -gt 0 ]; then

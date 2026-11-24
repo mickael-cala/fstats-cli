@@ -3,9 +3,9 @@
   FSTATS - Analyseur de fichiers statistiques
   ============================================================================
   Auteur     : Expert Free Pascal
-  Version    : 2.16.1 (P2 vague 4 : option inconnue/à valeur manquante =
-              message honnête au lieu de « fichier introuvable », help
-              --top-lines véridique [0 = désactivé, pas « tous »])
+  Version    : 2.16.2 (P2 vague 5 : tie-break déterministe des égalités,
+              tests --recursive/--include/--exclude/--max-depth,
+              homoglyphes/RTL : limites documentées)
   License    : MIT
   Compilation: fpc -O2 -Mobjfpc fstats.pas
   

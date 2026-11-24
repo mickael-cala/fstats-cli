@@ -151,8 +151,12 @@ begin
   I := L; J := R;
   P := A[(L + R) div 2];  // Pivot : élément médian pour équilibrer le tri
   repeat
-    while A[I].Count > P.Count do Inc(I);  // Tri décroissant par fréquence
-    while A[J].Count < P.Count do Dec(J);
+    // Tri décroissant par fréquence — v2.16.2 : tie-break par code point
+    // croissant (égalités de fréquence : ordre DÉTERMINISTE, documenté).
+    while (A[I].Count > P.Count) or
+          ((A[I].Count = P.Count) and (A[I].CodePoint < P.CodePoint)) do Inc(I);
+    while (A[J].Count < P.Count) or
+          ((A[J].Count = P.Count) and (A[J].CodePoint > P.CodePoint)) do Dec(J);
     if I <= J then
     begin
       T := A[I]; A[I] := A[J]; A[J] := T;  // Échange
@@ -171,8 +175,13 @@ begin
   I := L; J := R;
   P := A[(L + R) div 2];
   repeat
-    while A[I].Count > P.Count do Inc(I);
-    while A[J].Count < P.Count do Dec(J);
+    // v2.16.2 : tie-break lexicographique croissant sur le mot (égalités
+    // de fréquence : ordre DÉTERMINISTE, documenté — deux exécutions
+    // donnent le même Top Words byte à byte).
+    while (A[I].Count > P.Count) or
+          ((A[I].Count = P.Count) and (A[I].Word < P.Word)) do Inc(I);
+    while (A[J].Count < P.Count) or
+          ((A[J].Count = P.Count) and (A[J].Word > P.Word)) do Dec(J);
     if I <= J then
     begin
       T := A[I]; A[I] := A[J]; A[J] := T;

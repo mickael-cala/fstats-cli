@@ -28,7 +28,7 @@ const
   CTRL_CHARS = [#0..#31, #127];
 
   // Version du programme (affichée par --version et dans les exports JSON)
-  FSTATS_VERSION = '2.16.1';
+  FSTATS_VERSION = '2.16.2';
 
   // v2.15.0 (P2 vague 2) : bornes de stockage par ligne/mot. Les MÉTRIQUES
   // (lignes, mots, caractères, longueurs min/max/avg) restent EXACTES, seules
