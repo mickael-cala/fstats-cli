@@ -6,6 +6,62 @@ Les preuves (sorties réelles, tests) sont dans [doc/VERIFICATION.md](doc/VERIFI
 
 ---
 
+## [2.15.0] — 2026-11-24 — P2 (vague 2) : matchers linéaires, anti-gel, lignes/mots bornés
+
+Deuxième vague P2 : robustesse sur entrée hostile. Un fichier de **1,6 Ko** +
+un pattern innocent (`*a*a*a*a*a*a*b` sans correspondance) gelait fstats à
+100 % CPU **indéfiniment** (backtracking exponentiel) ; un pattern à match
+vide (`*`, `**`, `a||b`) **bouclait à l'infini**. Tous deux corrigés et
+testés. En prime, la réparation du harnais de tests Windows a révélé quatre
+bugs du run.bat jamais exécutés jusqu'au bout (détail plus bas).
+
+### Corrigé
+- **Match génériques (`--pattern`) linéaires** (fstats_lex.pas) :
+  `WildcardMatch`/`WildcardMatchAt` réécrits en glouton itératif à deux
+  repères (dernière étoile + position de reprise) — O(len(P)×len(S)) au pire,
+  zéro récursion. L'algorithme explore dans le même ordre que l'ancien
+  (étoile minimale d'abord) : parité binaire-vs-v2.14.1 vérifiée sur 37
+  combinaisons motifs×fichiers (23/23 en sortie JSON normalisée, 0 diff).
+- **Match vide = boucle infinie tuée** : `--pattern='*'` (ou segment vide
+  d'alternation `a||b`) produisait des matches de longueur nulle et
+  `StartPos := i + 0` rebouclait pour toujours. Un match vide n'est pas une
+  occurrence : on avance d'une position sans compter (test 114).
+- **Mini-moteur regex de `--regex-tag` linéaire** (fstats_lex.pas) :
+  `MatchTagAt` réécrit en simulation NFA à ensemble d'états — O(len(S)×
+  len(pattern)) par position de départ, zéro backtracking. Sémantique
+  documentée : **match le plus long** depuis la position. Test 115 : ligne
+  de 6,3 Ko avec `a*a*a*b` — avant gèle, après instantané.
+- **Tampon de ligne/mot à croissance géométrique** (fstats_analyzer.pas) :
+  l'accumulation `S := S + c` par caractère était quasi-quadratique (32 Mo
+  sur une ligne = 18 s, mesuré). Append O(1) amorti : 32 Mo → 9 s (le reste
+  est le décodage UTF-8 par point de code).
+- **Stockage borné, métriques exactes** (LINE_STORE_MAX = 65 536,
+  WORD_STORE_MAX = 1 024) : au-delà, la ligne/mot **stocké** (pattern
+  matching, tags, niveaux de log, Top Lines, longest word) est tronqué —
+  les métriques (lignes, mots, caractères, longueurs min/max/avg, compteurs
+  qualité) restent exactes. Approximation documentée (LIMITES + SEMANTIQUE).
+
+### Harnais de tests Windows réparé (run.bat, jamais exécuté jusqu'au bout)
+- **Fins de ligne LF** : le fichier était 100 % LF ; cmd.exe exige CRLF —
+  le batch plantait au milieu (`after66` fantôme) et n'atteignait JAMAIS les
+  tests 66+. Converti CRLF : 63 PASS / 0 FAIL atteints.
+- **`set X=1 || set X=0`** : l'espace avant `&&` est inclus dans la valeur
+  par cmd (`C101_OK="1 "` ≠ `"1"`) — 10 tests auto-sabotés. Forme quotée
+  `set "X=1"` appliquée.
+- **`echo words^>5` dans un pipe** : le caret est re-parcouru par le cmd
+  enfant — `>` devenait une redirection, la ligne n'atteignait jamais le
+  wizard (un fichier nommé `5` était créé !). Double caret `^^^>` appliqué.
+- **`\\"` littéral dans les findstr** : trois tests cherchaient une chaîne
+  avec backslashes qui n'existe pas dans le JSON produit.
+- Tests 114 (anti-gel pattern + match vide), 115 (anti-gel tag NFA),
+  116 (ligne 104 Ko : métriques exactes) ajoutés en sh et bat.
+
+### Intègre
+- `TokenMatchAt` supprimé (seul consommateur était l'ancien backtracking).
+- Version 2.15.0 (FSTATS_VERSION, CMDGEN_VERSION).
+
+---
+
 ## [2.14.1] — 2026-11-23 — P2 (vague 1) : frontière 64 Ko, WARNING, CSV formules, gate visible, UX wizard
 
 Première vague du backlog P2 du registre sécurité. Chaque correctif est

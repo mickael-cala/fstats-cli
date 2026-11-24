@@ -58,7 +58,7 @@ décennies de durcissement des bibliothèques éprouvées.
 | P1-2 | **`--out` détruit le fichier d'entrée** (troncature avant l'analyse) | Perte de données | Garde : refus exit 1 + stderr si `--out` ∈ fichiers analysés (chemins absolus, casse ignorée sous Windows) — test 110 (entrée intacte par diff) |
 | P1-3 | **Fuite `--redact`** : emails/IPs en clair dans Top Words, n-grams, tags | Divulgation | `RedactString` aux 11 points d'émission + test 109 anti-fuite (grep = 0 sur console/JSON/CSV/summary) |
 
-## 5. Statut P2 — vague 1 corrigée en v2.14.1, reste au backlog 📋
+## 5. Statut P2 — vagues 1-2 corrigées (v2.14.1/v2.15.0), reste au backlog 📋
 
 **Corrigés en v2.14.1** (tests 111-113 + wizard rejoué) : frontière 64 Ko
 (invalid_utf8 faux positif à l'alignement — bug métrique CI), `WARNING`
@@ -66,14 +66,18 @@ classé none (log4j/Python), formules CSV (`= + - @`), gate `--check`
 no-op invisible, wizard UX (numéros affichés, entrée invalide ne quitte
 plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
 
+**Corrigés en v2.15.0** (tests 114-116 + parité golden 23/23 vs v2.14.1) :
+backtracking exponentiel des matchers (`--pattern` glouton linéaire,
+`--regex-tag` NFA — un fichier de 1,6 Ko gelait à 100 % CPU indéfiniment),
+**boucle infinie sur match de longueur nulle** (`*`, `**`, `a||b` — un
+verritable hang, découvert en testant le harnais), lignes/mots non bornés
+(tampons à croissance géométrique + bornes de stockage, métriques
+exactes). Bonus : le harnais Windows run.bat était inutilisable
+(LF au lieu de CRLF : plantage au test 65+ ; `set X=1 ` avec espace
+absorbé ; `^>` re-parcouru dans un pipe) — réparé, 63 PASS.
+
 **Reste au backlog** (par vagues suivantes) :
 
-- **Robustesse sur entrée hostile**
-  - Lignes non bornées en longueur (OOM possible sur une ligne géante ;
-    concaténation caractère par caractère quasi-quadratique — mesuré :
-    32 Mo sur une ligne ≈ 18 s).
-  - Backtracking exponentiel des matchers (`*a*a*…` gèle ; amplifié par
-    `--mode=alarm` et son pattern par défaut). → automates linéaires.
 - **Verdict CI**
   - `--fail-on-delta` ne teste que la croissance (delta négatif = OK).
   - Baseline sans intégrité (réécrivable par un attaquant du dépôt).
@@ -90,7 +94,8 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
 - **Hygiène dev**
   - `Halt()` dans les couches basses (try..finally non déroulé).
   - `--recursive`/`--include`/`--exclude`/`--max-depth` : **zéro test**.
-  - Duplication run.sh/run.bat (1000+ vs 1050+ lignes) qui divergent déjà.
+  - Duplication run.sh/run.bat (1000+ vs 1150+ lignes, comportement
+    réaligné en v2.15.0 mais restant à dupliquer à la main).
   - Égalités dans Top Words/Chars sans tie-break → ordre non stable.
 
 ## 6. ACCEPTÉ_DOCUMENTÉ (décisions assumées) 📗
@@ -133,6 +138,18 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
    prête à s'exécuter à l'ouverture. Exporter, c'est émettre du code
    potentiel dans un interpréteur inconnu — neutraliser (`'` préfixe OWASP)
    et tester (test 112).
+10. **Une boucle infinie est un bug de sécurité, pas un bug de performance.**
+    v2.15.0 : un match de longueur nulle faisait `StartPos := i + 0 = i` —
+    le scanner ne quittait JAMAIS la boucle : `--pattern='*'` = hang pur,
+    toute ressource machine absorbée pour toujours. Toute avancée dans une
+    boucle doit être testée contre l'égalité stricte à son point de départ.
+11. **Un harnais de tests qui n'a jamais tourné jusqu'au bout ne teste rien.**
+    v2.15.0 : le run.bat Windows était en fins de ligne LF (cmd.exe exige
+    CRLF) — il plantait silencieusement au test 65+ depuis son écriture ;
+    10 tests s'auto-sabotaient avec `set X=1 ` (l'espace avant `&&` est
+    inclus dans la valeur par cmd) et un `^>` dans un pipe devenait une
+    redirection. Le signal « 63 PASS / 0 FAIL » n'existait pas avant —
+    maintenant il existe et il est vérifié à chaque version.
 
 ## 8. Journal des audits
 
@@ -141,3 +158,4 @@ plus), code mort (`OptModeAlarm`, deltas watch, `BuildTopLinesJSON`).
 | 2026-11-23 | v2.13.0 | dev × cyber × UX (3 agents + re-vérif manuelle) | P0 → v2.13.1 ; ce registre ; P1 lancé |
 | 2026-11-23 | v2.14.0 | — | P1-1/2/3 corrigés + tests 109/110 ; restes notés au §5/P2 |
 | 2026-11-23 | v2.14.1 | — | P2 vague 1 corrigée (6 fixes + code mort) ; tests 111-113 ; backlog §5 |
+| 2026-11-24 | v2.15.0 | — | P2 vague 2 corrigée (matchers linéaires, hang match nul, bornes stockage) ; tests 114-116 ; harnais Windows réparé (63 PASS) |

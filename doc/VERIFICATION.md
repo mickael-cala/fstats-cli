@@ -3,6 +3,77 @@
 > **Note (2026-08-26, post-restructuration)** : la compilation se fait depuis la
 > racine : `fpc -O2 -Mobjfpc src\fstats.pas`.
 
+## v2.15.0 — P2 vague 2 (2026-11-24)
+
+### 1. Match génériques : gel démontré, lineaire démontré
+
+Ancien binaire v2.14.1 (conservé comme oracle) : fichier de **1 601 octets**
+(préfixe `a`×1600 + `x`, une ligne) + `--pattern='*a*a*a*a*a*a*b'` →
+**tué à timeout 20 s, CPU 100 %** (backtracking exponentiel). Nouveau
+binaire v2.15.0 : même fichier → exit 0 **immédiat**. Pire cas construit
+(ligne de 20 800 octets, pattern sans correspondance) → 1 s.
+
+### 2. Boucle infinie match nul (hang, pas lenteur)
+
+v2.14.1 : `--pattern='*'`, `--pattern='**'`, `--pattern='a||b'` (segment vide
+d'alternance) → **boucle infinie** (match de longueur nulle, `StartPos`
+n'avance jamais). v2.15.0 : `--json --pattern='*'` terminé, sortie
+`"lines": 0, "matches": 0`. Test 114 (sh + bat).
+
+### 3. Parité d'oracle (golden) : 23/23
+
+37 sorties JSON de référence capturées avec le binaire v2.14.1 AVANT les
+changements : 16 patterns `--pattern` (étoiles multiples, `?`, alternances,
+adjacences `errorerrorerror`, casse, `|`), 9 patterns `--regex-tag`
+(classes, quantifieurs imbriqués `A*B*C`, `[0-9]*[a-z]+`), `--mode=alarm`,
+fixtures complètes + combinaison. La capture des patterns « gels » de
+l'oracle s'est faite sous watchdog (3 patterns exclus de la comparaison :
+`*`, `**`, `a||b` — leur oracle EST le gel, cf. §2). Rejouées après :
+**23/23 identiques** après normalisation version/horodatage. L'algorithme
+glouton min-d'abord reproduit l'ordre d'exploration de l'ancien DFS.
+
+### 4. NFA tags : lineaire
+
+`--regex-tag='a*a*a*b'` sur une ligne de 6 300 caractères : v2.15.0
+immédiat (avant : backtracking). Test 115 (sh + bat). Sémantique
+documentée : match le plus long depuis chaque position.
+
+### 5. Ligne géante : métriques exactes, stockage borné
+
+Ligne unique de 33 554 432 octets (`q` + LF) : `lines: 1`,
+`characters: 33 554 433`, `line_max: 33 554 432` — **exacts**. Temps :
+9 s (v2.14.1 : 16 s ; audit initial : 18 s avec concaténation
+quadratique + 32 Mo conservés en mémoire). Append O(1) amorti
+(tampon à croissance géométrique), stockage borné `LINE_STORE_MAX`
+(65 536) / `WORD_STORE_MAX` (1 024). Test 116 (sh + bat) : ligne de
+104 000 `q` → `line_max: 104000`, `characters: 104001`, `words: 1`.
+
+### 6. Harnais Windows réparé : 63 PASS / 0 FAIL
+
+Le run.bat committé en v2.14.1 **n'avait jamais tourné jusqu'au bout** :
+- fins de ligne LF or cmd.exe exige CRLF → plantage parse au test 65+
+  (« after66 » fantôme) ;
+- `set C101_OK=1 || …` : l'**espace avant `&&` est inclus dans la valeur**
+  (`"1 "` ≠ `"1"`) → 10 tests auto-sabotés (le mini-reproducteur affichait
+  `C101_OK=[1 ]`) ;
+- `echo words^>5` dans un pipe : le caret est re-parcouru par le cmd
+  enfant → `>` devenait une redirection ; la ligne n'atteignait jamais le
+  wizard, un fichier nommé `5` était créé sur disque (constaté) ;
+- `\\\"` littéraux dans trois findstr : recherche d'une chaîne n'existant
+  pas dans le JSON.
+
+Après conversion CRLF + `set "X=1"` quotés + `^^^>` + findstr corrigés :
+**63 PASS, 0 FAIL, RESULTAT atteint** (les tests node se skipent faute de
+node sur la machine). run.sh : 55 réussis + 65 échecs **tous
+node-dépendants** (absence de node, préexistants).
+
+### 7. Compilation et comptage
+
+`fpc -O2 -Mobjfpc -FE. src/fstats.pas` et `src/fcmd.pas` : OK.
+`fstats --version` = `fstats 2.15.0` ; `fcmd --help` = `fcmd v2.15.0`.
+
+---
+
 ## v2.14.1 — P2 vague 1 (2026-11-23)
 
 ### 1. Frontière de buffer 64 Ko (bug métrique CI)

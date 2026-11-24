@@ -66,7 +66,7 @@ L'exécutable `fstats.exe` (Windows) ou `fstats` (Linux) apparaît à la racine.
 fstats --version
 ```
 
-Doit afficher quelque chose comme `fstats 2.14.1`.
+Doit afficher quelque chose comme `fstats 2.15.0`.
 
 > **Note Windows** : `wbld.bat` compile sans avoir à taper la commande,
 > `wclr.bat` supprime les fichiers de compilation (`*.o`, `*.ppu`, `*.exe`).
@@ -430,7 +430,7 @@ fstats --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "test.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Tout est sur **une ligne** : idéal pour traiter beaucoup de fichiers avec des
@@ -443,7 +443,7 @@ echo "un deux trois." | fstats - --summary-json
 ```
 
 ```
-{"file": "stdin", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
+{"file": "stdin", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 1, "words": 3, "characters": 16, "sentences": 1, "avg_words_per_sentence": 3, "line_min": 14, "line_max": 14, "line_avg": 14, "invalid_utf8": 0, "bom": false, "crlf": 1, "tabs": 0, "nonprintable": 0}
 ```
 
 On peut enchaîner : `cat journal.log | fstats - --summary-json`.
@@ -541,7 +541,7 @@ fstats --readability --summary-json test.txt
 ```
 
 ```
-{"file": "test.txt", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
+{"file": "test.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0, "avg_sentence_words": 4.333333, "avg_word_chars": 4.615385, "pct_long_words": 23.076923, "readability_score": 76.623932}
 ```
 
 > Le mode `--word-mode=ascii` change les mots utilisés : « Deuxième » devient
@@ -601,7 +601,16 @@ normale (les données) sur **stdout** : tu peux rediriger l'une sans l'autre.
   figée** d'abréviations et les URLs avec `://` — pas toutes les
   abréviations imaginables.
 - `--regex-tag` est un **mini-moteur** (littéral + classes `[0-9]`… +
-  quantifieurs `? * +`), pas une regex complète.
+  quantifieurs `? * +`), pas une regex complète. Depuis la v2.15.0 il est
+  **linéaire** (NFA) : aucun pattern ne peut plus le faire geler, et depuis
+  chaque position il retient le match le plus long.
+- Ligne/mot **stockés bornés** (v2.15.0) : au-delà de 65 536 octets pour une
+  ligne (1 024 pour un mot), seuls le matching, les Top Lines et les
+  dictionnaires voient la partie tronquée — **les compteurs, eux, restent
+  exacts** sur le fichier entier. Un match caché après la borne (ligne de
+  100 Ko) n'est pas vu : approximation assumée contre le gel/mémoire.
+- Un match de **longueur nulle** (`--pattern='*'`) compte 0 occurrence, pas
+  une infinité (v2.15.0).
 - `--top-lines` / `--top-tags` : top-K approximatif sur très gros logs
   (mémoire bornée, comme les n-grams).
 - La redaction (`--redact`) s'applique aux **sorties seulement** : les

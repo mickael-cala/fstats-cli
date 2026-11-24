@@ -1,6 +1,6 @@
 # Spécification technique — sémantique figée et formats de sortie
 
-> Document de référence de `fstats` (v2.14.1). La sémantique décrite ici est
+> Document de référence de `fstats` (v2.15.0). La sémantique décrite ici est
 > **figée** : elle ne changera pas dans les versions futures sans annonce
 > explicite. Pour la prise en main, voir le
 > [guide pédagogique](GUIDE-PEDAGOGIQUE.md) ; pour la vue d'ensemble, le
@@ -101,7 +101,7 @@ Tous les exports JSON portent les champs de traçabilité `tool` (`"fstats"`),
   "file": "tests/fixtures/test_fr.txt",
   "generated": "2026-08-26 11:38:35",
   "tool": "fstats",
-  "version": "2.14.1",
+  "version": "2.15.0",
   "schema_version": "1.0",
   "statistics": {
     "lines": 3, "words": 13, "characters": 72,
@@ -138,8 +138,8 @@ Avec `--lexical-stats`, un bloc **additif** `"lexical"` est inséré après
 **Plusieurs fichiers + `--json` → NDJSON (défaut, 1 objet compact par ligne) :**
 
 ```
-{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
-{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/bom.txt", "generated": "...", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": true, "crlf": 0, "tabs": 0, "nonprintable": 0}, ...}
+{"file": "tests\/fixtures\/crlf.txt", "generated": "...", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "statistics": {...}, "quality": {"invalid_utf8": 0, "bom": false, "crlf": 2, "tabs": 0, "nonprintable": 0}, ...}
 ```
 
 Le JSON multi-fichiers **n'est plus concaténé** (défaut v2.1 corrigé) : chaque
@@ -160,7 +160,7 @@ ligne est un objet JSON complet et indépendant, validable ligne à ligne
 ```json
 {
   "tool": "fstats",
-  "version": "2.14.1",
+  "version": "2.15.0",
   "schema_version": "1.0",
   "generated": "2026-08-26 11:38:40",
   "files": [ { "file": "tests\/docs\/guide\/api.md", "...": "..." } ],
@@ -173,7 +173,7 @@ Les totaux sont la somme exacte des statistiques des fichiers listés.
 **`--summary-json` → objet plat par fichier (un par ligne, prêt pour jq) :**
 
 ```
-{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.14.1", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
+{"file": "tests/fixtures/test_fr.txt", "tool": "fstats", "version": "2.15.0", "schema_version": "1.0", "lines": 3, "words": 13, "characters": 72, "sentences": 3, "avg_words_per_sentence": 4, "line_min": 16, "line_max": 30, "line_avg": 23, "invalid_utf8": 0, "bom": false, "crlf": 0, "tabs": 0, "nonprintable": 0}
 ```
 
 Avec `--lexical-stats`, `--summary-json` ajoute (toujours à plat) les clés
@@ -275,6 +275,32 @@ fichier. Ils sont exposés dans la section console `Quality`, dans le bloc JSON
 Exemple : `tests/fixtures/crlf.txt` (2 fins de ligne CRLF) donne
 `crlf = 2`, `tabs = 0`, `nonprintable = 0` ; `tests/fixtures/tabs.txt` donne
 `tabs = 2` ; `tests/fixtures/invalid-utf8.bin` donne `invalid_utf8 = 1`.
+
+## Bornes de stockage (v2.15.0)
+
+**Les métriques sont exactes quelle que soit la taille du fichier ; seules
+les données mises en mémoire pour le matching et le regroupement sont
+bornées.**
+
+- **Ligne stockée** : au plus `LINE_STORE_MAX` = **65 536 octets UTF-8**
+  (constante `fstats_types.pas`). Au-delà, la ligne conservée pour le
+  matching (`--pattern`, `--regex-tag`, niveaux de log), le regroupement
+  `--top-lines` et les previews (`Longest Lines`) est tronquée à la borne.
+  Conséquences documentées : un match situé au-delà de la borne n'est pas
+  vu ; deux lignes identiques sur leurs 65 536 premiers octets partagent la
+  même clé de regroupement. `line_min`/`line_max`/`line_avg`, le compteur
+  de caractères et les longueurs restent **exacts** (comptés à la volée).
+- **Mot stocké** : au plus `WORD_STORE_MAX` = **1 024 octets UTF-8**. Un mot
+  plus long (possible en `--word-mode=raw` : tout ce qui n'est pas espace
+  ni contrôle) compte **une fois** dans `words` et dans le compteur de
+  caractères ; seule la clé du dictionnaire (Top Words, n-grams) est
+  tronquée à 1 024, et `average_word_chars` / l'histogramme
+  `word_length` le mesurent borné (approximation assumée).
+- Rationnel (audit P2, registre sécurité) : un fichier d'une seule ligne de
+  32 Mo saturait le CPU (concaténation quadratique, 18 s) et la mémoire
+  (ligne entière conservée). L'append est désormais O(1) amorti
+  (croissance géométrique), la mémoire est bornée, et les compteurs —
+  l'usage nominal — restent exacts.
 
 ## Sémantique des compteurs (à lire)
 
@@ -585,11 +611,22 @@ assumée et documentée dans le code).
 - **Matcher interne** (PAS une regex complète) : littéral + `|` (alternance) +
   `*` (n'importe quelle suite, séparateurs compris) + `?` (exactement un
   caractère). Insensible à la casse (UpCase ASCII, comme le glob Windows).
+- **v2.15.0 : algorithme glouton linéaire** (aucun backtracking, aucune
+  récursion) — un pattern piégeux (`*a*a*a*a*a*a*b`) ne peut plus geler :
+  complexité O(len(pattern)×len(ligne)). L'ordre d'exploration est celui de
+  l'ancien algorithme (étoile minimale d'abord, reprise sur la dernière
+  étoile) ; parité vérifiée sur 37 combinaisons motifs×fichiers.
+- **Match de longueur nulle non compté** (v2.15.0) : un pattern qui matche
+  vide à une position (`*`, `**`, segment vide d'alternation `a||b`) n'est
+  pas une occurrence — le compteur reste 0 et le scanner avance d'une
+  position (avant : boucle infinie).
 - **Occurrences non chevauchantes**, recherchées de gauche à droite dans chaque
   ligne. Une ligne contribue à `lines` si elle contient au moins un match, et
   à `matches` du nombre total d'occurrences.
 - Le matching s'effectue sur la ligne telle que construite en interne
-  (`VisualChar` appliqué : les contrôles deviennent `\t`, `[CTRL]`…).
+  (`VisualChar` appliqué : les contrôles deviennent `\t`, `[CTRL]`…), **bornée
+  à `LINE_STORE_MAX` = 65 536 octets** (v2.15.0, cf. Bornes de stockage) :
+  un match au-delà de la borne n'est pas vu.
 - Répétable : chaque `--pattern` produit une entrée distincte dans `patterns`.
 - JSON : `"patterns": [{"pattern": "...", "lines": N, "matches": M}, ...]`.
   Console : section `Patterns`. CSV : lignes `type=pattern` (`value`=pattern,
@@ -672,8 +709,15 @@ assumée et documentée dans le code).
   littéraux + classes `[...]` (plages `a-z`, `0-9`, `A-Z`, chars isolés) +
   quantifieurs `?` (0..1), `+` (1..∞), `*` (0..∞) après un token ; défaut = 1.
   Insensible à la casse pour les littéraux.
+- **v2.15.0 : simulation NFA à ensemble d'états** (aucun backtracking) —
+  complexité O(len(ligne)×len(pattern)) par position de départ ; un pattern
+  à quantifieurs imbriqués (`a*a*a*b` sur une longue ligne) ne peut plus
+  geler. Sémantique figée : depuis chaque position, le match retenu est le
+  **plus long** ; un match vide n'est pas extrait (le scanner avance d'une
+  position).
 - Extraction : occurrences **non chevauchantes**, de gauche à droite, dans
-  chaque ligne. Le tag = la sous-chaîne matchée.
+  chaque ligne **stockée** (bornée à `LINE_STORE_MAX` = 65 536 octets,
+  v2.15.0). Le tag = la sous-chaîne matchée.
 - Exemples : `PLC[0-9]+` → `PLC1`, `PLC23` ; `[A-Z]+[0-9]+` → `PLC1`, `MOTOR23`,
   `SENSOR7`.
 - Top-K borné comme les n-grams/top-lines : `--top-tags=N` (défaut 10, `0` =
