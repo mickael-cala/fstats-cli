@@ -98,6 +98,23 @@ la CI sur le code des cibles 2-3 + compagnon + durcissement P0/P1/P2.
 Suivi : ré-observation du run suivant — si 105 récidive en CI, la preuve
 auto-imprimée décidera du correctif final, sans moulinette à l'aveugle.
 
+### 6. CI VERTE des deux côtés (run #28, 2026-11-24) — premier vert depuis v2.7.0
+
+Après -Sg (leçon 13) et l'alignement du test 105 : un dernier échec
+runner-specific restait sur test-windows — les tests 120/121 (options
+honnêtes) échouaient SUR LE RUNNER uniquement, motifs pourtant 100 %
+ASCII (aucun code page impliqué). Réparation par l'instrumentation :
+capture **immédiate** du exit code (`set C120_ST=%ERRORLEVEL%` dès
+l'appel) + comparaison **numérique** (`if %C120_ST% GEQ 1 if %C120_ST%
+LSS 2`) à la place de la forme héritée `if errorlevel 1 if not
+errorlevel 2` lue APRÈS un `set` — forme fragile dont le comportement a
+varié sur le runner. Le run #28 : **test-windows ET test-linux verts**
+(127/127 chacun) — la totalité du périmètre (Cibles 1-2-3, compagnon,
+P0/P1/P2) validée par des machines GitHub, pas seulement la machine de
+dev. Enseignement : une capture d'exit code doit être immédiate et
+numérique — tout séparateur entre la commande et sa lecture est un
+candidat à la perte.
+
 ---
 
 ## v2.16.1 — P2 vague 4 (2026-11-24)

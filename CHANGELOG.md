@@ -38,6 +38,16 @@ justification.
   périmètre d'un outil de statistiques ; les compteurs qualité
   (nonprintable, invalid_utf8) restent vrais sur ce qu'ils mesurent.
 
+### CI VERTE (2026-11-24, run #28) — premier vert depuis v2.7.0
+
+- Dernier échec runner : tests 120/121 (options honnêtes) sur
+  test-windows uniquement, motifs 100 % ASCII. Réparation :
+  capture immédiate `%ERRORLEVEL%` + comparaison numérique GEQ/LSS
+  (la forme héritée `if errorlevel 1 if not errorlevel 2`, lue après
+  un `set`, était fragile sur le runner).
+- **Run #28 : test-windows ET test-linux verts** (127/127 chacun).
+  254 vérifications exécutées par les machines GitHub.
+
 ### CI (2026-11-24, premier push post-v2.7.0) : -Sg explicite + test 105
 - **test-windows échouait à la compilation** : le matcheur wildcards
   (fstats_lex.pas, v2.15.0) utilise GOTO/LABEL ; les fpc.cfg officiels
