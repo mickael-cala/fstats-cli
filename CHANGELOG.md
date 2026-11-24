@@ -42,6 +42,14 @@ justification.
 - Tests 122 (recursive), 123 (tie-break). Batch : **70 PASS / 0 FAIL**.
   run.sh : 62 réussis / 65 échecs node-dépendants (machine sans node).
 
+### Docs (passe parano/pédago du 2026-11-24)
+- `ROADMAPFULL.md` rattrapé — il était resté bloqué à v2.13.0 : préambule
+  « État du projet v2.16.2 », § 11 mis à jour (11 fichiers .pas, ajout
+  `fstats_sha.pas`), § 13 date v2.16.2 + nouvelle entrée « v4.0 —
+  Durcissement sécurité LIVRÉ (P0 v2.13.1, P1 v2.14.0, P2 v2.14.1 →
+  v2.16.2) », chaque item croisé avec ce CHANGELOG. Les roadmaps CIBLE
+  1-3 vérifiées conformes (statuts et écarts déjà tracés).
+
 ---
 
 ## [2.16.1] — 2026-11-24 — P2 (vague 4) : messages d'options honnêtes, help véridique

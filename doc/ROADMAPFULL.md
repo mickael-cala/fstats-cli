@@ -1,3 +1,10 @@
+> **État du projet : v2.16.2 (2026-11-24)** — roadmap livrée (§ 13) **et**
+> phase de durcissement sécurité P0/P1/P2 terminée (v2.13.1 → v2.16.2 :
+> corrections P0, garde-fous sécurité P1, 5 vagues P2 — bornes mémoire,
+> matchers linéaires, SHA-256 baseline, verdict CI, options honnêtes,
+> déterminisme des tris). Registre : `AUDIT-SECURITE.md`. Récapitulatif :
+> section « v4.0 » du § 13 ci-dessous. Historique détaillé : `CHANGELOG.md`.
+
 ## Verdict rapide et pourquoi cette roadmap !
 
 `fstats` est déjà un **bon outil CLI** : propre, portable, simple, JSON/CSV, sortie ASCII sûre pour redirection.
@@ -1382,6 +1389,11 @@ Pour garder le projet maintenable.
 > **v2.13.0** ajoute le compagnon générateur de ligne de commande :
 > `src/fcmd.pas` (binaire `fcmd`) + `src/fstats_cmdgen.pas` (logique partagée),
 > exposé aussi via `fstats --interactive`.
+> **v2.16.0** ajoute une 9e unité : `fstats_sha.pas` (SHA-256 streaming
+> FIPS 180-4, autonomie totale sans OpenSSL) pour l'intégrité baseline.
+> `src/` compte donc aujourd'hui **11 fichiers** .pas : les 2 mains
+> (`fstats.pas`, `fcmd.pas`) et 9 unités — dont `fstats_cmdgen.pas`
+> (logique partagée fstats↔fcmd) et `fstats_sha.pas`.
 
 ## Structure suggérée, espérée
 
@@ -1525,7 +1537,7 @@ fstats app.log --redact email,ipv4,url
 
 ---
 
-# 13. Roadmap prévue → **RÉALISÉE** (état au 2026-11-23, v2.11.0)
+# 13. Roadmap prévue → **RÉALISÉE** (état au 2026-11-24, v2.16.2)
 
 > Cette section était la roadmap *prévue* à l'origine. Tout ce qui était prévu
 > a été livré — en versions 2.x plutôt que 3.x (le rythme a été plus rapide
@@ -1555,6 +1567,30 @@ fstats app.log --redact email,ipv4,url
 - readability ✅ · patterns ✅ · log-level ✅ · alarm mode ✅ · watch ✅ · redaction ✅
 - `--word-mode` / `--casefold` / `--sentence-mode=smart` ✅ (v2.3.0, v2.7.0)
 - SQLite export : **écarté** (JSON/CSV suffisent, roadmap §7.5 « plus tard »)
+
+## v4.0 — Durcissement sécurité ✅ LIVRÉ (v2.13.1 → v2.16.2, P0+P1+P2)
+
+> Non prévu dans la roadmap originale — phase de consolidation déclenchée
+> par un audit sécurité/UX complet du code v2.13.0. Registre complet :
+> `AUDIT-SECURITE.md` (backlog vide ; § 6 = risques ACCEPTÉ-documentés).
+> Preuves : `VERIFICATION.md`.
+
+- **P0 (v2.13.1)** : off-by-one `--pattern` (occurrences adjacentes
+  perdues), wizard générant des options inexistantes/refusées, suite de
+  tests structurellement rouge depuis v2.12.0, promesse « ASCII pur » du
+  help non tenue. ✅
+- **P1 (v2.14.0)** : **exécution par argv, jamais de shell** (le wizard
+  passait par `FpSystem` → injection `$(…)`/backticks des saisies),
+  `--out` ne détruit plus le fichier d'entrée (`--out=f.txt` vidait
+  f.txt), **redaction sans fuite** (emails/IPs sortaient en clair dans
+  Top Words, n-grams et tags malgré `--redact`). ✅
+- **P2 vagues 1-5 (v2.14.1 → v2.16.2)** : frontière 64 Ko fichiers, CSV
+  protégé contre les formules Excel (injection à l'ouverture), gate
+  visible, matchers linéaires (anti-gel `--pattern=*`), ligne/mot stockés
+  **bornés 65 536 octets** (anti-DoS mémoire), intégrité baseline
+  **SHA-256** (gate d'intégrité CI), verdict CI lisible
+  (`OK/ATTENTION/ECHEC - exit N`), options inconnues honnêtes (exit 1),
+  égalités des Top Words/Chars **déterministes**. ✅
 
 ---
 
