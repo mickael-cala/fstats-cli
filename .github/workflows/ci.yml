@@ -37,10 +37,14 @@ jobs:
           Write-Output "FPC pret : $bin (fpc.cfg regenere)"
           # Smoke test : trace de recherche du cfg + compilation reelle
           New-Item -ItemType Directory -Force -Path "$env:TEMP/smoke" | Out-Null
-          & (Join-Path $bin 'fpc.exe') -vt -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fstats.pas" 2>&1 | Select-Object -Last 15
+          # -Sg EXPLICITE : le matcheur wildcards v2.15.0 (fstats_lex.pas) utilise
+          # GOTO/LABEL ; les fpc.cfg officiels embarquent -Sgic (donc ça compile en
+          # local/dev), mais le fpc.cfg regenere ci-dessus ne porte QUE les -Fu :
+          # sans -Sg explicite, la compilation echoue (vu au push v2.16.2).
+          & (Join-Path $bin 'fpc.exe') -vt -Sg -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fstats.pas" 2>&1 | Select-Object -Last 15
           if ($LASTEXITCODE -ne 0) { throw "compilation smoke test echouee (exit $LASTEXITCODE)" }
           # v2.13.0 : le compagnon fcmd compile aussi
-          & (Join-Path $bin 'fpc.exe') -vt -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fcmd.pas" 2>&1 | Select-Object -Last 15
+          & (Join-Path $bin 'fpc.exe') -vt -Sg -O2 -Mobjfpc -FE"$env:TEMP/smoke/" "$env:GITHUB_WORKSPACE/src/fcmd.pas" 2>&1 | Select-Object -Last 15
           if ($LASTEXITCODE -ne 0) { throw "compilation smoke test fcmd echouee (exit $LASTEXITCODE)" }
       - name: Lancer la suite de tests
         shell: cmd

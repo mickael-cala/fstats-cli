@@ -29,11 +29,14 @@ where node >nul 2>nul
 if not errorlevel 1 set NODE_OK=1
 
 rem --- 1. Compilation ---------------------------------------------------------
-fpc -O2 -Mobjfpc -FE. src\fstats.pas > "%TMPD%\compile.log" 2>&1
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%]&type "%TMPD%\compile.log") else (set /a PASS+=1&echo PASS: compilation : fpc -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%])
+rem -Sg EXPLICITE (2026-11-24, push CI v2.16.2) : le matcheur wildcards
+rem (fstats_lex.pas) utilise GOTO/LABEL ; les fpc.cfg officiels embarquent -Sgic
+rem mais un fpc.cfg minimal (CI) ne l'a pas -> le switch doit etre explicite.
+fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas > "%TMPD%\compile.log" 2>&1
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation : fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%]&type "%TMPD%\compile.log") else (set /a PASS+=1&echo PASS: compilation : fpc -Sg -O2 -Mobjfpc -FE. src\fstats.pas [errorlevel %ERRORLEVEL%])
 findstr /C:"lines compiled" "%TMPD%\compile.log"
 rem v2.13.0 : binaire compagnon fcmd
-fpc -O2 -Mobjfpc -FE. src\fcmd.pas > "%TMPD%\compile_fcmd.log" 2>&1
+fpc -Sg -O2 -Mobjfpc -FE. src\fcmd.pas > "%TMPD%\compile_fcmd.log" 2>&1
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: compilation fcmd [errorlevel %ERRORLEVEL%]) else (set /a PASS+=1&echo PASS: compilation fcmd [errorlevel %ERRORLEVEL%])
 set "FCMD=%CD%\fcmd.exe"
 
@@ -1049,7 +1052,7 @@ if "%C104_OK%"=="1" (set /a PASS+=1&echo PASS: fcmd --dry-run EOF -^> exit 1) el
 rem --- 105. fstats --interactive 'n' -> exit 0 + commande affichée --------------
 (echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 0&echo n) | "%FSTATS%" --interactive > "%TMPD%\\c105.txt" 2>nul
 if errorlevel 1 (set C105_OK=0) else (findstr /C:"Commande" "%TMPD%\\c105.txt" >nul && findstr /C:"--check" "%TMPD%\\c105.txt" >nul && set "C105_OK=1" || set "C105_OK=0")
-if "%C105_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive profil gate 'n' -^> exit 0 + commande) else (set /a FAIL+=1&echo FAIL: --interactive profil gate 'n' -^> exit 0 + commande)
+if "%C105_OK%"=="1" (set /a PASS+=1&echo PASS: --interactive profil gate 'n' -^> exit 0 + commande) else (set /a FAIL+=1&echo FAIL: --interactive profil gate 'n' -^> exit 0 + commande&echo --- DIAG test 105 : sortie du wizard ---&type "%TMPD%\c105.txt"&echo --- fin DIAG test 105 ---)
 
 rem --- 106. fstats --interactive 'o' fail-if -> exit 2 propagé ------------------
 (echo 3&echo 1&echo f&echo tests\\fixtures\\test_fr.txt&echo 5&echo 40&echo words^^^>5&echo 0&echo o) | "%FSTATS%" --interactive >nul 2>nul

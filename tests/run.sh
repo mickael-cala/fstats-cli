@@ -37,20 +37,23 @@ report() { # <nom> <ok 0/1>
 
 # --- 1. Compilation ---------------------------------------------------------
 # Sans -FE, FPC place l'executable dans src/ : fstats.exe (Windows) ou fstats (POSIX)
-fpc -O2 -Mobjfpc src/fstats.pas > "$TMPDIR/compile.log" 2>&1
+# -Sg EXPLICITE (2026-11-24, push CI v2.16.2) : le matcheur wildcards
+# (fstats_lex.pas) utilise GOTO/LABEL ; les fpc.cfg officiels embarquent -Sgic,
+# mais un fpc.cfg minimal (CI) ne l'a pas -> le switch doit etre explicite.
+fpc -Sg -O2 -Mobjfpc src/fstats.pas > "$TMPDIR/compile.log" 2>&1
 STATUS=$?
 if [ "$STATUS" -ne 0 ]; then
   echo "--- compile.log (echec) ---"
   cat "$TMPDIR/compile.log"
   echo "--- fin compile.log ---"
 fi
-report "compilation : fpc -O2 -Mobjfpc src/fstats.pas (exit $STATUS)" "$STATUS"
+report "compilation : fpc -Sg -O2 -Mobjfpc src/fstats.pas (exit $STATUS)" "$STATUS"
 grep -oE "[0-9]+ lines compiled" "$TMPDIR/compile.log" | head -1
 
 # v2.13.0 : binaire compagnon fcmd
-fpc -O2 -Mobjfpc src/fcmd.pas > "$TMPDIR/compile_fcmd.log" 2>&1
+fpc -Sg -O2 -Mobjfpc src/fcmd.pas > "$TMPDIR/compile_fcmd.log" 2>&1
 STATUS=$?
-report "compilation : fpc -O2 -Mobjfpc src/fcmd.pas (exit $STATUS)" "$STATUS"
+report "compilation : fpc -Sg -O2 -Mobjfpc src/fcmd.pas (exit $STATUS)" "$STATUS"
 
 # Nom du binaire selon la plateforme
 if [ -f "$ROOT/src/fstats.exe" ]; then
@@ -993,8 +996,19 @@ if [ $? -eq 1 ]; then OK=0; else OK=1; fi
 report "fcmd --dry-run sans entrée (EOF) -> exit 1" $OK
 
 # --- 105. fstats --interactive, réponse 'n' -> exit 0, commande affichée --------
+# Grep SANS accents (comme le jumeau bat) : l'encodage console de la sortie
+# wizard dépend du code page hérité au lancement (fstats.pas : « mojibake
+# NON DÉTERMINISTE sous pipes ») ; l'assertion porte sur le CONTENU, pas la
+# typographie : exit 0 + "Commande" + "--check" suffisent (voir CI Linux).
 printf '3\n1\nf\ntests/fixtures/test_fr.txt\n0\nn\n' | "$FSTATS" --interactive > "$TMPDIR/c105.txt" 2>/dev/null
-if [ $? -eq 0 ] && grep -q "Commande générée" "$TMPDIR/c105.txt" && grep -q -- "--check" "$TMPDIR/c105.txt"; then OK=0; else OK=1; fi
+ST105=$?
+if [ $ST105 -eq 0 ] && grep -q "Commande" "$TMPDIR/c105.txt" && grep -q -- "--check" "$TMPDIR/c105.txt"; then OK=0; else OK=1; fi
+if [ $OK -ne 0 ]; then
+  # Preuve auto-imprimée (échec CI Linux au push v2.16.2 : diagnostic sur place)
+  echo "--- DIAG test 105 : exit=$ST105, sortie du wizard ---"
+  cat "$TMPDIR/c105.txt"
+  echo "--- fin DIAG test 105 ---"
+fi
 report "fstats --interactive profil gate, 'n' -> exit 0 + commande affichée" $OK
 
 # --- 106. fstats --interactive, 'o' avec fail-if -> exit code propagé (2) -------
