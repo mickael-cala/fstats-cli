@@ -586,7 +586,7 @@ goto :after56
 :node56b
 node -e "var fs=require('fs');var s=fs.readFileSync(process.argv[1],'utf8');fs.writeFileSync(process.argv[2],s.replace('\"lines\": 3','\"lines\": 1'));" "%TMPD%\base56.json" "%TMPD%\base56b.json"
 :node56
-node -e "var cp=require('child_process');var r1=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>1','--fail-if','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o1=JSON.parse(r1.stdout);var ids1=o1.checks.map(function(c){return c.id;});var st1=o1.checks.map(function(c){return c.status;});var r2=cp.spawnSync(process.argv[1],['--compare',process.argv[3],'--fail-on-delta','lines>10','--fail-on-delta','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o2=JSON.parse(r2.stdout);var ids2=o2.checks.map(function(c){return c.id;});var r3=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>2','--json-mode=aggregate','tests/fixtures/test_fr.txt','tests/fixtures/bom.txt'],{encoding:'utf8'});var o3=JSON.parse(r3.stdout);var ok1=r1.status===2&&ids1.join(',')==='lines,lines#2'&&st1.join(',')==='fail,ok';var ok2=r2.status===2&&ids2.join(',')==='delta:lines,delta:lines#2';var ok3=r3.status===2&&o3.files[0].checks&&o3.files[1].checks&&!('checks' in o3.totals);if(ok1&&ok2&&ok3){process.exit(0);}console.error('[cas56] ids1='+ids1+' st1='+st1+' r1='+r1.status+' ids2='+ids2+' r2='+r2.status+' r3='+r3.status);process.exit(1);" "%FSTATS%" "%TMPD%\base56.json" "%TMPD%\base56b.json"
+node -e "var cp=require('child_process');var r1=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>1','--fail-if','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o1=JSON.parse(r1.stdout);var ids1=o1.checks.map(function(c){return c.id;});var st1=o1.checks.map(function(c){return c.status;});var r2=cp.spawnSync(process.argv[1],['--compare',process.argv[3],'--fail-on-delta','lines>10','--fail-on-delta','lines>100','--json','tests/fixtures/test_fr.txt'],{encoding:'utf8'});var o2=JSON.parse(r2.stdout);var ids2=o2.checks.map(function(c){return c.id;});var r3=cp.spawnSync(process.argv[1],['--check','--fail-if','lines>2','--json-mode=aggregate','tests/fixtures/test_fr.txt','tests/fixtures/bom.txt'],{encoding:'utf8'});var o3=JSON.parse(r3.stdout);var ok1=r1.status===2&&ids1.join(',')==='lines,lines#2'&&st1.join(',')==='fail,ok';var ok2=r2.status===2&&ids2.join(',')==='delta:lines,delta:lines#2,sha256';var ok3=r3.status===2&&o3.files[0].checks&&o3.files[1].checks&&!('checks' in o3.totals);if(ok1&&ok2&&ok3){process.exit(0);}console.error('[cas56] ids1='+ids1+' st1='+st1+' r1='+r1.status+' ids2='+ids2+' r2='+r2.status+' r3='+r3.status);process.exit(1);" "%FSTATS%" "%TMPD%\base56.json" "%TMPD%\base56b.json"
 if errorlevel 1 (set C56_OK=0) else (set C56_OK=1)
 :after56
 if "%C56_OK%"=="1" (set /a PASS+=1&echo PASS: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals) else (set /a FAIL+=1&echo FAIL: ids lines/lines#2 et delta:lines/delta:lines#2, aggregate sans checks dans totals)
@@ -734,14 +734,16 @@ node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.
 if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=*timeout* app.log -^> 3/3) else (set /a PASS+=1&echo PASS: --pattern=*timeout* app.log -^> 3/3)
 :after70
 
-rem --- 71. C3-A : wildcard * matche toutes les lignes ---------------------------
+rem --- 71. C3-A : wildcard * = match nul -^> 0/0 (semantique figee v2.15.0) -------
+rem AVANT v2.15.0 : * matche vide par ligne -^> 9/9. Depuis : match de longueur
+rem nulle NON compte (SEMANTIQUE.md) - test aligne sur la semantique figee.
 "%FSTATS%" --summary-json "--pattern=*" tests\fixtures\app.log > "%TMPD%\p71.json" 2>nul
 if "%NODE_OK%"=="1" goto :node71
 echo SKIP: p71 (node indisponible)
 goto :after71
 :node71
-node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].lines===9&&o.patterns[0].matches===9)?0:1);" < "%TMPD%\p71.json"
-if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=* app.log -^> 9/9) else (set /a PASS+=1&echo PASS: --pattern=* app.log -^> 9/9)
+node -e "var o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit((o.patterns[0].lines===0&&o.patterns[0].matches===0)?0:1);" < "%TMPD%\p71.json"
+if errorlevel 1 (set /a FAIL+=1&echo FAIL: --pattern=* app.log -^> match nul 0/0 ^(v2.15.0^)) else (set /a PASS+=1&echo PASS: --pattern=* app.log -^> match nul 0/0 ^(v2.15.0^))
 :after71
 
 rem --- 72. C3-A : --top-lines=2 -> 2 entrees, top count=2 ------------------------

@@ -571,9 +571,11 @@ var o2 = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 var o3 = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 var ids1 = o1.checks.map(function (c) { return c.id; }).join(",");
 var st1 = o1.checks.map(function (c) { return c.status; }).join(",");
+// v2.16.0 : la baseline (générée par fstats v2.16+) porte sha256 -> le
+// --compare injecte le check sha256 APRÈS les delta (ids attendus ajustés).
 var ids2 = o2.checks.map(function (c) { return c.id; }).join(",");
 var ok1 = ids1 === "lines,lines#2" && st1 === "fail,ok";
-var ok2 = ids2 === "delta:lines,delta:lines#2";
+var ok2 = ids2 === "delta:lines,delta:lines#2,sha256";
 var ok3 = o3.files[0].checks && o3.files[1].checks && !("checks" in o3.totals);
 process.exit((ok1 && ok2 && ok3) ? 0 : 1);
 ' "$TMPDIR/ids1.json" "$TMPDIR/ids2.json" "$TMPDIR/aggrchk.json"
@@ -735,13 +737,16 @@ process.exit((o.patterns[0].lines === 3 && o.patterns[0].matches === 3) ? 0 : 1)
 ' "$TMPDIR/p70.json"
 report "--pattern='*timeout*' app.log -> 3/3" $?
 
-# --- 71. C3-A : wildcard '*' matche toutes les lignes --------------------------
+# --- 71. C3-A : wildcard '*' = match nul -> 0/0 (sémantique figée v2.15.0) ------
+# AVANT v2.15.0 : '*' matche vide au début de chaque ligne -> 9/9 comptés.
+# Depuis v2.15.0 : un match de longueur NULLE n'est PAS compté (SEMANTIQUE.md
+# « Match de longueur nulle non compté ») — le test aligné sur la sémantique.
 "$FSTATS" --summary-json --pattern='*' tests/fixtures/app.log > "$TMPDIR/p71.json" 2>/dev/null
 node -e '
 var o = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-process.exit((o.patterns[0].lines === 9 && o.patterns[0].matches === 9) ? 0 : 1);
+process.exit((o.patterns[0].lines === 0 && o.patterns[0].matches === 0) ? 0 : 1);
 ' "$TMPDIR/p71.json"
-report "--pattern='*' app.log -> toutes les lignes (9/9)" $?
+report "--pattern='*' app.log -> match nul : 0/0 (v2.15.0, était 9/9)" $?
 
 # --- 72. C3-A : --top-lines=2 sur app.log -> 2 entrees, top count=2 ------------
 "$FSTATS" --summary-json --top-lines=2 tests/fixtures/app.log > "$TMPDIR/p72.json" 2>/dev/null
