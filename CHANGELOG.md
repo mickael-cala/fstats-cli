@@ -76,6 +76,16 @@ justification.
   (fichier fantôme `examples/demo.obm` supprimé, glyphe `└` corrigé,
   `exemples//doc/en//fstats_sha.pas` ajoutés, slash Linux documenté) +
   harmonisation « n-grams ». Chaque correctif miroité en EN.
+- **SEMANTIQUE.md (relire par le traducteur sémantique)** : span P1-1
+  réparé (le backtick prématuré cassait le rendu de toute la fin de la
+  section Compagnon) ; bloc Console précédé d'une note d'honnêteté
+  (« pas les sorties d'un même fichier, fichier de démonstration
+  fictif » — le path `examples\demo.obm` des extracts ne correspondait
+  à AUCUNE fixture, révélateur du même vestige que l'arborescence du
+  README) ; NB ajouté sur les alias `non_utf8`/`invalid_utf8` (les deux
+  noms acceptés dans les deux moteurs ; clé JSON = invalid_utf8) ;
+  « la ligne une » → « la première ligne ». Miroité EN (898 lignes,
+  42/42 titres, dogfood OK).
 
 ### CI VERTE (2026-11-24, run #28) — premier vert depuis v2.7.0
 

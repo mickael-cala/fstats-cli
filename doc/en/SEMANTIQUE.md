@@ -27,8 +27,14 @@
 
 ### Console
 
+> Illustrative excerpt: the blocks below each show the shape of a section,
+> **not the outputs of a single file** (fictional demonstration file
+> below; different lines depending on the option illustrated). The real
+> outputs measured on repository files are in `VERIFICATION.md` and
+> `exemples/README.md` (fr).
+
 ```
-File: examples\demo.obm
+File: demo.obm (demo name, not a repository fixture)
 Generated: 2026-08-26 11:47:13
 
 Summary
@@ -559,6 +565,9 @@ analysis mode keeps 0/1 (no breaking change).
   Summary; alias `avg_sentence_words`), `non_utf8` (alias
   `invalid_utf8`), `bom` (0/1), `crlf`, `tabs`, `nonprintable`.
   Unknown metric or invalid syntax → fatal error (exit 1, stderr).
+  NB: **both names are accepted in both engines** (gate and drift); the
+  JSON summary key is `invalid_utf8` (the code canonicalizes, it never
+  rejects either name).
 
 ### Statuses and exit codes
 
@@ -880,7 +889,7 @@ fstats fichier_inconnu.txt   # exit code 1, message on stderr
   (`SysUtils.ExecuteProcess`: fork/execve or CreateProcess) — never
   through a shell. A value containing `; rm -rf` is just an argument.
   The displayed command quotes metacharacters (space, tab,
-  `& | < > ^ % !` ; `; $ \ ( ) …`) ; known limit: cmd.exe expands
+  `& | < > ^ % ! ; $ \ ( ) …`) ; known limit: cmd.exe expands
   `%VAR%` at paste time even between quotes (security register, P2).
 - Wizard output: `Commande générée :` then the quoted line for the
   current shell (double quotes under Windows, single quotes under

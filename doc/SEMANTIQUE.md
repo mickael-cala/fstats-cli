@@ -25,8 +25,14 @@
 
 ### Console
 
+> Extrait illustratif : les blocs ci-dessous montrent chacun la forme d'une
+> section, **pas les sorties d'un même fichier** (fichier de démonstration
+> fictif ci-dessous ; lignes différentes selon l'option illustrée). Les
+> sorties réelles mesurées sur des fichiers du dépôt sont dans
+> `VERIFICATION.md` et `exemples/README.md`.
+
 ```
-File: examples\demo.obm
+File: demo.obm (nom de démonstration, pas une fixture du dépôt)
 Generated: 2026-08-26 11:47:13
 
 Summary
@@ -222,7 +228,7 @@ Trois sous-formats (`--csv` seul = `summary`) :
 
 **Échappement de cellules (v2.14.1)** : les caractères de contrôle LF, CR et
 TAB sont d'abord remplacés par les littéraux `\n`, `\r`, `\t` (aucune cellule
-ne peut casser la ligne une) ; ensuite guillemets doublés (`"` → `""`) quand
+ne peut casser la première ligne) ; ensuite guillemets doublés (`"` → `""`) quand
 la cellule contient virgule ou guillemet, comme la RFC 4180.
 **Neutralisation de formules** : toute cellule commençant par `=`, `+`, `-`
 ou `@` est préfixée d'une apostrophe `'` (`=cmd|…` devient `'=cmd|…`) —
@@ -549,6 +555,9 @@ Mode check activé par `--check` **ou implicitement** par `--fail-if`,
   Summary ; alias `avg_sentence_words`), `non_utf8` (alias `invalid_utf8`),
   `bom` (0/1), `crlf`, `tabs`, `nonprintable`. Métrique inconnue ou syntaxe
   invalide → erreur fatale (exit 1, stderr).
+  NB : **les deux noms sont acceptés dans les deux moteurs** (gate et
+  dérive) ; la clé du résumé JSON est `invalid_utf8` (le code canonise, il
+  ne rejette jamais l'un des deux).
 
 ### Statuts et exit codes
 
@@ -855,9 +864,9 @@ fstats fichier_inconnu.txt   # code 1, message sur stderr
 - **v2.14.0 (P1-1)** : l'exécution se fait par **arguments séparés**
   (`SysUtils.ExecuteProcess` : fork/execve ou CreateProcess) — jamais de
   shell. Une valeur contenant `; rm -rf` est un simple argument. La commande
-  affichée quotte les métacaractères (espace, tabulation, `& | < > ^ % !` ;
-  `; $ \` ( ) …`) ; limite connue : cmd.exe développe `%VAR%` au collage
-  même entre guillemets (registre sécurité, P2).
+  affichée quotte les métacaractères (espace, tabulation,
+  `& | < > ^ % ! ; $ \ ( ) …`) ; limite connue : cmd.exe développe `%VAR%` au
+  collage même entre guillemets (registre sécurité, P2).
 - Sortie du wizard : `Commande générée :` puis la ligne quotée pour le shell
   courant (guillemets doubles sous Windows, simples sous Unix).
 
