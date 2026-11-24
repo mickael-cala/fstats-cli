@@ -86,6 +86,11 @@ justification.
   noms acceptés dans les deux moteurs ; clé JSON = invalid_utf8) ;
   « la ligne une » → « la première ligne ». Miroité EN (898 lignes,
   42/42 titres, dogfood OK).
+- **Passe finale de vérification des 22 documents** : contrôleur de liens
+  strict sur les liens relatifs de tous les .md FR/EN — 2 liens réparés
+  dans doc/en/GUIDE-PEDAGOGIQUE.md (`../README.en.md` →
+  `../../README.en.md`, une profondeur manquante) ; dogfood 22/22 OK,
+  versions cohérentes, aucun reste d'échappement ou de traduction.
 
 ### CI VERTE (2026-11-24, run #28) — premier vert depuis v2.7.0
 

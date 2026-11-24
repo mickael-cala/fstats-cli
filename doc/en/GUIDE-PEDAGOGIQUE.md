@@ -193,7 +193,7 @@ That's all: **one command, and you know the essentials of a text.**
 | `fstats --histogram=word_length fichier.txt` | the distribution of word lengths |
 | `fstats --char-classes fichier.txt` | letters / digits / whitespace / punctuation… |
 
-> `fstats --help` lists all the options, and the [README](../README.en.md)
+> `fstats --help` lists all the options, and the [README](../../README.en.md)
 > gives the complete reference.
 
 ### Assessing the readability of a text
@@ -652,7 +652,7 @@ exact and reliable.
 
 ## 10. Going further
 
-- [README](../README.en.md) — overview, all the options, examples.
+- [README](../../README.en.md) — overview, all the options, examples.
 - [Technical specification](SEMANTIQUE.md) — frozen semantics of the
   counters, detailed JSON/CSV schemas.
 - [Validation journal](VERIFICATION.md) — the verifications performed with
