@@ -187,6 +187,12 @@ de maintenance est le prix de deux environnements natifs).
     inclus dans la valeur par cmd) et un `^>` dans un pipe devenait une
     redirection. Le signal « 63 PASS / 0 FAIL » n'existait pas avant —
     maintenant il existe et il est vérifié à chaque version.
+    **3e occurrence en v2.16.2 (rattrapage node)** : les 65 tests
+    node-dépendants étaient SKIP/FAIL silencieux en local faute de node ;
+    une fois node installé, deux d'entre eux s'avéraient périmés depuis
+    les vagues 2 et 3 (56 : ids sans sha256 ; 71 : match nul compté 9/9)
+    sans que personne ne le voie. Un test qui ne tourne pas n'est pas
+    vert : il est invisible.
 12. **Testez chaque option sous la forme EXACT où la documentation la
     montre.** v2.16.0 : `--fail-on-delta=M>X` — la forme avec `=` — était
     documentée depuis la v2.6.0 et n'avait JAMAIS fonctionné (off-by-one
@@ -206,3 +212,4 @@ de maintenance est le prix de deux environnements natifs).
 | 2026-11-24 | v2.16.0 | — | P2 vague 3 corrigée (SHA-256 baseline, verdict CI, hors-baseline visible, fail-on-delta inline) ; tests 117-119 (66 PASS) |
 | 2026-11-24 | v2.16.1 | — | P2 vague 4 corrigée (options honnêtes, help véridique) ; tests 120-121 (68 PASS) |
 | 2026-11-24 | v2.16.2 | — | P2 vague 5 corrigée (tie-break, tests recursive) ; backlog P2 VIDE ; tests 122-123 (70 PASS) |
+| 2026-11-24 | v2.16.2 | — | Rattrapage node : 127/127 en sh ET bat (254 vérifications) ; 2 tests jumeaux périmés alignés sur la sémantique figée (56 : ids +sha256 v2.16.0 ; 71 : match nul 0/0 v2.15.0) ; 3e occurrence de la leçon 11 (harnais jamais tourné jusqu'au bout) |

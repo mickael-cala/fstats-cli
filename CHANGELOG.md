@@ -42,6 +42,18 @@ justification.
 - Tests 122 (recursive), 123 (tie-break). Batch : **70 PASS / 0 FAIL**.
   run.sh : 62 réussis / 65 échecs node-dépendants (machine sans node).
 
+### Tests (rattrapage node, 2026-11-24)
+- Node LTS installé sur la machine de dev : les 65 tests node-dépendants
+  s'exécutent enfin localement → **127 réussis / 0 échec en sh ET en bat**.
+- **2 tests jumeaux périmés, alignés sur la sémantique figée** (aucun
+  changement de comportement du code) : test 56 — ids attendus
+  `delta:lines,delta:lines#2,sha256` depuis v2.16.0 (la baseline v2.16+
+  porte sha256, le check est injecté après les deltas) ; test 71 —
+  `--pattern='*'` → **0/0** depuis v2.15.0 (match de longueur nulle non
+  compté, cf. test 114), l'attente « 9/9 toutes les lignes » datait de la
+  sémantique d'avant-vague 2. Les deux tests silencieux depuis toujours
+  (SKIP/FAIL node), jamais relus faute de node.
+
 ### Docs (passe parano/pédago du 2026-11-24)
 - `ROADMAPFULL.md` rattrapé — il était resté bloqué à v2.13.0 : préambule
   « État du projet v2.16.2 », § 11 mis à jour (11 fichiers .pas, ajout

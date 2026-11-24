@@ -35,6 +35,32 @@ Backlog §5 du registre : vagues 1 à 5 toutes traitées (corrigées ou
 requalifiées ACCEPTÉ_DOCUMENTÉ avec justification). Restent au §6 les
 décisions assumées, qui se lisent comme des limites, pas comme des dettes.
 
+### 4. Rattrapage node (2026-11-24) : 127/127 sur les DEUX harnais
+
+Node LTS (v26.13.1) installé sur la machine de dev : les 65 tests
+node-dépendants (validation JSON par un vrai parseur), silencieux depuis
+toujours en local (SKIP en bat, FAIL en sh), s'exécutent enfin.
+**127 réussis / 0 échec — en sh ET en bat** (254 vérifications).
+
+Deux tests JUMEAUX s'étaient périmés en passant inaperçus — alignés sur
+la sémantique figée, aucun comportement changé :
+
+- **Test 56 (ids de répétition + aggregate)** : attendait
+  `delta:lines,delta:lines#2` des tests --compare ; depuis **v2.16.0**,
+  une baseline v2.16+ porte `sha256` → le check sha256 est injecté
+  APRÈS les deltas : `delta:lines,delta:lines#2,sha256`. Stale depuis la
+  vague 3.
+- **Test 71 (wildcard `*`)** : attendait 9/9 « toutes les lignes »
+  (sémantique ≤ v2.14.1 : match vide compté par ligne) ; depuis
+  **v2.15.0**, un match de longueur NULLE n'est PAS compté
+  (SEMANTIQUE.md « Match de longueur nulle non compté », déjà couvert
+  par le test 114) : 0/0 attendu et vérifié. Stale depuis la vague 2 —
+  sans jamais être vu car node manquait.
+
+Vérif parano du diagnostic : les 62 autres ex-node-dépendants sont passés
+sans retoucher le code — les 2 échecs étaient bien des tests obsolètes,
+pas des régressions.
+
 ---
 
 ## v2.16.1 — P2 vague 4 (2026-11-24)
