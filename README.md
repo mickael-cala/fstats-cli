@@ -234,8 +234,9 @@ Les données vont sur **stdout** ; les erreurs, avertissements et confirmations
 ## Tests automatisés
 
 - `tests\run.bat` (Windows / CMD) et `tests\run.sh` (Linux / Git Bash) :
-  compilation + 100 cas d'acceptation (Cible 1 A/B/C, Cible 2 A/B/C, Cible 3 A/B/C/D)
-  avec validation JSON via node et vérification des codes de retour.
+  compilation + 127 cas d'acceptation (Cibles 1-2-3, compagnon `fcmd`,
+  correctifs P0/P1/P2) avec validation JSON via node et vérification des
+  codes de retour — état vérifié v2.16.2 : **127/127 sur les deux suites**.
 - Prérequis : `fpc` et `node` sur le PATH.
 - La CI GitHub Actions exécute les deux suites sur `windows-latest` et
   `ubuntu-latest` à chaque push sur `main` et chaque `pull_request`.

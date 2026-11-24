@@ -61,6 +61,10 @@ justification.
   Durcissement sécurité LIVRÉ (P0 v2.13.1, P1 v2.14.0, P2 v2.14.1 →
   v2.16.2) », chaque item croisé avec ce CHANGELOG. Les roadmaps CIBLE
   1-3 vérifiées conformes (statuts et écarts déjà tracés).
+- `README.md` : « 100 cas d'acceptation » → **127** (les tests 101-123
+  ajoutés de v2.13.1 à v2.16.2 n'y avaient jamais été reportés — même
+  famille de périmés que les tests 56/71 : l'oubli d'un chiffrage n'est
+  pas visible tant qu'aucune machine ne le vérifie).
 
 ---
 
